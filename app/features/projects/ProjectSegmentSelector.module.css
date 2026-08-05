@@ -7,29 +7,29 @@
 
 .legend {
   padding: 0;
-  color: #5a504a;
-  font-size: 12px;
-  font-weight: 800;
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
 }
 
 .optional {
   margin-left: 5px;
-  color: #655f59;
-  font-size: 12px;
-  font-weight: 600;
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
 }
 
 .help {
   margin: 5px 0 8px;
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-body);
 }
 
 .options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .option {
@@ -37,12 +37,12 @@
   min-width: 0;
   min-height: var(--target-min);
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0 !important;
-  padding: 9px 11px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
 }
 
@@ -53,16 +53,16 @@
   min-height: 16px;
   margin: 0;
   padding: 0;
-  accent-color: #49735c;
+  accent-color: var(--color-accent);
 }
 
 .option:has(input:checked) {
-  border-color: #8cb19c;
-  background: #f3f8f4;
+  border-color: var(--color-line-strong);
+  background: var(--color-canvas);
 }
 
 .option span {
   overflow-wrap: anywhere;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
 }

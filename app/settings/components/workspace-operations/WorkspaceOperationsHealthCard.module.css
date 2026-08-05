@@ -1,7 +1,7 @@
 .card,
 .section {
   display: grid;
-  gap: 10px;
+  gap: var(--space-2);
   width: 100%;
   min-width: 0;
 }
@@ -11,7 +11,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   width: 100%;
 }
 
@@ -24,7 +24,7 @@
 .explanation {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -37,53 +37,53 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-1);
 }
 
 .section {
-  padding-top: 10px;
+  padding-top: var(--space-2);
   border-top: 1px solid var(--line);
 }
 
 .sectionHeading > div {
   display: grid;
-  gap: 2px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .sectionHeading h5 {
   margin: 0;
   color: var(--ink);
-  font: 700 13px/1.4 var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-body)/1.4 var(--font-ui);
 }
 
 .sectionHeading span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
 .successIcon {
   flex: 0 0 auto;
-  color: #287254;
+  color: var(--color-accent);
 }
 
 .warningIcon {
   flex: 0 0 auto;
-  color: #9f541c;
+  color: var(--color-warning);
 }
 
 .error {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
-  padding: 10px;
-  border: 1px solid #deb6b0;
+  padding: var(--space-2);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-control);
-  background: #fff8f7;
-  color: #8a3f37;
-  font-size: 12px;
+  background: var(--color-surface-muted);
+  color: var(--color-danger);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -112,12 +112,12 @@
 .table td > small {
   margin-top: 3px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
 .table code {
-  font-size: 12px;
+  font-size: var(--font-size-caption);
 }
 
 .guidance {

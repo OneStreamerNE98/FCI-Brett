@@ -1,29 +1,29 @@
 .panel {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .summary {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding: 20px;
+  gap: var(--space-4);
+  padding: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: linear-gradient(135deg, #f7faf7, #fff);
+  background: linear-gradient(135deg, var(--color-surface-muted), var(--color-surface));
 }
 
 .summary h2 {
   margin: 4px 0 6px;
-  font: 700 20px var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-heading-md) var(--font-ui);
 }
 
 .summary p:last-child {
   max-width: 680px;
   margin: 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
@@ -36,31 +36,31 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .section {
   display: grid;
   min-width: 0;
-  gap: 10px;
-  padding: 16px;
+  gap: var(--space-2);
+  padding: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .section > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .section > header > div {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .section > header svg {
@@ -70,23 +70,23 @@
 
 .section h2 {
   margin: 0;
-  font: 700 15px var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-label) var(--font-ui);
 }
 
 .section > header > span {
   min-width: 28px;
-  padding: 3px 8px;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
-  background: #f3f1ed;
+  background: var(--color-accent-soft);
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
   text-align: center;
 }
 
 .rows {
   display: grid;
-  gap: 7px;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -102,19 +102,19 @@
   min-height: 44px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 9px 10px;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   color: inherit;
   text-decoration: none;
-  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease), background var(--motion-duration-fast) var(--motion-ease), transform var(--motion-duration-fast) var(--motion-ease);
 }
 
 .rows a:hover,
 .inbox > a:hover {
   border-color: var(--line);
-  background: #faf9f7;
+  background: var(--color-surface-muted);
   transform: translateY(-1px);
 }
 
@@ -128,13 +128,13 @@
 .inbox > a > span {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  gap: var(--space-1);
 }
 
 .rows a strong,
 .inbox > a strong {
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -144,7 +144,7 @@
 .inbox > a small {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -160,7 +160,7 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .taskControl {
@@ -197,22 +197,22 @@
 .overflow {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
 .overflow {
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
 }
 
 .taskError {
   margin: 0;
-  padding: 10px 12px;
-  border: 1px solid #e3b9b3;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-control);
-  background: #fff7f5;
-  color: #8c3d35;
-  font-size: 12px;
+  background: var(--color-surface-muted);
+  color: var(--color-danger);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -245,7 +245,7 @@
 
 @media (max-width: 620px) {
   .summary {
-    padding: 16px;
+    padding: var(--space-4);
   }
 
   .grid {
@@ -253,7 +253,7 @@
   }
 
   .section {
-    padding: 14px;
+    padding: var(--space-3);
   }
 }
 

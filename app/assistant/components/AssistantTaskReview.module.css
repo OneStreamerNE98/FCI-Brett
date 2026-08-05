@@ -1,15 +1,15 @@
 .panel {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
   margin-bottom: 15px;
-  padding: 20px;
+  padding: var(--space-4);
 }
 
 .header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .header > div {
@@ -18,13 +18,13 @@
 
 .header h2 {
   margin: 3px 0 5px;
-  font: 700 18px var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-heading-sm) var(--font-ui);
 }
 
 .header p:last-child {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -37,26 +37,26 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .controls label {
   display: grid;
-  gap: 7px;
-  color: #5a504a;
-  font-size: 12px;
-  font-weight: 800;
+  gap: var(--space-2);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
 }
 
 .controls select {
   width: 100%;
   min-height: var(--control-page);
-  border: 1px solid #cbc4bd;
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-control);
-  background: #fff;
+  background: var(--color-surface);
   color: var(--ink);
-  padding: 8px 11px;
-  font-size: 14px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-label);
 }
 
 .controls > button {
@@ -65,18 +65,18 @@
 
 .message {
   margin: 0;
-  padding: 10px 12px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  background: #f7faf8;
-  color: #53645b;
-  font-size: 12px;
+  background: var(--color-surface-muted);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
 .list {
   display: grid;
-  gap: 10px;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -86,26 +86,26 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px;
-  padding: 13px;
+  gap: var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .list > li.accepted {
-  border-color: #cde0d3;
-  background: #f4faf6;
+  border-color: var(--color-line);
+  background: var(--color-canvas);
 }
 
 .proposal {
   display: grid;
   min-width: 0;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .proposal strong {
-  font-size: 13px;
+  font-size: var(--font-size-body);
   line-height: 1.4;
 }
 
@@ -113,7 +113,7 @@
 .proposal small {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -121,22 +121,22 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .acceptedLabel {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  color: #357052;
-  font-size: 12px;
-  font-weight: 800;
+  gap: var(--space-1);
+  color: var(--color-accent);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
 }
 
 .error {
-  color: #9a4239;
-  font-size: 12px;
-  line-height: 1.45;
+  color: var(--color-danger);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-body);
 }
 
 .visuallyHidden {
@@ -164,7 +164,7 @@
 
 @media (max-width: 620px) {
   .panel {
-    padding: 16px;
+    padding: var(--space-4);
   }
 
   .controls,

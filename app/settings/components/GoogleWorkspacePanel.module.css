@@ -3,45 +3,45 @@
 }
 
 .statusModeNeutral {
-  background: #f0eeeb;
-  color: #6c655f;
+  background: var(--color-line-soft);
+  color: var(--color-ink-muted);
 }
 
 .stageChipNeutral {
-  background: #f0eeeb;
-  color: #6c655f;
+  background: var(--color-line-soft);
+  color: var(--color-ink-muted);
 }
 
 .connectionActions {
   display: grid;
-  gap: 13px;
-  padding: 14px;
+  gap: var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: #fcfaf7;
+  background: var(--color-surface-muted);
 }
 
 .connectionActionsHeader {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .connectionActionsHeader > div:last-child {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .connectionActionsHeader h3 {
   margin: 0;
-  font: 700 13px/1.35 var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-body)/1.35 var(--font-ui);
 }
 
 .connectionActionsHeader p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
@@ -58,9 +58,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   min-height: var(--target-min);
-  padding: 12px 14px;
+  padding: var(--space-3) var(--space-3);
   list-style: none;
   cursor: pointer;
 }
@@ -70,31 +70,31 @@
 }
 
 .connectionHealthToggle:focus-visible {
-  outline: 2px solid #4f765e;
+  outline: 2px solid var(--color-ink-muted);
   outline-offset: -3px;
   border-radius: var(--radius-control);
 }
 
 .connectionHealthToggleCopy {
   display: grid;
-  gap: 2px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .connectionHealthToggleCopy > strong {
-  font: 700 13px/1.35 var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-body)/1.35 var(--font-ui);
 }
 
 .connectionHealthToggleCopy > span:last-child {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
 .connectionHealthChevron {
   flex: 0 0 auto;
-  color: #6d675f;
-  transition: transform 0.16s ease;
+  color: var(--color-ink-muted);
+  transition: transform var(--motion-duration-standard) var(--motion-ease);
 }
 
 .connectionHealthExpander[open] .connectionHealthChevron {
@@ -103,8 +103,8 @@
 
 .connectionHealthBody {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: var(--space-3);
+  padding: var(--space-3);
   border-top: 1px solid var(--line);
 }
 
@@ -114,7 +114,7 @@
 
 .connectionHealthAccount > div {
   min-width: 0;
-  padding: 10px 11px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   background: var(--surface);
@@ -122,15 +122,15 @@
 
 .connectionHealthAccount dt {
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
 }
 
 .connectionHealthAccount dd {
   margin: 4px 0 0;
   color: var(--ink);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
   overflow-wrap: anywhere;
 }
 
@@ -147,7 +147,7 @@
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: #fcfaf7;
+  background: var(--color-surface-muted);
 }
 
 .stageThreeBlueprint,
@@ -179,10 +179,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-2);
   width: 100%;
   min-height: 58px;
-  padding: 11px 12px 11px 14px;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-3);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -194,13 +194,13 @@
 .stageThreeSubsectionToggle:focus-visible {
   position: relative;
   z-index: 1;
-  outline: 2px solid #4f765e;
+  outline: 2px solid var(--color-ink-muted);
   outline-offset: -3px;
 }
 
 .stageThreeSubsectionCopy {
   display: grid;
-  gap: 3px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -210,13 +210,13 @@
 
 .stageThreeSubsectionTitle {
   color: var(--ink);
-  font: 700 13px/1.35 var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-body)/1.35 var(--font-ui);
 }
 
 .stageThreeSubsectionChevron {
   flex: 0 0 auto;
-  color: #6d675f;
-  transition: transform 0.16s ease;
+  color: var(--color-ink-muted);
+  transition: transform var(--motion-duration-standard) var(--motion-ease);
 }
 
 .stageThreeSubsectionOpen .stageThreeSubsectionChevron {
@@ -229,13 +229,13 @@
   justify-content: center;
   min-height: 28px;
   margin-right: 14px;
-  padding: 5px 9px;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
-  background: #f0eeeb;
-  color: #6c655f;
-  font-size: 12px;
-  font-weight: 850;
-  line-height: 1.2;
+  background: var(--color-accent-soft);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-heading);
   letter-spacing: 0.03em;
   text-align: center;
   white-space: nowrap;
@@ -243,7 +243,7 @@
 
 .stageThreeSubsectionBody {
   min-width: 0;
-  padding: 14px;
+  padding: var(--space-3);
   border-top: 1px solid var(--line);
 }
 
@@ -254,24 +254,24 @@
 .stageThreeBlueprint .stageThreeSubsectionBody > p {
   margin: 0 0 12px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
 .stageFourFrame {
   display: grid;
-  gap: 18px;
+  gap: var(--space-4);
   min-width: 0;
 }
 
 .verificationGroup {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
   min-width: 0;
-  padding: 14px;
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: #fcfaf7;
+  background: var(--color-surface-muted);
 }
 
 .stageFourGroupHeader,
@@ -280,7 +280,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .stageFourGroupHeader > div {
@@ -293,49 +293,49 @@
 .ongoingToolHeading h4 {
   margin: 0;
   color: var(--ink);
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
 }
 
 .stageFourGroupHeader h3,
 .ongoingGroupHeader h3 {
-  font-size: 14px;
-  line-height: 1.35;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-caption);
 }
 
 .verificationList,
 .ongoingList {
   display: grid;
-  gap: 10px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .verificationRow,
 .ongoingTool {
   display: grid;
-  gap: 10px;
+  gap: var(--space-2);
   min-width: 0;
-  padding: 12px;
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .verificationRowComplete {
-  border-color: #bad0c1;
-  background: #fbfdfb;
+  border-color: var(--color-line);
+  background: var(--color-surface);
 }
 
 .verificationRowHeading,
 .ongoingToolHeading {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .verificationRowHeading h4,
 .ongoingToolHeading h4 {
-  font-size: 13px;
+  font-size: var(--font-size-body);
   line-height: 1.4;
 }
 
@@ -346,25 +346,25 @@
   align-items: center;
   justify-content: center;
   min-height: 26px;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
-  background: #f0eeeb;
-  color: #6c655f;
-  font-size: 12px;
-  font-weight: 850;
+  background: var(--color-accent-soft);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
   line-height: 1.25;
   letter-spacing: 0.03em;
   text-align: center;
 }
 
 .verificationStateReady {
-  background: #eaf3ed;
-  color: #35674d;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .verificationBody {
   display: grid;
-  gap: 10px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -376,42 +376,42 @@
 
 .ongoingGroup {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
   min-width: 0;
-  padding: 14px;
-  border: 1px dashed #d8cec1;
+  padding: var(--space-3);
+  border: 1px dashed var(--color-line);
   border-radius: var(--radius-card);
-  background: #f8f5ef;
+  background: var(--color-canvas);
 }
 
 .ongoingGroupHeader {
   display: grid;
-  gap: 3px;
+  gap: var(--space-1);
 }
 
 .ongoingGroupHeader p,
 .ongoingToolBody > p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
 .ongoingTool {
-  background: #fdfbf8;
+  background: var(--color-surface-muted);
 }
 
 .ongoingToolBody {
   display: grid;
   justify-items: start;
-  gap: 9px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .ongoingStatePlanned {
-  border: 1px dashed #cfc5b8;
+  border: 1px dashed var(--color-line);
   background: transparent;
-  color: #756e67;
+  color: var(--color-ink-muted);
 }
 
 .ongoingToolBody > :global(.soft-button) {
@@ -433,7 +433,7 @@
 
 @media (max-width: 560px) {
   .connectionActions {
-    padding: 12px;
+    padding: var(--space-3);
   }
 
   .connectionActionsHeader {
@@ -448,8 +448,8 @@
 
   .connectionHealthToggle,
   .connectionHealthBody {
-    padding-right: 12px;
-    padding-left: 12px;
+    padding-right: var(--space-3);
+    padding-left: var(--space-3);
   }
 
   .stageThreeSubsectionHeader {
@@ -459,8 +459,8 @@
 
   .stageThreeSubsectionToggle {
     min-height: 56px;
-    padding-right: 10px;
-    padding-left: 12px;
+    padding-right: var(--space-2);
+    padding-left: var(--space-3);
   }
 
   .stageThreeSubsectionStatus {
@@ -470,12 +470,12 @@
   }
 
   .stageThreeSubsectionBody {
-    padding: 12px;
+    padding: var(--space-3);
   }
 
   .verificationGroup,
   .ongoingGroup {
-    padding: 12px;
+    padding: var(--space-3);
   }
 
   .stageFourGroupHeader,

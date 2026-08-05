@@ -1,13 +1,13 @@
 .reconcileBody {
   display: grid;
-  gap: 10px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .reconcileBody > p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
@@ -16,7 +16,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -25,21 +25,21 @@
 .status,
 .informational {
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-body);
 }
 
 .error {
-  color: #8b3a31;
+  color: var(--color-danger);
 }
 
 .inSync {
-  padding: 10px 12px;
-  border: 1px solid #bad0c1;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-control);
-  background: #f3f8f4;
-  color: #35674d !important;
-  font-weight: 750;
+  background: var(--color-canvas);
+  color: var(--color-accent) !important;
+  font-weight: var(--font-weight-semibold);
 }
 
 .reconcileTable {
@@ -59,18 +59,18 @@
 .reconcileTable td > a {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   margin-top: 4px;
   color: var(--forest);
-  font-size: 12px;
-  font-weight: 750;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
 }
 
 .reconcileTable td > small {
   display: block;
   margin-top: 5px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
@@ -78,41 +78,41 @@
   display: inline-flex;
   align-items: center;
   min-height: 26px;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
-  font-size: 12px;
-  font-weight: 850;
-  line-height: 1.2;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-heading);
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
 .missing,
 .renamed {
-  background: #fff3d6;
-  color: #785c18;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 
 .unmanaged {
-  background: #f0eeeb;
-  color: #6c655f;
+  background: var(--color-accent-soft);
+  color: var(--color-ink-muted);
 }
 
 .names {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   margin: 0;
 }
 
 .names > div {
   display: grid;
-  gap: 1px;
+  gap: var(--space-1);
 }
 
 .names dt {
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -120,7 +120,7 @@
 .names dd {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--font-size-body);
 }
 
 .actionList > :global(.administrator-action-control) {

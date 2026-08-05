@@ -69,7 +69,7 @@ test("NFIX-06 contains the Testing & launch setup action inside its tablet card"
   // covers the whole failing range. Projects needs 960; this does not.
   const { rules } = mediaRules(globals, "min-width:821px) and (max-width:900px");
   assert.match(rules.get(".test-launch .settings-heading") ?? "", /display:grid/);
-  assert.match(rules.get(".test-launch .settings-heading") ?? "", /gap:12px/);
+  assert.match(rules.get(".test-launch .settings-heading") ?? "", /gap:var\(--space-3\)/);
   assert.match(rules.get(".test-launch .settings-heading>.primary-button") ?? "", /width:100%/);
 });
 

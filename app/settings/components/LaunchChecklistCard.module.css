@@ -5,14 +5,14 @@
 .developmentBoundary {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
+  gap: var(--space-2);
   margin: 0 0 18px;
-  padding: 12px;
-  border: 1px solid #ead8c5;
+  padding: var(--space-3);
+  border: 1px solid var(--color-warning);
   border-radius: var(--radius-control);
-  background: #fff9f1;
-  color: #7b6250;
-  font-size: 12px;
+  background: var(--color-warning-soft);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
@@ -22,8 +22,8 @@
 
 .group {
   display: grid;
-  gap: 10px;
-  padding-top: 17px;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--line-soft);
 }
 
@@ -35,7 +35,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .groupHeading h3,
@@ -45,14 +45,14 @@
 
 .groupHeading h3 {
   color: var(--ink);
-  font: 700 13px var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-body) var(--font-ui);
 }
 
 .groupHeading p {
   max-width: 610px;
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
@@ -60,30 +60,30 @@
 .readOnly {
   flex: 0 0 auto;
   border-radius: var(--radius-pill);
-  background: #f0ece7;
-  color: #6e655e;
-  padding: 4px 8px;
-  font-size: 11px;
-  font-weight: 800;
+  background: var(--color-accent-soft);
+  color: var(--color-ink-muted);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
 }
 
 .rows {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .liveRow,
 .attestationRow {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--space-2);
   min-width: 0;
   min-height: 54px;
-  padding: 12px;
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  background: #fcfbf9;
+  background: var(--color-surface);
 }
 
 .liveRow > :global(.status),
@@ -117,36 +117,36 @@
 }
 
 .verifiedIcon {
-  color: #397056;
+  color: var(--color-accent);
 }
 
 .simulatedIcon {
-  color: #405f8a;
+  color: var(--color-info);
 }
 
 .pendingIcon {
-  color: #8a613d;
+  color: var(--color-warning);
 }
 
 /* Honest "Simulated" pill for the local development simulation, matching the
    app's existing simulated status tone. The child combinator keeps it above the
    global .status base without touching the locked globals.css. */
 .liveRow > .simulatedPill {
-  background: #e9eef7;
-  color: #405f8a;
+  background: var(--color-info-soft);
+  color: var(--color-info);
 }
 
 .simulationNote {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0;
-  padding: 10px 12px;
-  border: 1px solid #d5deec;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-line-soft);
   border-radius: var(--radius-control);
-  background: #f2f5fb;
-  color: #405f8a;
-  font-size: 12px;
+  background: var(--color-canvas);
+  color: var(--color-info);
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
@@ -158,36 +158,36 @@
   display: grid;
   min-width: 0;
   flex: 1 1 auto;
-  gap: 3px;
+  gap: var(--space-1);
 }
 
 .rowCopy strong {
   color: var(--ink);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
 }
 
 .rowCopy small {
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-body);
 }
 
 .auditLine {
-  color: #4d725d !important;
+  color: var(--color-accent) !important;
 }
 
 .error {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 14px 0 0;
-  padding: 11px 12px;
-  border: 1px solid #ebc9c5;
+  padding: var(--space-3) var(--space-3);
+  border: 1px solid var(--color-danger);
   border-radius: var(--radius-control);
-  background: #fff7f6;
-  color: #9a4239;
-  font-size: 12px;
-  line-height: 1.45;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
 }
 
 .error svg {

@@ -1,16 +1,16 @@
 .creationCard {
   min-width: 0;
   margin: 0;
-  padding: 15px;
+  padding: var(--space-4);
   border-color: var(--line);
-  background: #fcfaf7;
+  background: var(--color-surface-muted);
 }
 
 .cardHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   margin-bottom: 8px;
 }
 
@@ -24,11 +24,11 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-pill);
-  background: #f0eeeb;
-  color: #6c655f;
-  font-size: 12px;
-  font-weight: 850;
-  line-height: 1.2;
+  background: var(--color-accent-soft);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-heading);
   letter-spacing: 0.03em;
   text-align: center;
   white-space: nowrap;
@@ -36,20 +36,20 @@
 
 .progressChip {
   min-height: 28px;
-  padding: 5px 9px;
+  padding: var(--space-1) var(--space-2);
 }
 
 .cardIntro {
   margin: 0 0 13px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
 .resourceMessage {
   margin: 0 0 12px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
@@ -57,15 +57,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-2);
   margin: 0 0 12px;
-  padding: 9px 10px;
-  border: 1px solid #e6d2c8;
+  padding: var(--space-2) var(--space-2);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-control);
-  background: #fff7f4;
-  color: #805347;
-  font-size: 12px;
-  line-height: 1.45;
+  background: var(--color-surface-muted);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
 }
 
 .creationList {
@@ -81,8 +81,8 @@
   position: relative;
   display: grid;
   grid-template-columns: 31px minmax(0, 1fr);
-  gap: 10px;
-  padding: 0 0 12px;
+  gap: var(--space-2);
+  padding: 0 0 var(--space-3);
 }
 
 .creationRow:last-child {
@@ -100,7 +100,7 @@
 }
 
 .creationRowComplete:not(:last-child)::before {
-  background: #aac5b3;
+  background: var(--color-line-strong);
 }
 
 .rowNumber {
@@ -112,69 +112,69 @@
   height: 31px;
   border: 1px solid var(--line);
   border-radius: 50%;
-  background: #f7f4f0;
-  color: #68615b;
-  font-size: 12px;
-  font-weight: 850;
+  background: var(--color-canvas);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
 }
 
 .creationRowComplete .rowNumber {
-  border-color: #9fbba8;
-  background: #eaf3ed;
-  color: #35674d;
+  border-color: var(--color-line-strong);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .rowBody {
   display: grid;
-  gap: 9px;
+  gap: var(--space-2);
   min-width: 0;
-  padding: 11px;
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .creationRowLocked .rowBody {
   border-style: dashed;
-  background: #faf8f5;
+  background: var(--color-surface-muted);
 }
 
 .rowBody > header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 9px;
+  gap: var(--space-2);
 }
 
 .rowHeading {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .rowHeading h4 {
   margin: 0;
   color: var(--ink);
-  font: 750 12px/1.35 var(--font-display);
+  font: var(--font-weight-semibold) var(--font-size-caption)/1.35 var(--font-ui);
 }
 
 .stateChip {
   flex: 0 0 auto;
   min-height: 24px;
-  padding: 4px 7px;
+  padding: var(--space-1) var(--space-2);
 }
 
 .stateChipDone {
-  background: #eaf3ed;
-  color: #35674d;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .unlockCaption {
   margin: -2px 0 0;
-  color: #756e67;
-  font-size: 12px;
-  font-weight: 700;
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
   line-height: 1.4;
 }
 
@@ -187,7 +187,7 @@
      buttons ran up to 146px past the viewport, unreachable. With minmax(0,1fr) the flex
      row gets the real column width and wraps; when space suffices nothing changes. */
   grid-template-columns: minmax(0, 1fr);
-  gap: 7px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -195,7 +195,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .actionButtons :global(.soft-button),
@@ -203,10 +203,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--space-1);
   min-height: var(--control-compact);
-  padding: 6px 9px;
-  font-size: 12px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-caption);
 }
 
 .restrictionsChip,
@@ -214,55 +214,55 @@
 .actionNote {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
   width: max-content;
   max-width: 100%;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
 .restrictionsChip {
   border-radius: var(--radius-pill);
-  padding: 4px 7px;
-  background: #f0eeeb;
-  color: #6c655f;
-  font-weight: 800;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-accent-soft);
+  color: var(--color-ink-muted);
+  font-weight: var(--font-weight-semibold);
 }
 
 .restrictionsVerified {
-  background: #eaf3ed;
-  color: #35674d;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .restrictionsWarning {
-  background: #f7ede2;
-  color: #805b38;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 
 .resourceLocked {
-  color: #675f58;
-  font-weight: 700;
+  color: var(--color-ink-muted);
+  font-weight: var(--font-weight-bold);
 }
 
 .driveCandidates {
   display: flex;
   align-items: flex-end;
   flex-wrap: wrap;
-  gap: 7px;
-  padding: 9px;
-  border: 1px solid #e1d8cc;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-control);
-  background: #fffaf4;
+  background: var(--color-surface-muted);
 }
 
 .driveCandidates label {
   display: grid;
   flex: 1 1 220px;
-  gap: 4px;
-  color: #5c554f;
-  font-size: 12px;
-  font-weight: 700;
+  gap: var(--space-1);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
 }
 
 .driveCandidates select,
@@ -271,17 +271,17 @@
   min-height: var(--control-compact);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  background: #fff;
-  padding: 6px 8px;
+  background: var(--color-surface);
+  padding: var(--space-1) var(--space-2);
   color: var(--ink);
-  font: 600 12px var(--font-ui);
+  font: var(--font-weight-semibold) var(--font-size-caption) var(--font-ui);
 }
 
 .renameForm {
   display: grid;
   grid-template-columns: minmax(130px, 1fr) auto auto;
   align-items: end;
-  gap: 6px;
+  gap: var(--space-1);
   width: 100%;
 }
 
@@ -294,12 +294,12 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   min-height: var(--control-compact);
-  padding: 5px 1px 0;
-  color: #675f58;
-  font-size: 12px;
-  font-weight: 800;
+  padding: var(--space-1) var(--space-1) 0;
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
   list-style: none;
   cursor: pointer;
 }
@@ -309,7 +309,7 @@
 }
 
 .resourceDetails > summary:focus-visible {
-  outline: 2px solid #4f765e;
+  outline: 2px solid var(--color-ink-muted);
   outline-offset: 2px;
   border-radius: var(--radius-chip);
 }
@@ -320,12 +320,12 @@
   min-width: 22px;
   min-height: 22px;
   border-radius: var(--radius-pill);
-  background: #f0eeeb;
-  color: #6c655f;
+  background: var(--color-accent-soft);
+  color: var(--color-ink-muted);
 }
 
 .resourceDetails > summary svg {
-  transition: transform 0.16s ease;
+  transition: transform var(--motion-duration-standard) var(--motion-ease);
 }
 
 .resourceDetails[open] > summary svg {
@@ -334,7 +334,7 @@
 
 .resourceDetails ul {
   display: grid;
-  gap: 7px;
+  gap: var(--space-2);
   margin: 7px 0 0;
   padding: 0;
   list-style: none;
@@ -344,30 +344,30 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-2);
   min-width: 0;
-  padding: 8px;
+  padding: var(--space-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  background: #fbfaf8;
+  background: var(--color-surface-muted);
 }
 
 .resourceCopy {
   display: grid;
-  gap: 2px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .resourceCopy strong {
   color: var(--ink);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   overflow-wrap: anywhere;
 }
 
 .resourceCopy small {
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
   overflow-wrap: anywhere;
 }
 
@@ -375,33 +375,33 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1);
   margin-top: 3px;
-  color: #756e67;
-  font-size: 12px;
-  font-weight: 700;
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
 }
 
 .resourceState {
   display: inline-flex;
   border-radius: var(--radius-pill);
-  padding: 3px 6px;
-  font-weight: 850;
+  padding: var(--space-1) var(--space-1);
+  font-weight: var(--font-weight-semibold);
 }
 
 .resourceStateDone {
-  background: #eaf3ed;
-  color: #35674d;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .resourceStateFound {
-  background: #f6eee5;
-  color: #7b542e;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 
 .resourceStateNeutral {
-  background: #f0eeeb;
-  color: #6c655f;
+  background: var(--color-accent-soft);
+  color: var(--color-ink-muted);
 }
 
 .resourceItemActions {
@@ -414,13 +414,13 @@
 .emptyDetails {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-body);
   line-height: 1.4;
 }
 
 @media (max-width: 560px) {
   .creationCard {
-    padding: 12px;
+    padding: var(--space-3);
   }
 
   .cardHeader {
@@ -433,7 +433,7 @@
 
   .creationRow {
     grid-template-columns: 27px minmax(0, 1fr);
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .creationRow:not(:last-child)::before {
@@ -447,7 +447,7 @@
   }
 
   .rowBody {
-    padding: 10px;
+    padding: var(--space-2);
   }
 
   .rowBody > header {
