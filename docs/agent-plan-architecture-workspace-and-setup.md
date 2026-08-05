@@ -3723,6 +3723,66 @@ are pinned byte-for-byte by **four** suites, not three;
 **Effort:** large. **Cost:** $0. **Takes the FloorOpsApp slot** (claimed in the tail by
 this filing — see the FloorOpsApp claim-list tail).
 
+### DES-26 · The vanishing retry: background revalidation unmounts an error notice mid-click (small-medium; after SET-42)
+
+**Why:** proven August 5, 2026 while fixing PR #319, not inferred. SET-42 gave settings panels
+two recovery paths: the explicit Retry button, and lifecycle revalidation. An instrumented probe
+that healed a failing endpoint and never clicked anything measured the panel self-recovering
+~206 ms later with `Retry buttons still in DOM: 0`. The CI call log for the same race reads
+`element was detached from the DOM, retrying`. Self-healing is correct and desirable — the defect
+is that the affordance disappears **while a person is reaching for it**, so the click lands on
+whatever replaced it. This is the adoption lens applied literally: a control that moves under the
+user is worse than one that fails honestly.
+**Do:** make an error notice's recovery affordance stable under background recovery. Either keep
+the notice mounted until it is dismissed or its retry completes (swapping its content, not its
+identity), or suppress the swap while the pointer is over the control. Decide deliberately and
+record which, because they differ for keyboard users. Apply to the shared error-notice component
+so every panel inherits it rather than fixing one site.
+**Accept:** a test proves that healing the endpoint while the pointer is over Retry does not
+detach the button, and that the panel still reaches `ready`; the existing self-recovery behaviour
+is unchanged when nobody is interacting; `npm test`, `npm run test:e2e`, `npm run lint` named
+with outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
+### NFIX-09 · Every merge to main cancels the previous merge's verification (small; CI only)
+
+**Why:** `.github/workflows/ci.yml` sets `cancel-in-progress: true` on a concurrency group keyed
+on `github.ref`, which is CONSTANT for pushes to `main`. So each merge kills the still-running
+verification of the merge before it. Run 30968742912 — the DES-13 drift guard's own run — was
+cancelled 18 seconds after the next merge landed. The consequence is not theoretical: twice on
+August 5 the question "is main red?" could not be answered from CI, and the verification-block
+law had to tell agents to skip `cancelled` runs entirely because main's newest run is so often
+one. A red main blocks every open PR under the strict ruleset, so main's signal existing is a
+precondition for the whole merge pipeline.
+**Do:** change line 14 to `cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}` so PR
+branches still cancel superseded runs while main always completes its verification.
+**Constraints:** `tests/google-cloud-deployment-source.test.mjs` pins `/^  pull_request:\s*$/m`
+in this workflow — confirm the edit does not disturb it rather than assuming.
+**Accept:** two merges to main in quick succession both produce completed runs; the pinned
+assertion still passes; `npm test` named with outcome.
+**Effort:** small. **Cost:** $0.
+
+### NFIX-10 · 256 type errors nobody runs (medium; quality gate)
+
+**Why:** measured August 5, 2026 during the SET-07 review. `tsc -p tsconfig.json --noEmit`
+reports 256 errors on main, and **no CI step runs it**: `npm run build` is `vinext build`
+(esbuild strips types without checking), `build:cloud-run`'s tsconfig covers only
+production-runtime paths and never loads `app/settings`, and `npm run lint` is not type-aware.
+This is not cosmetic — TypeScript had ALREADY detected SET-07's dead e2e guard as
+`TS2367: This comparison appears to be unintentional` and nobody saw it, because nothing looks.
+A checker whose output no one reads is the same defect class as a test that cannot fail.
+**Do:** triage the 256 into (a) real defects, (b) mechanical import-extension noise (`TS5097`),
+and (c) environment declarations (`cloudflare:workers`). Fix (a). Resolve (b) and (c) by
+configuration if possible. Then add a CI step running the root typecheck, with an explicit,
+commented baseline if a clean zero is not reachable in one pass — a baseline that can only
+shrink is honest; a suppressed checker is not.
+**Constraints:** do not silence errors with `any` or `@ts-expect-error` without naming the
+reason inline. Do not weaken `strict`.
+**Accept:** the root typecheck runs in CI and fails on a NEW error (prove it with a deliberate
+mutation, then revert); the remaining count is recorded with its composition; every fix in
+category (a) is named individually in the PR body with what it would have broken.
+**Effort:** medium. **Cost:** $0.
+
 ### DES-14b · FloorOpsApp decomposition: the modal and drawer cluster (large, after DES-14)
 
 **Why:** filed August 5, 2026 after measuring the file rather than assuming it. DES-14 as 
