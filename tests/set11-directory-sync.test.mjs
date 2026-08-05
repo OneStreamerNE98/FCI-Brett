@@ -56,8 +56,8 @@ test("SET-11 unconfigured guidance names only the fallback key and deep-links to
   assert.match(panel, /Set up the Client Directory spreadsheet in Workspace Stage 3/);
   assert.doesNotMatch(panel, /process\.env|env\[[^\]]+\]/);
 
-  assert.match(guide, /\*\*Refresh status\*\* checks the latest recorded mirror state without running a sync/);
-  assert.match(guide, /formats the recorded `lastSyncedAt` as a readable local date and time while showing `lastError` exactly as the mirror status returned it/);
-  assert.match(guide, /`GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` remains a bootstrap fallback/);
-  assert.match(guide, /Google Workspace → Stage 3/);
+  assert.match(guide, /\*\*Refresh\s+status\*\*\s+checks\s+the\s+latest\s+recorded\s+mirror\s+state\s+without\s+running\s+a\s+sync/);
+  assert.match(guide, /formats\s+the\s+recorded\s+`lastSyncedAt`\s+as\s+a\s+readable\s+local\s+date\s+and\s+time\s+while\s+showing\s+`lastError`\s+exactly\s+as\s+the\s+mirror\s+status\s+returned\s+it/);
+  assert.match(guide, /`GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID`\s+remains\s+a\s+bootstrap\s+fallback/);
+  assert.match(guide, /Google\s+Workspace\s+→\s+Stage\s+3/);
 });

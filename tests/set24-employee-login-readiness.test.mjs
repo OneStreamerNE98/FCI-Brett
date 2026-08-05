@@ -232,7 +232,7 @@ test("SET-24 updates the ledger and both guide sections", async () => {
     packet,
     /\*\*Status:\*\* Complete — PR #158, July 24, 2026\. Source-only and undeployed\./,
   );
-  assert.match(guide, /### 9\. Testing & launch[\s\S]+Employee-login readiness/);
-  assert.match(guide, /## Users and access[\s\S]+A real zero invitations is shown as zero; an unavailable projection is shown as unavailable/);
-  assert.match(guide, /30-minute idle limit and an eight-hour absolute limit/);
+  assert.match(guide, /###\s+9\.\s+Testing\s+&\s+launch[\s\S]+Employee-login\s+readiness/);
+  assert.match(guide, /##\s+Users\s+and\s+access[\s\S]+A\s+real\s+zero\s+invitations\s+is\s+shown\s+as\s+zero;\s+an\s+unavailable\s+projection\s+is\s+shown\s+as\s+unavailable/);
+  assert.match(guide, /30-minute\s+idle\s+limit\s+and\s+an\s+eight-hour\s+absolute\s+limit/);
 });
