@@ -46,8 +46,8 @@ beforeEach(() => {
   };
 });
 
-function routeRequest(email = ADMIN_EMAIL) {
-  const url = new URL("/api/v1/integrations/google/operations", APP_ORIGIN);
+function routeRequest(email = ADMIN_EMAIL, search = "") {
+  const url = new URL(`/api/v1/integrations/google/operations${search}`, APP_ORIGIN);
   const headers = new Headers();
   if (email) headers.set("oai-authenticated-user-email", email);
   const request = new Request(url, { method: "GET", headers });
@@ -164,6 +164,16 @@ function fakeDatabase() {
     ],
   };
 
+  function applyCursor(rows, timestampKey, idKey, cursorValues, valuesStartIndex) {
+    if (cursorValues.length <= valuesStartIndex) return rows;
+    const cursorTs = cursorValues[valuesStartIndex];
+    const cursorId = cursorValues[valuesStartIndex + 2];
+    return rows.filter((row) => (
+      row[timestampKey] < cursorTs
+      || (row[timestampKey] === cursorTs && row[idKey] < cursorId)
+    ));
+  }
+
   return {
     state,
     prepare(sql) {
@@ -178,33 +188,36 @@ function fakeDatabase() {
           const connectionKey = query.values[0];
           if (/FROM google_drive_operations/u.test(sql)) {
             const checkedAt = query.values[1];
-            return {
-              results: state.driveOperations
-                .filter((row) => row.connection_key === connectionKey)
-                .filter((row) => (
-                  row.status === "failed"
-                  || (
-                    ["in-progress", "committing"].includes(row.status)
-                    && row.lease_expires_at !== null
-                    && row.lease_expires_at <= checkedAt
-                  )
-                ))
-                .sort((left, right) => right.updated_at - left.updated_at),
-            };
+            let results = state.driveOperations
+              .filter((row) => row.connection_key === connectionKey)
+              .filter((row) => (
+                row.status === "failed"
+                || (
+                  ["in-progress", "committing"].includes(row.status)
+                  && row.lease_expires_at !== null
+                  && row.lease_expires_at <= checkedAt
+                )
+              ));
+            if (query.values.length > 2) {
+              results = applyCursor(results, "updated_at", "id", query.values.slice(2), 0);
+            }
+            return { results: results.sort((left, right) => right.updated_at - left.updated_at) };
           }
           if (/FROM gmail_file_archives/u.test(sql)) {
-            return {
-              results: state.archives
-                .filter((row) => row.connection_key === connectionKey && row.status === "failed")
-                .sort((left, right) => right.updated_at - left.updated_at),
-            };
+            let results = state.archives
+              .filter((row) => row.connection_key === connectionKey && row.status === "failed");
+            if (query.values.length > 1) {
+              results = applyCursor(results, "updated_at", "id", query.values.slice(1), 0);
+            }
+            return { results: results.sort((left, right) => right.updated_at - left.updated_at) };
           }
           if (/FROM google_integration_events/u.test(sql)) {
-            return {
-              results: state.events
-                .filter((row) => row.connection_key === connectionKey)
-                .sort((left, right) => right.created_at - left.created_at),
-            };
+            let results = state.events
+              .filter((row) => row.connection_key === connectionKey);
+            if (query.values.length > 1) {
+              results = applyCursor(results, "created_at", "id", query.values.slice(1), 0);
+            }
+            return { results: results.sort((left, right) => right.created_at - left.created_at) };
           }
           throw new Error(`Unexpected operations query: ${sql}`);
         },
@@ -212,6 +225,24 @@ function fakeDatabase() {
       return statement;
     },
   };
+}
+
+function fakeDatabaseWithManyEvents(count) {
+  const db = fakeDatabase();
+  const now = Date.now();
+  for (let i = 0; i < count; i++) {
+    db.state.events.push({
+      id: `event-many-${i}`,
+      connection_key: "workspace-simulation",
+      event_type: "test.bulk_event",
+      actor: ADMIN_EMAIL,
+      entity_type: "project",
+      entity_id: `project-bulk-${i}`,
+      detail: `index=${i}`,
+      created_at: now - 1000 - i,
+    });
+  }
+  return db;
 }
 
 function simulationEnvironment(database) {
@@ -255,6 +286,97 @@ test("admin enumerates current-connection failures and activity in simulation wi
   assert.equal(database.state.queries.length, 3);
   assert.equal(database.state.queries.every(({ sql }) => /^\s*SELECT\b/u.test(sql)), true);
   assert.equal(database.state.queries.every(({ values }) => values[0] === "workspace-simulation"), true);
+  // No nextCursor when hasMore is false
+  assert.equal(body.driveOperations.nextCursor, undefined);
+  assert.equal(body.failedArchives.nextCursor, undefined);
+  assert.equal(body.events.nextCursor, undefined);
+});
+
+test("opaque cursor paginates events past 50 items", async () => {
+  const database = fakeDatabaseWithManyEvents(55);
+  simulationEnvironment(database);
+
+  // First page: no cursor
+  const firstResponse = await route.GET(routeRequest());
+  const firstBody = await firstResponse.json();
+  assert.equal(firstResponse.status, 200);
+  assert.equal(firstBody.events.items.length, 50);
+  assert.equal(firstBody.events.hasMore, true);
+  assert.ok(firstBody.events.nextCursor, "first page must return nextCursor");
+  assert.ok(typeof firstBody.events.nextCursor === "string", "nextCursor must be a string");
+
+  // Second page: with cursor
+  const secondResponse = await route.GET(routeRequest(ADMIN_EMAIL, `?category=events&cursor=${encodeURIComponent(firstBody.events.nextCursor)}`));
+  const secondBody = await secondResponse.json();
+  assert.equal(secondResponse.status, 200);
+  assert.equal(secondBody.events.items.length, 7);
+  assert.equal(secondBody.events.hasMore, false);
+  assert.equal(secondBody.events.hasMore, false);
+  assert.equal(secondBody.events.nextCursor, undefined);
+
+  // No overlap between pages
+  const firstIds = new Set(firstBody.events.items.map((e) => e.id));
+  const secondIds = new Set(secondBody.events.items.map((e) => e.id));
+  for (const id of secondIds) {
+    assert.equal(firstIds.has(id), false, `event ${id} must not appear on both pages`);
+  }
+});
+
+test("category param limits which tables are queried", async () => {
+  const database = fakeDatabase();
+  simulationEnvironment(database);
+
+  const response = await route.GET(routeRequest(ADMIN_EMAIL, "?category=events"));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.driveOperations.items.length, 0);
+  assert.equal(body.failedArchives.items.length, 0);
+  assert.equal(body.events.items.length, 2);
+  assert.equal(database.state.queries.length, 1);
+  assert.match(database.state.queries[0].sql, /FROM google_integration_events/u);
+});
+
+test("unknown or malformed category param returns typed 400", async () => {
+  const database = fakeDatabase();
+  simulationEnvironment(database);
+
+  const unknown = await route.GET(routeRequest(ADMIN_EMAIL, "?category=drive,unknown"));
+  assert.equal(unknown.status, 400);
+  const unknownBody = await unknown.json();
+  assert.ok(unknownBody.error.includes("Invalid category"), "unknown category must name the error");
+
+  const wrongCase = await route.GET(routeRequest(ADMIN_EMAIL, "?category=Events"));
+  assert.equal(wrongCase.status, 400, "wrong case must be rejected");
+
+  const commaOnly = await route.GET(routeRequest(ADMIN_EMAIL, "?category=,"));
+  assert.equal(commaOnly.status, 400, "comma-only must be rejected");
+
+  const valid = await route.GET(routeRequest(ADMIN_EMAIL, "?category=events"));
+  assert.equal(valid.status, 200, "valid category must succeed");
+
+  const absent = await route.GET(routeRequest(ADMIN_EMAIL, ""));
+  assert.equal(absent.status, 200, "absent category must query all");
+});
+
+test("bad cursor returns typed 400 instead of silent page-1 read", async () => {
+  const database = fakeDatabase();
+  simulationEnvironment(database);
+
+  const notBase64 = await route.GET(routeRequest(ADMIN_EMAIL, "?cursor=not-valid-base64!!!"));
+  assert.equal(notBase64.status, 400, "non-base64 cursor must be rejected");
+
+  const wrongShape = await route.GET(routeRequest(ADMIN_EMAIL, `?cursor=${btoa(JSON.stringify(["array"]))}`));
+  assert.equal(wrongShape.status, 400, "array cursor must be rejected");
+
+  const nonObject = await route.GET(routeRequest(ADMIN_EMAIL, `?cursor=${btoa("42")}`));
+  assert.equal(nonObject.status, 400, "non-object cursor must be rejected");
+
+  const truncated = await route.GET(routeRequest(ADMIN_EMAIL, `?cursor=${btoa(JSON.stringify({ d: [1] })).slice(0, -2)}`));
+  assert.equal(truncated.status, 400, "truncated cursor must be rejected");
+
+  const wellFormed = await route.GET(routeRequest(ADMIN_EMAIL, `?cursor=${btoa(JSON.stringify({ e: [Date.now(), "x"] }))}`));
+  assert.equal(wellFormed.status, 200, "well-formed cursor must succeed");
 });
 
 test("office and unauthenticated callers are denied before every database query", async (t) => {
@@ -307,15 +429,7 @@ test("source pins the authorization order, SELECT-only route, Settings surface, 
 });
 
 test("the empty integration-activity state does not promise simulation reset in workspace mode", async () => {
-  // The card renders in BOTH runtime modes, so unconditional simulation copy would tell a
-  // live-connection admin that resetting simulation clears real Google history. The wording
-  // came from SET-09's spec line, which assumed a simulation-only surface; WS-10's card is
-  // not one. The component already gates its toolbar sentence on payload.simulation, so the
-  // empty state must gate the same way.
   const card = await read("app/settings/components/workspace-operations/WorkspaceOperationsHealthCard.tsx");
-  // Two styles.empty paragraphs exist — the failures one and the events one. Select the
-  // events block by its own copy rather than by position, so a reorder cannot silently
-  // point this assertion at the wrong paragraph.
   const emptyState = card
     .split(/<p className=\{styles\.empty\}>/u)
     .slice(1)
@@ -324,12 +438,38 @@ test("the empty integration-activity state does not promise simulation reset in 
   assert.ok(emptyState, "the empty integration-activity state must still exist");
   assert.match(
     emptyState,
-    /payload\?\.simulation/u,
-    "the empty integration-activity state must gate its copy on payload.simulation",
+    /\{simulation\s*\r?\n?\s*\?/u,
+    "the empty integration-activity state must gate its copy on simulation mode",
   );
   assert.doesNotMatch(
     card,
     /\{"No integration event is recorded for this connection\. Resetting simulation clears this history\."\}|>No integration event is recorded for this connection\. Resetting simulation clears this history\.</u,
     "simulation-reset copy must never render unconditionally",
   );
+});
+
+test("card source contains per-category load-more buttons gated on hasMore", async () => {
+  const card = await read("app/settings/components/workspace-operations/WorkspaceOperationsHealthCard.tsx");
+  assert.match(card, /Load more events/u, "card must offer Load more for events");
+  assert.match(card, /moreEvents/u, "card must track events hasMore state");
+  assert.match(card, /nextCursor/u, "card must read nextCursor from response");
+  assert.match(card, /"category", category/u, "card must pass category param dynamically");
+});
+
+test("card source surfaces per-category paging errors with retry affordance", async () => {
+  const card = await read("app/settings/components/workspace-operations/WorkspaceOperationsHealthCard.tsx");
+  assert.match(card, /drive\.error/u, "card must expose drive paging error");
+  assert.match(card, /archive\.error/u, "card must expose archive paging error");
+  assert.match(card, /events\.error/u, "card must expose events paging error");
+  assert.match(card, /load\("drive", drive\.nextCursor\)/u, "card must retry drive from its cursor");
+  assert.match(card, /load\("archive", archive\.nextCursor\)/u, "card must retry archive from its cursor");
+  assert.match(card, /load\("events", events\.nextCursor\)/u, "card must retry events from its cursor");
+});
+
+test("card source tracks per-category in-flight state independently", async () => {
+  const card = await read("app/settings/components/workspace-operations/WorkspaceOperationsHealthCard.tsx");
+  assert.match(card, /inFlight\.current\.has\(flightKey\)/u, "card must gate duplicate in-flight requests by key");
+  assert.match(card, /inFlight\.current\.add\(flightKey\)/u, "card must register in-flight key");
+  assert.match(card, /inFlight\.current\.delete\(flightKey\)/u, "card must deregister in-flight key");
+  assert.doesNotMatch(card, /requestSequence\.current/u, "card must not use a shared sequence counter");
 });

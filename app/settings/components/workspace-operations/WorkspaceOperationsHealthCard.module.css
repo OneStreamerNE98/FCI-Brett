@@ -75,6 +75,7 @@
 
 .error {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: var(--space-2);
   width: 100%;
@@ -122,6 +123,20 @@
 
 .guidance {
   color: var(--ink);
+}
+
+.loadMoreRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.loadMoreRow > :global(.soft-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .limitNote,

@@ -499,6 +499,9 @@ repair waits for an Administrator to click it.
 upkeep group. It lists stuck Drive leases, failed Gmail archives, and recent integration
 activity for the current connection. It does not contact Google and it never repairs or
 replays work automatically. Simulation results are labeled as local test operations.
+When more than 50 items exist in a category, that section offers **Load more Drive issues**,
+**Load more archive issues**, or **Load more events** to page through older records with an
+opaque cursor.
 
 > [SCREENSHOT 11 — see Screenshot index]
 
@@ -525,7 +528,9 @@ Most of the time, FCI Operations looks after itself. Here is what actually needs
 - **Operations health** — refresh this when a Drive or Gmail action fails. A stuck lease
   needs its five-minute window to expire before you retry; a failed archive is retried
   from the original **Review & copy** action. The recent-activity table shows what the
-  app recorded, not a live Google health check.
+  app recorded, not a live Google health check. Press **Load more events** under Recent
+  integration activity, or **Load more Drive issues** / **Load more archive issues** under
+  Needs attention, to page past the newest 50 records.
 
 **Essentially never (leave it alone):**
 - The system filing folder names — they are locked because filing depends on them.
