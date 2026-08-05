@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 import { seedWorkspaceBlueprint, type WorkspaceBlueprint } from "../../app/lib/workspace-blueprint";
 import { registerSimulationResetRecovery } from "./simulation-workspace";
 
@@ -361,20 +361,76 @@ async function setStageExpanded(page: Page, number: WorkspaceStageNumber, expand
   else await expect(body).toBeHidden();
 }
 
+/**
+ * SET-42 deleted the six manual refresh buttons and replaced them with
+ * focus/visibility/navigation revalidation, so this helper is the only
+ * regression test left for "focus revalidates the panel". It therefore has to
+ * prove a network read happened *because of* the focus — not merely that some
+ * response for this URL arrived at some point.
+ */
 async function triggerAutomaticWorkspaceRefresh(
   page: Page,
   expectedPath = "/api/v1/integrations/google/setup/resources",
 ) {
-  await page.waitForLoadState("networkidle");
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
-  const response = page.waitForResponse((candidate) => (
-    candidate.request().method() === "GET"
-    && new URL(candidate.url()).pathname === expectedPath
-  ));
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await response;
-  await page.waitForLoadState("networkidle");
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  const matches = (request: Request) => (
+    request.method() === "GET" && new URL(request.url()).pathname === expectedPath
+  );
+  let started = 0;
+  let settled = 0;
+  let snapshotTaken = false;
+  const startedAfterSnapshot = new Set<Request>();
+  const onRequest = (request: Request) => {
+    if (!matches(request)) return;
+    started += 1;
+    if (snapshotTaken) startedAfterSnapshot.add(request);
+  };
+  const onSettled = (request: Request) => {
+    if (matches(request)) settled += 1;
+  };
+  page.on("request", onRequest);
+  page.on("requestfinished", onSettled);
+  page.on("requestfailed", onSettled);
+  try {
+    // `page.waitForLoadState("networkidle")` used to stand here. Playwright
+    // never re-arms networkidle after a document's first idle, so it resolved
+    // instantly and guarded nothing. Gate on this endpoint alone instead: that
+    // removes the real hazard (a response already in flight satisfying the wait
+    // below) while deliberately leaving the lifecycle census free to still be
+    // mid-pass, which is the exact race this helper must keep exercising.
+    await expect
+      .poll(() => started - settled, {
+        timeout: 15_000,
+        message: `${expectedPath} never went quiet before the focus trigger`,
+      })
+      .toBe(0);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+    const readsBeforeFocus = started;
+    snapshotTaken = true;
+    // Only a response whose REQUEST began after the focus can settle this wait.
+    // Accepting any response for the path let a request issued before the test
+    // mutated its payload satisfy the helper, so the assertions that followed
+    // read the previous payload.
+    const response = page.waitForResponse((candidate) => startedAfterSnapshot.has(candidate.request()));
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await response;
+    expect(
+      started,
+      `focus produced no new GET ${expectedPath}: lifecycle revalidation dropped the trigger`,
+    ).toBeGreaterThan(readsBeforeFocus);
+
+    await expect
+      .poll(() => started - settled, {
+        timeout: 15_000,
+        message: `${expectedPath} never went quiet after the focus trigger`,
+      })
+      .toBe(0);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  } finally {
+    page.off("request", onRequest);
+    page.off("requestfinished", onSettled);
+    page.off("requestfailed", onSettled);
+  }
 }
 
 async function setStageThreeSubsectionExpanded(page: Page, key: StageThreeSubsectionKey, expanded: boolean) {

@@ -28,6 +28,13 @@ const jsonGetSubscribers = new Map<string, Set<() => void>>();
 const clientLifecycleSubscribers = new Set<() => void | Promise<void>>();
 let lifecycleRevalidationInFlight: Promise<void> | undefined;
 let lifecycleRevalidationQueued = false;
+/**
+ * Whether the running census round has already taken delivery of a response.
+ * Until it has, every read still open will answer with server state observed
+ * after any trigger arriving now, so that trigger is genuinely satisfied by the
+ * round already running. Once a response has landed, it is not.
+ */
+let lifecycleRoundReceivedResponse = false;
 
 function markLifecycleCensusChanged() {
   if (lifecycleRevalidationInFlight) lifecycleRevalidationQueued = true;
@@ -178,10 +185,27 @@ export function subscribeClientGetLifecycle(subscriber: () => void | Promise<voi
 
 /** Revalidates only resources with a mounted reader; no polling is used. */
 export function revalidateSubscribedCachedGets() {
-  if (lifecycleRevalidationInFlight) return lifecycleRevalidationInFlight;
+  if (lifecycleRevalidationInFlight) {
+    // A trigger that lands once the running round has already taken delivery of
+    // a response is a NEW freshness demand, not a duplicate: that round can no
+    // longer speak for state which changed after it read. Returning the
+    // in-flight promise without queueing dropped such a trigger outright — an
+    // administrator who tabbed back mid-pass got no revalidation at all, and
+    // since SET-42 deleted the manual refresh buttons that trigger is the only
+    // refresh path left. Queue exactly one more round, the same single
+    // generation markLifecycleCensusChanged() already uses for subscriber
+    // churn, so a burst coalesces instead of stacking rounds.
+    //
+    // Before any response has landed, every read still open will answer with
+    // server state observed after this trigger, so the running round already
+    // satisfies it and joining stays both correct and single-flight.
+    if (lifecycleRoundReceivedResponse) lifecycleRevalidationQueued = true;
+    return lifecycleRevalidationInFlight;
+  }
   lifecycleRevalidationInFlight = (async () => {
     do {
       lifecycleRevalidationQueued = false;
+      lifecycleRoundReceivedResponse = false;
       const urls = [...jsonGetSubscribers.keys()];
       const lifecycleReaders = [...clientLifecycleSubscribers];
       await Promise.allSettled([
@@ -192,12 +216,16 @@ export function revalidateSubscribedCachedGets() {
               force: true,
               ttlMs: existing?.ttlMs ?? DEFAULT_TTL_MS,
             });
+            lifecycleRoundReceivedResponse = true;
             // A mutation may deliberately discard a stale transport value
             // without notifying because its authoritative response has already
             // updated the mounted UI. The next lifecycle read still has to
             // deliver its fresh network value on the first focus/navigation.
             if (!existing) notifySubscribers(url);
           } catch (error) {
+            // A failure is delivery too: the round has observed this URL's
+            // current state and can no longer speak for a later trigger.
+            lifecycleRoundReceivedResponse = true;
             // Terminal authorization failures always clear privileged mounted
             // state, including after a quiet mutation invalidation.
             if (!existing && isTerminalCachedGetError(error)) notifySubscribers(url);
