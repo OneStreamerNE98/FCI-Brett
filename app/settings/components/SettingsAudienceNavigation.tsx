@@ -33,13 +33,13 @@ function SectionButton({ entry, state, current, onSection }: {
   return <button
     className={current === entry.label ? "active" : ""}
     aria-current={current === entry.label ? "page" : undefined}
-    aria-label={entry.label}
+    aria-label={entry.navigationLabel}
     aria-describedby={stateId}
     data-settings-feature-state={state}
     type="button"
     onClick={() => onSection(entry.label)}
   >
-    <span className={styles.sectionLabel}>{entry.label}</span>
+    <span className={styles.sectionLabel}>{entry.navigationLabel}</span>
     <span className={styles.badge} aria-hidden="true"><FeatureStateBadge state={state} variant="compact" /></span>
     <span className="sr-only" id={stateId}>{state}</span>
     <ChevronRight size={15} aria-hidden="true" />

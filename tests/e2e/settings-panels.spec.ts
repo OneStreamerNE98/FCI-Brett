@@ -8,6 +8,9 @@ async function mockSettingsFeatureState(page: Page, ready: boolean) {
       headers: { "Cache-Control": "no-store" },
       body: JSON.stringify({
         workspace: {
+          connectionStatus: ready ? "connected" : "disconnected",
+          calendarEnabled: ready,
+          calendarConnected: ready,
           calendars: {
             clientAppointments: { configured: ready, source: ready ? "app" : "none", externalId: ready ? "appointments@example.test" : null },
             fieldSchedule: { configured: ready, source: ready ? "app" : "none", externalId: ready ? "schedule@example.test" : null },
@@ -37,11 +40,11 @@ const settingsSections = [
   { path: "/settings?section=google-workspace", navigation: "Google Workspace", heading: "Google Workspace" },
   { path: "/settings?section=calendar", navigation: "Calendar & appointments", heading: "Calendar & appointments" },
   { path: "/settings?section=inbox-rules", navigation: "Inbox & file rules", heading: "Inbox & file rules" },
-  { path: "/settings?section=client-directory", navigation: "Client Directory", heading: "Client Directory & Project Register" },
+  { path: "/settings?section=client-directory", navigation: "Client Directory & Project Register", heading: "Client Directory & Project Register" },
   { path: "/settings?section=workflow-notifications", navigation: "Workflow & notifications", heading: "Workflow & notifications" },
   { path: "/settings?section=ai-assistant", navigation: "AI assistant", heading: "AI assistant" },
   { path: "/settings?section=data-security", navigation: "Data & security", heading: "Data & security" },
-  { path: "/settings?section=testing-launch", navigation: "Testing & launch", heading: "Test & launch checklist" },
+  { path: "/settings?section=testing-launch", navigation: "Test & launch checklist", heading: "Test & launch checklist" },
 ] as const;
 
 for (const section of settingsSections) {
@@ -125,11 +128,11 @@ test("SET-07 renders the section badge census and computes only endpoint-backed 
     ["Google Workspace", ["In development", "Dev"]],
     ["Calendar & appointments", ["Setup required", "Setup"]],
     ["Inbox & file rules", ["In development", "Dev"]],
-    ["Client Directory", ["Setup required", "Setup"]],
+    ["Client Directory & Project Register", ["Setup required", "Setup"]],
     ["Workflow & notifications", ["In development", "Dev"]],
     ["AI assistant", ["In development", "Dev"]],
     ["Data & security", ["Planned", "Planned"]],
-    ["Testing & launch", ["In development", "Dev"]],
+    ["Test & launch checklist", ["In development", "Dev"]],
   ] as const);
   const navigation = page.locator(".settings-nav");
   await expect(navigation.getByRole("button")).toHaveCount(expectedStates.size);
@@ -151,7 +154,7 @@ test("SET-07 renders the section badge census and computes only endpoint-backed 
   const readyNavigation = readyPage.locator(".settings-nav");
   await expect(readyNavigation.getByRole("button", { name: "Calendar & appointments", exact: true }))
     .toHaveAttribute("data-settings-feature-state", "Working");
-  await expect(readyNavigation.getByRole("button", { name: "Client Directory", exact: true }))
+  await expect(readyNavigation.getByRole("button", { name: "Client Directory & Project Register", exact: true }))
     .toHaveAttribute("data-settings-feature-state", "Working");
   await expect(readyNavigation.getByRole("button", { name: "Data & security", exact: true }))
     .toHaveAttribute("data-settings-feature-state", "Planned");

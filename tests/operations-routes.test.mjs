@@ -50,22 +50,22 @@ test("only bounded non-default page state is included in durable URLs", () => {
 
 test("keeps every SET-07 Settings slug pinned while My settings remains the canonical default", () => {
   const settingsCatalog = [
-    ["My settings", "account", "Working", "/settings"],
-    ["Google Workspace", "google-workspace", "In development", "/settings?section=google-workspace"],
-    ["Calendar & appointments", "calendar", "Setup required", "/settings?section=calendar"],
-    ["Inbox & file rules", "inbox-rules", "In development", "/settings?section=inbox-rules"],
-    ["Client Directory", "client-directory", "Setup required", "/settings?section=client-directory"],
-    ["Workflow & notifications", "workflow-notifications", "In development", "/settings?section=workflow-notifications"],
-    ["AI assistant", "ai-assistant", "In development", "/settings?section=ai-assistant"],
-    ["Data & security", "data-security", "Planned", "/settings?section=data-security"],
-    ["Testing & launch", "testing-launch", "In development", "/settings?section=testing-launch"],
+    ["My settings", "My settings", "account", "Working", "/settings"],
+    ["Google Workspace", "Google Workspace", "google-workspace", "In development", "/settings?section=google-workspace"],
+    ["Calendar & appointments", "Calendar & appointments", "calendar", "Setup required", "/settings?section=calendar"],
+    ["Inbox & file rules", "Inbox & file rules", "inbox-rules", "In development", "/settings?section=inbox-rules"],
+    ["Client Directory", "Client Directory & Project Register", "client-directory", "Setup required", "/settings?section=client-directory"],
+    ["Workflow & notifications", "Workflow & notifications", "workflow-notifications", "In development", "/settings?section=workflow-notifications"],
+    ["AI assistant", "AI assistant", "ai-assistant", "In development", "/settings?section=ai-assistant"],
+    ["Data & security", "Data & security", "data-security", "Planned", "/settings?section=data-security"],
+    ["Testing & launch", "Test & launch checklist", "testing-launch", "In development", "/settings?section=testing-launch"],
   ];
 
   assert.deepEqual(
-    SETTINGS_SECTIONS.map(({ label, slug, featureState }) => [label, slug, featureState]),
-    settingsCatalog.map(([label, slug, featureState]) => [label, slug, featureState]),
+    SETTINGS_SECTIONS.map(({ label, navigationLabel, slug, featureState }) => [label, navigationLabel, slug, featureState]),
+    settingsCatalog.map(([label, navigationLabel, slug, featureState]) => [label, navigationLabel, slug, featureState]),
   );
-  for (const [settingsSection, , , href] of settingsCatalog) {
+  for (const [settingsSection, , , , href] of settingsCatalog) {
     assert.equal(operationsHref("Settings", { settingsSection }), href);
   }
   assert.equal(settingsSectionFromSearch("section=account"), "My settings");

@@ -10,6 +10,9 @@ test("SET-07 derives the Calendar badge only from the SET-05 payload", () => {
   assert.equal(calendarSettingsFeatureState({ workspace: { calendars: {} } }), "Setup required");
   assert.equal(calendarSettingsFeatureState({
     workspace: {
+      connectionStatus: "connected",
+      calendarEnabled: true,
+      calendarConnected: true,
       calendars: {
         clientAppointments: { configured: true },
         fieldSchedule: { configured: false },
@@ -18,12 +21,26 @@ test("SET-07 derives the Calendar badge only from the SET-05 payload", () => {
   }), "Setup required");
   assert.equal(calendarSettingsFeatureState({
     workspace: {
+      connectionStatus: "connected",
+      calendarEnabled: true,
+      calendarConnected: true,
       calendars: {
         clientAppointments: { configured: true },
         fieldSchedule: { configured: true },
       },
     },
   }), "Working");
+  assert.equal(calendarSettingsFeatureState({
+    workspace: {
+      connectionStatus: "disconnected",
+      calendarEnabled: true,
+      calendarConnected: true,
+      calendars: {
+        clientAppointments: { configured: true },
+        fieldSchedule: { configured: true },
+      },
+    },
+  }), "Setup required");
 });
 
 test("SET-07 derives the Client Directory badge only from sheets/status", () => {

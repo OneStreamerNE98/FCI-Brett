@@ -27,17 +27,18 @@ export const OPERATIONS_PATHS: Record<OperationsView, string> = {
 };
 
 export const SETTINGS_SECTIONS = [
-  { label: "My settings", slug: "account", featureState: "Working" },
-  { label: "Google Workspace", slug: "google-workspace", featureState: "In development" },
-  { label: "Calendar & appointments", slug: "calendar", featureState: "Setup required" },
-  { label: "Inbox & file rules", slug: "inbox-rules", featureState: "In development" },
-  { label: "Client Directory", slug: "client-directory", featureState: "Setup required" },
-  { label: "Workflow & notifications", slug: "workflow-notifications", featureState: "In development" },
-  { label: "AI assistant", slug: "ai-assistant", featureState: "In development" },
-  { label: "Data & security", slug: "data-security", featureState: "Planned" },
-  { label: "Testing & launch", slug: "testing-launch", featureState: "In development" },
+  { label: "My settings", navigationLabel: "My settings", slug: "account", featureState: "Working" },
+  { label: "Google Workspace", navigationLabel: "Google Workspace", slug: "google-workspace", featureState: "In development" },
+  { label: "Calendar & appointments", navigationLabel: "Calendar & appointments", slug: "calendar", featureState: "Setup required" },
+  { label: "Inbox & file rules", navigationLabel: "Inbox & file rules", slug: "inbox-rules", featureState: "In development" },
+  { label: "Client Directory", navigationLabel: "Client Directory & Project Register", slug: "client-directory", featureState: "Setup required" },
+  { label: "Workflow & notifications", navigationLabel: "Workflow & notifications", slug: "workflow-notifications", featureState: "In development" },
+  { label: "AI assistant", navigationLabel: "AI assistant", slug: "ai-assistant", featureState: "In development" },
+  { label: "Data & security", navigationLabel: "Data & security", slug: "data-security", featureState: "Planned" },
+  { label: "Testing & launch", navigationLabel: "Test & launch checklist", slug: "testing-launch", featureState: "In development" },
 ] as const satisfies ReadonlyArray<{
   label: string;
+  navigationLabel: string;
   slug: string;
   featureState: FeatureState;
 }>;

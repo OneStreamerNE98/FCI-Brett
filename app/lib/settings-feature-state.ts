@@ -13,7 +13,10 @@ export function calendarSettingsFeatureState(payload: unknown): FeatureState {
   }
   const clientAppointments = payload.workspace.calendars.clientAppointments;
   const fieldSchedule = payload.workspace.calendars.fieldSchedule;
-  return isRecord(clientAppointments)
+  return payload.workspace.connectionStatus === "connected"
+    && payload.workspace.calendarEnabled === true
+    && payload.workspace.calendarConnected === true
+    && isRecord(clientAppointments)
     && clientAppointments.configured === true
     && isRecord(fieldSchedule)
     && fieldSchedule.configured === true
