@@ -65,7 +65,7 @@ Do not paste either value into GitHub, documentation, email, Drive, screenshots,
 ## Connect and verify
 
 - [ ] Deploy the hosted configuration with Drive provisioning disabled.
-- [ ] Open **Settings → Google Workspace → Check readiness**.
+- [ ] Open **Settings → Google Workspace** and let readiness load automatically.
 - [ ] Resolve every OAuth, identity, domain, and mailbox prerequisite. Resource-ID rows
       may remain unset until the app-managed Resources actions run.
 - [ ] Select **Connect Google Workspace** and authorize the exact approved operations account.

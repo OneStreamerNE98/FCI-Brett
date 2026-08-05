@@ -410,7 +410,9 @@ test("a failed or stalled settings read cannot delay the Stage 3 resource surfac
 
   // The defect first shared one try/catch and then used Promise.allSettled. Both forms await
   // the settings read, so a request that never settles still leaves the resource surface loading.
-  assert.match(loader, /void loadIntakeMailboxSettings\(force, isCurrent\)/u);
+  // SET-42 threads draft-preservation into this independent read without
+  // reintroducing a shared settlement boundary.
+  assert.match(loader, /void loadIntakeMailboxSettings\(force, isCurrent, preserveRuntimeDraft\)/u);
   assert.doesNotMatch(loader, /Promise\.all/u, "the two reads must not share a settlement boundary");
   // The stage is settled from the resources result alone, with its own error path.
   assert.match(loader, /const resources = await cachedGetJson<WorkspaceSetupResourcesPayload>[\s\S]*setWorkspaceResources\(resources\)[\s\S]*setWorkspaceResourcesState\("ready"\)/u);
@@ -425,7 +427,9 @@ test("a failed or stalled settings read cannot delay the Stage 3 resource surfac
   assert.match(selectorLoader, /setIntakeMailboxError\(/u);
   assert.doesNotMatch(selectorLoader, /setWorkspaceResources(?:State|Error)?\(/u,
     "a settings failure must never settle the resource surface");
-  assert.match(panel, /intakeMailboxError && <div className="workspace-connection-health-error"[\s\S]{0,260}loadIntakeMailboxSettings\(true\)[\s\S]{0,40}Retry mailbox/u);
+  // SET-42 converges read failures on the shared notice without changing the
+  // mailbox loader's independent retry path.
+  assert.match(panel, /intakeMailboxError && <ClientDataNotice[\s\S]{0,260}retryLabel="Retry mailbox"[\s\S]{0,120}loadIntakeMailboxSettings\(true\)/u);
   // Degrading must not create a way to clear the stored mailbox: with the read failed the
   // selector holds the empty "use hosted mailbox" option, so saving is blocked too.
   const saveButton = panel.indexOf("void saveIntakeMailbox()");

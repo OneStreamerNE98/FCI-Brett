@@ -4,6 +4,8 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronDown, ExternalLink, LockKeyhole } from "lucide-react";
 
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
+import { ClientDataNotice } from "../../components/ClientDataNotice";
+import { invalidateWorkspaceOperationsReadCache } from "../../lib/client-get-cache";
 import styles from "./WorkspaceDriveResourceActions.module.css";
 import { WorkspaceInfoHint } from "../../components/WorkspaceInfoHint";
 
@@ -141,13 +143,17 @@ export function deriveWorkspaceCreationProgress(
 }
 
 async function postJson<T>(url: string, body: Record<string, unknown> = {}) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await response.json().catch(() => ({})) as T & { error?: string; candidates?: SharedDriveCandidate[] };
-  return { response, data };
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({})) as T & { error?: string; candidates?: SharedDriveCandidate[] };
+    return { response, data };
+  } finally {
+    invalidateWorkspaceOperationsReadCache();
+  }
 }
 
 function restrictionLabel(restrictions: WorkspaceDriveRestrictions | undefined) {
@@ -632,7 +638,7 @@ export function WorkspaceDriveResourceActions({
   const content = <>
     <p className={styles.cardIntro}>Use the saved blueprint first, then complete each creation row in order. Every action is repeat-safe and never deletes Google content.</p>
     {resourcesLoading && !resourcesReady && <p className={styles.resourceMessage} role="status">Loading the Workspace resource registry…</p>}
-    {resourcesError && <div className={styles.resourcesError} role="alert"><span>{resourcesError}</span><button className="soft-button" type="button" onClick={() => void onRetryResources()}>Retry resources</button></div>}
+    {resourcesError && <ClientDataNotice state="error" error={resourcesError} errorTitle="Workspace resources are unavailable" retryLabel="Retry resources" onRetry={() => void onRetryResources()} />}
     <ol className={styles.creationList} aria-label="Workspace resources in creation order">
       <CreationRow
         order={1}

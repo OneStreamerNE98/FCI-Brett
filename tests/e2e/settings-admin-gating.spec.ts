@@ -131,7 +131,7 @@ test("Administrator identity keeps protected Settings actions available", async 
   if (await stageTwoToggle.getAttribute("aria-expanded") !== "true") await stageTwoToggle.click();
   await expect(stageTwoToggle).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("button", { name: "Reset simulation data" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Check readiness" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Check readiness" })).toHaveCount(0);
   await expect(page.locator(".administrator-action-note")).toHaveCount(0);
 });
 

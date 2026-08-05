@@ -22,10 +22,17 @@ import {
   OperationsDataTableCell,
   type OperationsDataTableColumn,
 } from "../../components/operations/OperationsDataTable";
+import { ClientDataNotice } from "../../components/ClientDataNotice";
 import {
   FIRST_RUN_IMPORT_GATE_NOTICE,
   FIRST_RUN_IMPORT_TEST_MARKER,
 } from "../../domain/first-run-import";
+import {
+  cachedGetJson,
+  invalidateCachedGet,
+  isTerminalCachedGetError,
+} from "../../lib/client-get-cache";
+import { useCachedGetSubscription } from "../../lib/client-get-hooks";
 import styles from "./FirstRunImportCard.module.css";
 
 const IMPORT_STATUS_PATH = "/api/v1/settings/first-run-import";
@@ -298,15 +305,10 @@ async function readJson(response: Response) {
   return response.json().catch(() => null) as Promise<unknown>;
 }
 
-async function requestImportStatus(signal?: AbortSignal) {
-  const response = await fetch(IMPORT_STATUS_PATH, {
-    cache: "no-store",
-    headers: { Accept: "application/json" },
-    signal,
-  });
-  const body = await readJson(response);
-  const parsed = response.ok ? parseStatus(body) : null;
-  if (!parsed) throw new Error(importError(body, "Import readiness could not be loaded."));
+async function requestImportStatus(force = false) {
+  const body = await cachedGetJson<unknown>(IMPORT_STATUS_PATH, { force });
+  const parsed = parseStatus(body);
+  if (!parsed) throw new Error("Import readiness could not be loaded.");
   return parsed;
 }
 
@@ -549,17 +551,20 @@ export function FirstRunImportCard({
   }
 
   async function loadStatus(
-    signal?: AbortSignal,
     expectedGeneration?: number,
+    silent = false,
+    force = false,
   ): Promise<ImportStatus | null> {
     const isCurrent = () => (
       expectedGeneration === undefined || requestGenerationRef.current === expectedGeneration
     );
     if (!isCurrent()) return null;
-    setLoadState("loading");
-    setError("");
+    if (!silent) {
+      setLoadState("loading");
+      setError("");
+    }
     try {
-      const parsed = await requestImportStatus(signal);
+      const parsed = await requestImportStatus(force);
       if (!isCurrent()) return null;
       setStatus(parsed);
       setSpreadsheetKey((current) => {
@@ -570,7 +575,13 @@ export function FirstRunImportCard({
       setLoadState("ready");
       return parsed;
     } catch (caught) {
-      if (!isCurrent() || (caught instanceof DOMException && caught.name === "AbortError")) return null;
+      if (!isCurrent()) return null;
+      if (isTerminalCachedGetError(caught)) {
+        setStatus(null);
+        setSpreadsheetKey("");
+      } else if (silent) {
+        return null;
+      }
       setError(caught instanceof Error ? caught.message : "Import readiness could not be loaded.");
       setLoadState("error");
       return null;
@@ -578,23 +589,22 @@ export function FirstRunImportCard({
   }
 
   useEffect(() => {
-    const controller = new AbortController();
-    void requestImportStatus(controller.signal).then((parsed) => {
+    void requestImportStatus().then((parsed) => {
       setStatus(parsed);
       setSpreadsheetKey(parsed.sources.find((source) => source.ready)?.key ?? "");
       setOpened(!parsed.recordsExist);
       setLoadState("ready");
     }).catch((caught: unknown) => {
-      if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(caught instanceof Error ? caught.message : "Import readiness could not be loaded.");
       setLoadState("error");
     });
     return () => {
-      controller.abort();
       requestGenerationRef.current += 1;
       clientSearchGenerationRef.current += 1;
     };
   }, []);
+
+  useCachedGetSubscription([IMPORT_STATUS_PATH], () => loadStatus(undefined, true));
 
   const clientStepReady = Boolean(
     (status?.counts.clients ?? 0) > 0
@@ -798,12 +808,11 @@ export function FirstRunImportCard({
     setClientSearchError("");
     setClientSearchMessage("");
     try {
-      const response = await fetch(
+      const body = await cachedGetJson<unknown>(
         `${IMPORT_CLIENT_SEARCH_PATH}?q=${encodeURIComponent(query)}`,
-        { cache: "no-store", headers: { Accept: "application/json" } },
+        { force: true },
       );
-      const body = await readJson(response);
-      const parsed = response.ok ? parseClientSearchResult(body) : null;
+      const parsed = parseClientSearchResult(body);
       if (
         requestGenerationRef.current !== sourceGeneration
         || clientSearchGenerationRef.current !== searchGeneration
@@ -889,7 +898,11 @@ export function FirstRunImportCard({
       if (!parsed || parsed.entity !== requestEntity) {
         throw new Error(importError(body, `The selected ${entityLabel(requestEntity)} could not be imported.`));
       }
-      if (parsed.created > 0) void onImportConfirmed();
+      if (parsed.created > 0) {
+        invalidateCachedGet(requestEntity === "clients" ? "/api/v1/clients" : "/api/v1/projects");
+        invalidateCachedGet("/api/v1/dashboard");
+        await onImportConfirmed();
+      }
       if (requestGenerationRef.current !== generation) return;
       setLastConfirmation(parsed);
       setPreview(null);
@@ -899,7 +912,8 @@ export function FirstRunImportCard({
       setLiveMessage(
         `${parsed.created} created, ${parsed.duplicates} duplicate${parsed.duplicates === 1 ? "" : "s"}, and ${parsed.rejected} rejected.`,
       );
-      const refreshedStatus = await loadStatus(undefined, generation);
+      invalidateCachedGet(IMPORT_STATUS_PATH);
+      const refreshedStatus = await loadStatus(generation);
       if (requestGenerationRef.current !== generation) return;
       const projectStepNowReady = (
         (refreshedStatus?.counts.clients ?? status?.counts.clients ?? 0) > 0
@@ -963,11 +977,12 @@ export function FirstRunImportCard({
       <span>The app is checking saved record counts and available import-role spreadsheets.</span>
     </Notice>}
 
-    {loadState === "error" && <Notice kind="error" icon={<AlertTriangle size={18} aria-hidden="true" />}>
-      <strong>Import readiness is unavailable</strong>
-      <span>{error}</span>
-      <button className="soft-button" type="button" onClick={() => void loadStatus()}><RefreshCw size={14} aria-hidden="true" /> Retry</button>
-    </Notice>}
+    {loadState === "error" && <ClientDataNotice
+      state="error"
+      error={error}
+      errorTitle="Import readiness is unavailable"
+      onRetry={() => void loadStatus(undefined, false, true)}
+    />}
 
     {loadState === "ready" && status?.recordsExist && !opened && <div className={styles.collapsedSummary}>
       {lastConfirmation && <>

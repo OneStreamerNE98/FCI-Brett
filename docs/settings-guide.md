@@ -188,7 +188,7 @@ Both modes still require `OPENAI_API_KEY`; if it is Missing, these AI controls
 are absent or disabled while the ordinary Inbox and manual draft flows keep
 working.
 
-When the separate **Inbox analysis** switch is on, opening or refreshing the
+When the separate **Inbox analysis** switch is on, opening or reloading the
 Inbox starts one bounded background sweep for messages that do not yet have a
 stored result. The app stores each result in its database so reloading does not
 pay to analyze the same message again while the label catalog is unchanged.
@@ -338,11 +338,11 @@ The three built-in rules can drive those review suggestions. A custom rule is sa
 
 ### 5. Client Directory
 
-The **Client Directory & Project Register** — a one-way Google Sheets mirror of your clients and projects. The app is always the source of truth; the spreadsheet is a read-and-filter copy that updates after app changes and when an Administrator presses **Sync now**. **Refresh status** checks the latest recorded mirror state without running a sync, so any office viewer can re-read the status safely.
+The **Client Directory & Project Register** — a one-way Google Sheets mirror of your clients and projects. The app is always the source of truth; the spreadsheet is a read-and-filter copy that updates after app changes and when an Administrator presses **Sync now**. The recorded mirror status revalidates automatically when the page opens, regains focus, becomes visible, or is reached through navigation; that status read never runs a sync.
 
 - **Client Directory** tab mirrors client code, contacts, project count, folder link, status, and last update.
 - **Project Register** tab is rebuilt from your project records (client, status, site, value, manager, Drive link).
-- Each card formats the recorded `lastSyncedAt` as a readable local date and time while showing `lastError` exactly as the mirror status returned it. The shared status labels translate the underlying state into **Checking sync**, **Syncing**, **Needs attention**, **Synced**, or **Not synced**. If a live sync is interrupted, an over-age **Syncing** state recovers to **Not synced** on the next status refresh instead of remaining frozen.
+- Each card formats the recorded `lastSyncedAt` as a readable local date and time while showing `lastError` exactly as the mirror status returned it. The shared status labels translate the underlying state into **Checking sync**, **Syncing**, **Needs attention**, **Synced**, or **Not synced**. If a live sync is interrupted, an over-age **Syncing** state recovers to **Not synced** on the next automatic status read instead of remaining frozen.
 
 One column is deliberately yours to edit: **Account Notes**. Everything else on the generated Project Register will be overwritten on the next sync, so do not hand-edit it. Spreadsheet edits do not write back into the app.
 
@@ -413,7 +413,7 @@ Two read-only policy cards explain **What each role can do** and the fixed **Emp
 
 ## Connecting and verifying Google in plain words
 
-Open **Settings → Google Workspace**. At the top is a **status banner** and a **Check readiness** button. Press **Check readiness** any time you want the app to re-look at everything and tell you exactly where you stand — every status on this page comes from a live check, never a guess.
+Open **Settings → Google Workspace**. At the top is a **status banner**. The app rechecks the mounted readiness data automatically when you return to the page, refocus the window, or make the tab visible again, so every status comes from a server check rather than a guess. Direct Google mailbox reads remain behind their named actions.
 
 The banner shows one of a few plain messages, for example:
 
@@ -516,7 +516,7 @@ opaque cursor.
 Most of the time, FCI Operations looks after itself. Here is what actually needs a human, and how often.
 
 **Weekly-ish, or whenever something looks off:**
-- Press **Check readiness** on the Google Workspace page and glance at the banner. Green-and-connected means nothing to do.
+- Open the Google Workspace page and glance at the banner. Readiness revalidates automatically on navigation and when the window regains focus; green-and-connected means nothing to do.
 - Glance at the **Client Directory** panel. If the Client Directory or Project Register shows an old sync time or an error, press **Sync now**. A normal sync just rebuilds the mirror from the app.
 
 **Use as needed, from Stage 4's "Ongoing upkeep" tools:**
@@ -525,7 +525,7 @@ Most of the time, FCI Operations looks after itself. Here is what actually needs
 - **Drift check** — press **Check for drift** after changing the blueprint or whenever a
   managed Google resource looks out of place. Review each Missing or Renamed action
   before applying it. Unmanaged rows are informational and never trigger deletion.
-- **Operations health** — refresh this when a Drive or Gmail action fails. A stuck lease
+- **Operations health** — review this when a Drive or Gmail action fails; the card revalidates automatically when you return to it. A stuck lease
   needs its five-minute window to expire before you retry; a failed archive is retried
   from the original **Review & copy** action. The recent-activity table shows what the
   app recorded, not a live Google health check. Press **Load more events** under Recent
@@ -658,7 +658,7 @@ The six issues you are most likely to hit, in plain words. Several of these are 
 
 ## When to call the developer
 
-Handle these yourself: pressing **Check readiness**, connecting/reconnecting/disconnecting Google with the approved account, running the Stage 4 verification checks, syncing the Client Directory, filing email through Review & copy, and adjusting your own and the office default settings.
+Handle these yourself: returning to **Google Workspace** and letting its status recheck automatically, connecting/reconnecting/disconnecting Google with the approved account, running the Stage 4 verification checks, syncing the Client Directory, filing email through Review & copy, and adjusting your own and the office default settings.
 
 Call the developer for anything that touches the hosting environment, Google's admin/cloud consoles, or the production launch — specifically:
 

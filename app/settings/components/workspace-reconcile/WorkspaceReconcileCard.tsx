@@ -14,6 +14,11 @@ import {
   type WorkspaceReconcileDrift,
 } from "../../../lib/workspace-reconcile";
 import type { WorkspaceBlueprint } from "../../../lib/workspace-blueprint";
+import {
+  cachedGetJson,
+  invalidateCachedGet,
+  invalidateWorkspaceOperationsReadCache,
+} from "../../../lib/client-get-cache";
 import styles from "./WorkspaceReconcileCard.module.css";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
@@ -60,10 +65,24 @@ const MISSING_ENDPOINTS = Object.freeze({
 } satisfies Partial<Record<WorkspaceReconcileAction, string>>);
 
 async function readJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, init);
-  const data = await response.json().catch(() => ({})) as T & { error?: string };
-  if (!response.ok) throw new Error(data.error ?? "The Workspace reconcile action could not be completed.");
-  return data;
+  const method = init?.method?.toUpperCase() ?? "GET";
+  if (method === "GET") {
+    return cachedGetJson<T>(url, { force: true });
+  }
+  try {
+    const response = await fetch(url, init);
+    const data = await response.json().catch(() => ({})) as T & { error?: string };
+    if (!response.ok) throw new Error(data.error ?? "The Workspace reconcile action could not be completed.");
+    invalidateCachedGet("/api/v1/integrations/google/setup/resources");
+    invalidateCachedGet("/api/v1/integrations/google/sheets/status");
+    invalidateCachedGet("/api/v1/google-workspace");
+    if (url === "/api/v1/integrations/google/setup/blueprint") {
+      invalidateCachedGet(url);
+    }
+    return data;
+  } finally {
+    invalidateWorkspaceOperationsReadCache();
+  }
 }
 
 function stateLabel(state: WorkspaceReconcileDrift["state"]) {

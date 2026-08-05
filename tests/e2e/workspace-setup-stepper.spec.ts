@@ -144,6 +144,30 @@ function connectedHealth(): ConnectionHealthPayload {
   };
 }
 
+function operationsHealthPayload(detail: string, nextCursor?: string) {
+  return {
+    runtimeMode: "simulation",
+    simulation: true,
+    checkedAt: Date.UTC(2026, 7, 4, 20),
+    limits: { perCategory: 50 },
+    driveOperations: { items: [], hasMore: false },
+    failedArchives: { items: [], hasMore: false },
+    events: {
+      items: [{
+        id: `event-${detail.toLowerCase().replaceAll(" ", "-")}`,
+        eventType: "workspace.test",
+        actor: "admin@example.test",
+        entityType: "connection",
+        entityId: "simulation",
+        detail,
+        createdAt: Date.UTC(2026, 7, 4, 20),
+      }],
+      hasMore: Boolean(nextCursor),
+      nextCursor,
+    },
+  };
+}
+
 function workspaceResources(overrides: Partial<WorkspaceResourcesPayload> = {}): WorkspaceResourcesPayload {
   return {
     resources: [
@@ -335,6 +359,22 @@ async function setStageExpanded(page: Page, number: WorkspaceStageNumber, expand
   const body = setupStage(page, number).locator(".workspace-stage-body");
   if (expanded) await expect(body).toBeVisible();
   else await expect(body).toBeHidden();
+}
+
+async function triggerAutomaticWorkspaceRefresh(
+  page: Page,
+  expectedPath = "/api/v1/integrations/google/setup/resources",
+) {
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  const response = page.waitForResponse((candidate) => (
+    candidate.request().method() === "GET"
+    && new URL(candidate.url()).pathname === expectedPath
+  ));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await response;
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 }
 
 async function setStageThreeSubsectionExpanded(page: Page, key: StageThreeSubsectionKey, expanded: boolean) {
@@ -633,13 +673,13 @@ test("stages derive one open step from endpoint state and keep completed stages 
       mode: "workspace",
     },
   });
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(setupStage(page, 1).locator(".workspace-stage-chip")).toHaveText("IN PROGRESS · 4 of 6");
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "true");
   await expect(stageToggle(page, 2)).toHaveAttribute("aria-expanded", "false");
 
   currentResources = { ...currentResources, connectReady: true };
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(setupStage(page, 1).locator(".workspace-stage-chip")).toHaveText("DONE");
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "false");
   await expect(stageToggle(page, 2)).toHaveAttribute("aria-expanded", "true");
@@ -647,7 +687,7 @@ test("stages derive one open step from endpoint state and keep completed stages 
 
   currentReadiness = readiness();
   currentHealth = connectedHealth();
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("DONE");
   await expect(stageToggle(page, 2)).toHaveAttribute("aria-expanded", "false");
   await expect(stageToggle(page, 3)).toHaveAttribute("aria-expanded", "true");
@@ -663,7 +703,7 @@ test("stages derive one open step from endpoint state and keep completed stages 
       externalId: resource.externalId ?? `${resource.key}-id`,
     }),
   });
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page, "/api/v1/integrations/google/setup/resources");
   await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("DONE");
   await expect(stageToggle(page, 3)).toHaveAttribute("aria-expanded", "false");
   await expect(stageToggle(page, 4)).toHaveAttribute("aria-expanded", "true");
@@ -935,7 +975,7 @@ test("Stage 4 disabled verification actions are described by their actual depend
   }
 
   currentReadiness = readiness();
-  await page.getByRole("button", { name: "Check readiness", exact: true }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(gmail.getByText("Ready for explicit actions", { exact: true })).not.toHaveAttribute("id");
   for (const name of ["Prepare FCI labels", "View inbox", "Send Workspace test"]) {
     const control = gmail.getByRole("button", { name, exact: true });
@@ -1022,9 +1062,163 @@ test("Operations health enumerates recorded simulation failures and activity wit
   await expect(row.getByText("mode=simulation;code=gmail_copy_failed", { exact: true })).toBeVisible();
   await expect(row.getByText("wait out the five-minute lease", { exact: false })).toBeVisible();
   await expect(row.getByText("retry only through the original app action", { exact: false })).toBeVisible();
-  await expect(row.getByRole("button", { name: "Refresh operations", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Refresh operations", exact: true })).toHaveCount(0);
   await expect(row.getByRole("button", { name: /delete|repair|clear lease/i })).toHaveCount(0);
   expect(operationsReads).toBe(1);
+  await triggerAutomaticWorkspaceRefresh(page);
+  await expect.poll(() => operationsReads).toBe(2);
+});
+
+test("Operations health lets a terminal trailing refresh supersede a delayed page replay", async ({ page }) => {
+  await mockReadyWorkspaceForStageThree(page);
+  let baseReads = 0;
+  let releaseReplay = () => undefined;
+  let markReplayStarted = () => undefined;
+  const replayGate = new Promise<void>((resolve) => {
+    releaseReplay = resolve;
+  });
+  const replayStarted = new Promise<void>((resolve) => {
+    markReplayStarted = resolve;
+  });
+
+  await page.route("**/api/v1/integrations/google/operations**", async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const url = new URL(route.request().url());
+    const category = url.searchParams.get("category");
+    const cursor = url.searchParams.get("cursor");
+    if (category === "events" && cursor === "initial-more") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Initial extra row")) });
+      return;
+    }
+    if (category === "events" && cursor === "delayed-replay") {
+      markReplayStarted();
+      await replayGate;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Stale delayed row")) });
+      return;
+    }
+    expect(category).toBeNull();
+    baseReads += 1;
+    if (baseReads === 1) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Initial base row", "initial-more")) });
+      return;
+    }
+    if (baseReads === 2) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Fresh base awaiting replay", "delayed-replay")) });
+      return;
+    }
+    await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "Administrator access expired." }) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  await setStageExpanded(page, 4, true);
+  const row = upkeepRow(page, "operations-health");
+  await row.getByRole("button", { name: "Load more events", exact: true }).click();
+  await expect(row.getByText("Initial extra row", { exact: true })).toBeVisible();
+
+  const firstRefresh = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/v1/integrations/google/operations"
+      && !url.search
+      && response.status() === 200;
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await firstRefresh;
+  await replayStarted;
+
+  let staleReplayResponse: Promise<unknown> | undefined;
+  try {
+    // The global lifecycle census has completed by the time its base response
+    // has notified the card; let its promise settle while replay remains held.
+    await page.waitForTimeout(50);
+    const terminalRefresh = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/integrations/google/operations"
+        && !url.search
+        && response.status() === 403;
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await terminalRefresh;
+
+    await expect(row.getByText("Recorded Google operations could not be loaded", { exact: true })).toBeVisible();
+    await expect(row.getByText("Initial base row", { exact: true })).toHaveCount(0);
+    await expect(row.getByText("Initial extra row", { exact: true })).toHaveCount(0);
+    staleReplayResponse = page.waitForResponse((response) => (
+      new URL(response.url()).searchParams.get("cursor") === "delayed-replay"
+    ));
+  } finally {
+    // Never leave the mocked request unresolved when an assertion fails.
+    releaseReplay();
+  }
+  await staleReplayResponse;
+  await expect(row.getByText("Stale delayed row", { exact: true })).toHaveCount(0);
+});
+
+test("Operations health replay failure Retry restarts base reconciliation from fresh cursors", async ({ page }) => {
+  await mockReadyWorkspaceForStageThree(page);
+  let baseReads = 0;
+  const categoryCursors: string[] = [];
+  await page.route("**/api/v1/integrations/google/operations**", async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const url = new URL(route.request().url());
+    const category = url.searchParams.get("category");
+    const cursor = url.searchParams.get("cursor");
+    if (category === "events") {
+      expect(cursor).not.toBeNull();
+      categoryCursors.push(cursor ?? "");
+      if (cursor === "initial-page-two") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Initial page two")) });
+        return;
+      }
+      if (cursor === "failed-refresh-page-two") {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Replay temporarily unavailable." }) });
+        return;
+      }
+      expect(cursor).toBe("recovered-page-two");
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Recovered page two")) });
+      return;
+    }
+
+    baseReads += 1;
+    const payload = baseReads === 1
+      ? operationsHealthPayload("Initial page one", "initial-page-two")
+      : baseReads === 2
+        ? operationsHealthPayload("Failed refresh page one", "failed-refresh-page-two")
+        : operationsHealthPayload("Recovered page one", "recovered-page-two");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(payload) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  await setStageExpanded(page, 4, true);
+  const row = upkeepRow(page, "operations-health");
+  await row.getByRole("button", { name: "Load more events", exact: true }).click();
+  await expect(row.getByText("Initial page two", { exact: true })).toBeVisible();
+
+  const replayFailure = page.waitForResponse((response) => (
+    new URL(response.url()).searchParams.get("cursor") === "failed-refresh-page-two"
+  ));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await replayFailure;
+  await expect(row.getByText("Replay temporarily unavailable.", { exact: true })).toBeVisible();
+
+  const recoveredBase = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/v1/integrations/google/operations" && !url.search;
+  });
+  const recoveredReplay = page.waitForResponse((response) => (
+    new URL(response.url()).searchParams.get("cursor") === "recovered-page-two"
+  ));
+  await row.getByRole("button", { name: "Retry", exact: true }).click();
+  await Promise.all([recoveredBase, recoveredReplay]);
+
+  await expect(row.getByText("Recovered page one", { exact: true })).toBeVisible();
+  await expect(row.getByText("Recovered page two", { exact: true })).toBeVisible();
+  await expect(row.getByText("Initial page one", { exact: true })).toHaveCount(0);
+  await expect(row.getByText("Initial page two", { exact: true })).toHaveCount(0);
+  expect(categoryCursors).toEqual([
+    "initial-page-two",
+    "failed-refresh-page-two",
+    "recovered-page-two",
+  ]);
 });
 
 test("InfoHint opens on keyboard focus and hover and Escape dismisses it", async ({ page }) => {
@@ -1364,8 +1558,7 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
     connectReady: false,
     identity: { connectionAccount: null, intakeMailboxMatches: null, allowedDomains: ["cherryhillfci.com"], mode: "workspace" },
   });
-  await page.getByRole("button", { name: "Check readiness" }).click();
-  await expect(page.getByText("Workspace readiness refreshed. Current status is shown above.", { exact: true })).toBeVisible();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(page.getByText("Workspace configuration is present.", { exact: false })).toHaveCount(0);
   await expect(tenantChecklistRow(page, "Company domain").getByText("DONE", { exact: true })).toBeVisible();
   await expect(page.locator(`#${domainDescriptionId}`)).toHaveText(domainInstruction);
@@ -1406,7 +1599,7 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
       mode: "workspace",
     },
   });
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "false");
   await setStageExpanded(page, 1, true);
   await expect(tenantChecklistRow(page, "Operations account").getByText("DONE", { exact: true })).toBeVisible();
@@ -1416,7 +1609,7 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
   await expect(card.getByText("Restricted", { exact: true })).toBeVisible();
 
   resourcesShouldFail = true;
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(card.getByText("Not verified", { exact: true })).toBeVisible();
   await expect(card.getByText("Restricted", { exact: true })).toHaveCount(0);
   resourcesShouldFail = false;
@@ -1424,7 +1617,7 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
   currentReadiness = readiness();
   currentResources = workspaceResources({ resources: appManagedResources });
   currentHealth = connectedHealth();
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "true");
   await expect(tenantChecklistRow(page, "Operations account").getByText("DONE", { exact: true })).toBeVisible();
   await expect(tenantChecklistRow(page, "OAuth web client").getByText("DONE", { exact: true })).toBeVisible();
@@ -1548,7 +1741,7 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   await expect(creationRow(page, "shared-drive").getByRole("button", { name: "Verify and adopt" })).toBeDisabled();
 
   currentReadiness = readiness();
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(stageToggle(page, 2)).toHaveAttribute("aria-expanded", "false");
   await setStageExpanded(page, 2, true);
   await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("DONE");
@@ -1591,7 +1784,7 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
     clients: { status: "syncing", lastSyncedAt: mirror.clients.lastSyncedAt, lastError: null },
     projects: { status: "failed", lastSyncedAt: mirror.projects.lastSyncedAt, lastError: "Synthetic drift after a successful verification" },
   };
-  await page.getByRole("button", { name: "Refresh mirror status" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(verificationRow(page, "sheets")).toHaveAttribute("data-stage-four-state", "VERIFIED");
   await expect(verificationRow(page, "sheets").getByText("Syncing", { exact: true })).toBeVisible();
   await expect(verificationRow(page, "sheets").getByText("Needs attention", { exact: true })).toBeVisible();
@@ -1599,7 +1792,7 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   await expect(verificationRow(page, "sheets").getByText("failed", { exact: true })).toHaveCount(0);
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("READY");
   resourcesShouldFail = true;
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("READY");
 });
 
@@ -1770,11 +1963,12 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
     const gmail = verificationRow(page, "gmail");
     await expect(gmail).toHaveAttribute("data-stage-four-state", "TEST EMAIL NEEDED");
     await expect(gmail).not.toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
-    await expect(gmail.getByRole("button", { name: "Refresh FCI labels" })).toBeVisible();
+    await expect(gmail.getByRole("button", { name: "Prepare FCI labels" })).toBeVisible();
+    await expect(gmail.getByRole("button", { name: "Refresh FCI labels" })).toHaveCount(0);
     await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("0 OF 3 VERIFIED");
   });
 
-  test("renders failed status hydration honestly and reconciles exact recovered booleans", async ({ page }) => {
+  test("retains stale verification on transient failures and reconciles exact recovered booleans", async ({ page }) => {
     const durable = await mockDurableStageFourState(page, {
       labelReady: true,
       testEmailPassed: true,
@@ -1785,13 +1979,14 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
     await expectStageFourReady(page);
 
     durable.setStatusFailures({ gmail: true, calendar: true });
-    await page.getByRole("button", { name: "Check readiness", exact: true }).click();
+    await triggerAutomaticWorkspaceRefresh(page);
     await setStageExpanded(page, 4, true);
-    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("UNAVAILABLE");
-    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveClass(/\bneutral\b/);
-    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "UNAVAILABLE");
-    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "UNAVAILABLE");
-    await expect(verificationRow(page, "gmail").getByRole("button", { name: "Refresh FCI labels" })).toBeVisible();
+    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("READY");
+    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveClass(/\bready\b/);
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    await expect(verificationRow(page, "gmail").getByRole("button", { name: "Prepare FCI labels" })).toBeVisible();
+    await expect(verificationRow(page, "gmail").getByRole("button", { name: "Refresh FCI labels" })).toHaveCount(0);
 
     durable.setStatusFailures({ gmail: false, calendar: false });
     durable.setDurableState({
@@ -1799,7 +1994,22 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
       testEmailPassed: false,
       calendarChecked: false,
     });
-    await page.getByRole("button", { name: "Check readiness", exact: true }).click();
+    await triggerAutomaticWorkspaceRefresh(page);
+    await setStageExpanded(page, 4, true);
+    // The Calendar status read is enrolled in the lifecycle census, so the focus
+    // trigger reconciles it and it drops out of VERIFIED. The Gmail read is
+    // deliberately not enrolled: /gmail/messages resolves a mailbox API client
+    // and a live label lookup before it reads its `verification` parameter, so
+    // enrolling it would cost an OAuth refresh-token grant and a mailbox round
+    // trip on every focus. It stays mount- and action-gated and keeps showing
+    // its last read value — which is also why Calendar reads READY TO VERIFY
+    // instead of WAITING here: its actions are still unblocked by a Gmail step
+    // that has not been re-read yet.
+    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+
+    // A fresh mount is how the panel asks for the Gmail verification read again.
+    await page.reload();
     await setStageExpanded(page, 4, true);
     await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("1 OF 3 VERIFIED");
     await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
@@ -2134,7 +2344,7 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
   const completeRequiredResources = structuredClone(resources);
   for (const missingType of ["drive.shared-drive", "drive.folder", "sheets.spreadsheet"] as const) {
     resources = completeRequiredResources.filter((resource) => resource.resourceType !== missingType);
-    await page.getByRole("button", { name: "Check readiness" }).click();
+    await triggerAutomaticWorkspaceRefresh(page);
     const expectedReadyCount = missingType === "drive.shared-drive"
       ? 0
       : missingType === "drive.folder"
@@ -2161,12 +2371,12 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
       await expect(creationRow(page, "calendars").getByRole("button", { name: "Verify calendar access" })).toBeEnabled();
     }
     resources = structuredClone(completeRequiredResources);
-    await page.getByRole("button", { name: "Check readiness" }).click();
+    await triggerAutomaticWorkspaceRefresh(page);
     await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("DONE");
   }
 
   resources = completeRequiredResources.filter((resource) => resource.resourceType !== "drive.file");
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("DONE");
   await expect(stageToggle(page, 4)).toHaveAttribute("aria-expanded", "true");
   await setStageExpanded(page, 3, true);
@@ -2174,7 +2384,7 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
   await expect(creationRow(page, "templates")).toContainText("No templates are defined in this blueprint.");
   await expect(creationRow(page, "calendars").getByRole("button", { name: "Verify calendar access" })).toBeEnabled();
   resources = structuredClone(completeRequiredResources);
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await setStageExpanded(page, 3, true);
   await expect(creationRow(page, "calendars")).toHaveAttribute("data-workspace-creation-state", "VERIFY ONLY");
   await expect(creationRow(page, "calendars")).toContainText("No calendars are defined in this blueprint.");
@@ -2492,7 +2702,7 @@ test.describe("SET-38 Stage 3 subsection disclosures", () => {
 
     await page.keyboard.press("Space");
     await expect(blueprintToggle).toHaveAttribute("aria-expanded", "true");
-    await page.getByRole("button", { name: "Check readiness" }).click();
+    await triggerAutomaticWorkspaceRefresh(page);
     await expect(stageThreeSubsection(page, "creation").getByText("0 of 4 ready", { exact: true })).toBeVisible();
     await expect(creationToggle).toHaveAttribute("aria-expanded", "false");
     await expect(blueprintToggle).toHaveAttribute("aria-expanded", "true");
@@ -2749,7 +2959,7 @@ test("stale Shared Drive registry data keeps adopt locked while direct verificat
   await expect(creationRow(page, "shared-drive")).toHaveAttribute("data-workspace-creation-state", "FOUND — ADOPT");
   await expect(creationRow(page, "shared-drive").getByRole("button", { name: "Verify and adopt" })).toBeEnabled();
   resourcesShouldFail = true;
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await setStageExpanded(page, 3, true);
   await expect(creationCard(page).getByText("Workspace resource status could not be loaded. Retry before using this setup summary.", { exact: true })).toBeVisible();
   await expect(creationCard(page).getByText("Unavailable", { exact: true })).toBeVisible();
@@ -2967,10 +3177,18 @@ test("administrator edits and saves a structured Workspace blueprint while syste
   await blueprintCard.getByLabel("new-spreadsheet spreadsheet name", { exact: true }).fill("First-run Import");
   await blueprintCard.getByLabel("new-spreadsheet spreadsheet role", { exact: true }).selectOption("import");
   await expect(blueprintCard.getByRole("button", { name: "Save blueprint", exact: true })).toBeEnabled();
+  let derivedResourcesReadsAfterSave = 0;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.pathname === "/api/v1/integrations/google/setup/resources") {
+      derivedResourcesReadsAfterSave += 1;
+    }
+  });
   await blueprintCard.getByRole("button", { name: "Save blueprint", exact: true }).click();
 
   await expect(blueprintCard.getByText("Saved version 1", { exact: true })).toBeVisible();
   await expect(blueprintCard.getByText("All blueprint changes saved", { exact: true })).toBeVisible();
+  await expect.poll(() => derivedResourcesReadsAfterSave).toBeGreaterThan(0);
   const reflected = await page.evaluate(async () => {
     const response = await fetch("/api/v1/integrations/google/setup/blueprint", { cache: "no-store" });
     return { status: response.status, body: await response.json() };
