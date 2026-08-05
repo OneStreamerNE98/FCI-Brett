@@ -42,7 +42,7 @@ type IntegrationEvent = Readonly<{
 type CategoryResult<T> = Readonly<{
   items: T[];
   hasMore: boolean;
-  nextCursor: string | null;
+  nextCursor?: string;
 }>;
 
 type OperationsPayload = Readonly<{
@@ -61,8 +61,9 @@ type CategoryKey = "drive" | "archive" | "events";
 type AccumulatedCategory<T> = {
   items: T[];
   hasMore: boolean;
-  nextCursor: string | null;
+  nextCursor?: string;
   loadingMore: boolean;
+  error?: string;
 };
 
 const FAILURE_COLUMNS = [
@@ -100,7 +101,7 @@ function recordLabel(type: string | null, id: string | null) {
 }
 
 function emptyAccumulator<T>(): AccumulatedCategory<T> {
-  return { items: [], hasMore: false, nextCursor: null, loadingMore: false };
+  return { items: [], hasMore: false, loadingMore: false };
 }
 
 function mergeAccumulator<T>(
@@ -112,6 +113,7 @@ function mergeAccumulator<T>(
     hasMore: incoming.hasMore,
     nextCursor: incoming.nextCursor,
     loadingMore: false,
+    error: undefined,
   };
 }
 
@@ -124,11 +126,19 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
   const [archive, setArchive] = useState<AccumulatedCategory<FailedArchive>>(emptyAccumulator);
   const [events, setEvents] = useState<AccumulatedCategory<IntegrationEvent>>(emptyAccumulator);
   const [error, setError] = useState<string | null>(null);
-  const requestSequence = useRef(0);
+  const inFlight = useRef<Set<CategoryKey | "initial">>(new Set());
+  const failuresHeadingRef = useRef<HTMLHeadingElement>(null);
+  const eventsHeadingRef = useRef<HTMLHeadingElement>(null);
+  const prevDriveHasMore = useRef(drive.hasMore);
+  const prevArchiveHasMore = useRef(archive.hasMore);
+  const prevEventsHasMore = useRef(events.hasMore);
 
   const load = useCallback(async (category?: CategoryKey, cursor?: string) => {
     if (!isAdmin) return;
-    const sequence = ++requestSequence.current;
+    const flightKey: CategoryKey | "initial" = category ?? "initial";
+    if (inFlight.current.has(flightKey)) return;
+    inFlight.current.add(flightKey);
+
     const url = new URL("/api/v1/integrations/google/operations", window.location.origin);
     if (category) {
       url.searchParams.set("category", category);
@@ -144,9 +154,9 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
       setArchive(emptyAccumulator());
       setEvents(emptyAccumulator());
     } else {
-      if (category === "drive") setDrive((d) => ({ ...d, loadingMore: true }));
-      if (category === "archive") setArchive((a) => ({ ...a, loadingMore: true }));
-      if (category === "events") setEvents((e) => ({ ...e, loadingMore: true }));
+      if (category === "drive") setDrive((d) => ({ ...d, loadingMore: true, error: undefined }));
+      if (category === "archive") setArchive((a) => ({ ...a, loadingMore: true, error: undefined }));
+      if (category === "events") setEvents((e) => ({ ...e, loadingMore: true, error: undefined }));
     }
 
     try {
@@ -157,7 +167,6 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
           ? body.error
           : "Google operations could not be loaded.");
       }
-      if (sequence !== requestSequence.current) return;
 
       if (!category) {
         setSimulation(body.simulation);
@@ -183,7 +192,6 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
         });
         setState("ready");
       } else {
-        // Only update the targeted category; leave others untouched.
         if (category === "drive") {
           setDrive((current) => mergeAccumulator(current, body.driveOperations));
         }
@@ -195,30 +203,51 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
         }
       }
     } catch (loadError) {
-      if (sequence !== requestSequence.current) return;
+      const message = loadError instanceof Error
+        ? loadError.message
+        : "Google operations could not be loaded.";
       if (!category) {
-        setError(loadError instanceof Error
-          ? loadError.message
-          : "Google operations could not be loaded.");
+        setError(message);
         setState("error");
       } else {
-        setError(loadError instanceof Error
-          ? loadError.message
-          : "Google operations could not be loaded.");
-        if (category === "drive") setDrive((d) => ({ ...d, loadingMore: false }));
-        if (category === "archive") setArchive((a) => ({ ...a, loadingMore: false }));
-        if (category === "events") setEvents((e) => ({ ...e, loadingMore: false }));
+        if (category === "drive") setDrive((d) => ({ ...d, loadingMore: false, error: message }));
+        if (category === "archive") setArchive((a) => ({ ...a, loadingMore: false, error: message }));
+        if (category === "events") setEvents((e) => ({ ...e, loadingMore: false, error: message }));
       }
+    } finally {
+      inFlight.current.delete(flightKey);
     }
   }, [isAdmin]);
 
   useEffect(() => {
     if (!isAdmin) return;
     void Promise.resolve().then(() => load());
+    const flight = inFlight.current;
     return () => {
-      requestSequence.current += 1;
+      flight.clear();
     };
   }, [isAdmin, load]);
+
+  useEffect(() => {
+    if (prevDriveHasMore.current && !drive.hasMore && !drive.loadingMore) {
+      failuresHeadingRef.current?.focus();
+    }
+    prevDriveHasMore.current = drive.hasMore;
+  }, [drive.hasMore, drive.loadingMore]);
+
+  useEffect(() => {
+    if (prevArchiveHasMore.current && !archive.hasMore && !archive.loadingMore) {
+      failuresHeadingRef.current?.focus();
+    }
+    prevArchiveHasMore.current = archive.hasMore;
+  }, [archive.hasMore, archive.loadingMore]);
+
+  useEffect(() => {
+    if (prevEventsHasMore.current && !events.hasMore && !events.loadingMore) {
+      eventsHeadingRef.current?.focus();
+    }
+    prevEventsHasMore.current = events.hasMore;
+  }, [events.hasMore, events.loadingMore]);
 
   if (!isAdmin) {
     return <p className={styles.explanation}>Administrator access is required to inspect Google operation failures.</p>;
@@ -232,8 +261,9 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
   const hasFailedDriveOperation = driveOperations.some((operation) => operation.condition === "failed");
   const moreFailures = drive.hasMore || archive.hasMore;
   const moreEvents = events.hasMore;
+  const anyLoading = state === "loading" || drive.loadingMore || archive.loadingMore || events.loadingMore;
 
-  return <div className={styles.card} data-workspace-operations-health={state}>
+  return <div className={styles.card} data-workspace-operations-health={state} aria-live="polite" aria-busy={anyLoading}>
     <div className={styles.toolbar}>
       <p>{simulation
         ? "Simulation only — these are locally recorded test operations and no Google call is made."
@@ -258,7 +288,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
       <section className={styles.section} aria-labelledby="workspace-operations-failures-heading">
         <div className={styles.sectionHeading}>
           <div>
-            <h5 id="workspace-operations-failures-heading">Needs attention</h5>
+            <h5 id="workspace-operations-failures-heading" ref={failuresHeadingRef} tabIndex={-1}>Needs attention</h5>
             <span>{failureCount === 0 ? "No stuck leases or failed archives" : `${failureCount}${moreFailures ? "+" : ""} recorded issue${failureCount === 1 ? "" : "s"}`}</span>
           </div>
           {failureCount === 0
@@ -306,7 +336,26 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
               </OperationsDataTableCell>
             </tr>)}
           </OperationsDataTable>}
-        {moreFailures && <p className={styles.limitNote}>Showing the newest {limits?.perCategory ?? 50} items in each failure category. More recorded issues exist.</p>}
+        {drive.error && (
+          <div className={styles.error} role="alert">
+            <CircleAlert size={16} aria-hidden="true" />
+            <span>{drive.error}</span>
+            <button className="soft-button" type="button" onClick={() => void load("drive", drive.nextCursor)}>Retry</button>
+          </div>
+        )}
+        {archive.error && (
+          <div className={styles.error} role="alert">
+            <CircleAlert size={16} aria-hidden="true" />
+            <span>{archive.error}</span>
+            <button className="soft-button" type="button" onClick={() => void load("archive", archive.nextCursor)}>Retry</button>
+          </div>
+        )}
+        {failureCount > 0 && (
+          <p className={styles.limitNote}>
+            Showing {failureCount} recorded issue{failureCount === 1 ? "" : "s"}
+            {moreFailures ? ` (newest ${limits?.perCategory ?? 50} per category). More exist.` : ""}
+          </p>
+        )}
         {moreFailures && (
           <div className={styles.loadMoreRow}>
             {drive.hasMore && (
@@ -314,7 +363,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
                 className="soft-button"
                 type="button"
                 disabled={drive.loadingMore}
-                onClick={() => void load("drive", drive.nextCursor ?? undefined)}
+                onClick={() => void load("drive", drive.nextCursor)}
               >
                 {drive.loadingMore ? "Loading…" : <>Load more Drive issues <ChevronDown size={14} aria-hidden="true" /></>}
               </button>
@@ -324,7 +373,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
                 className="soft-button"
                 type="button"
                 disabled={archive.loadingMore}
-                onClick={() => void load("archive", archive.nextCursor ?? undefined)}
+                onClick={() => void load("archive", archive.nextCursor)}
               >
                 {archive.loadingMore ? "Loading…" : <>Load more archive issues <ChevronDown size={14} aria-hidden="true" /></>}
               </button>
@@ -333,14 +382,14 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
         )}
         {hasStuckDriveLease && <p className={styles.guidance}><strong>Stuck lease:</strong> wait out the five-minute lease before retrying. Never hand-edit Drive to clear it.</p>}
         {hasFailedDriveOperation && <p className={styles.guidance}><strong>Failed Drive operation:</strong> keep the recorded error code and retry only through the original app action. Never repair Drive or app records by hand.</p>}
-        {failedArchives.length > 0 && <p className={styles.guidance}><strong>Failed archive:</strong> return to the Gmail project inbox and repeat Review &amp; copy. The saved archive identity makes the retry idempotent.</p>}
+        {failedArchives.length > 0 && <p className={styles.guidance}><strong>Failed archive:</strong> return to the Gmail project inbox and repeat Review & copy. The saved archive identity makes the retry idempotent.</p>}
         {failedArchives.length > 0 && <a className="soft-button" href="/inbox">Open Gmail project inbox</a>}
       </section>
 
       <section className={styles.section} aria-labelledby="workspace-operations-events-heading">
         <div className={styles.sectionHeading}>
           <div>
-            <h5 id="workspace-operations-events-heading">Recent integration activity</h5>
+            <h5 id="workspace-operations-events-heading" ref={eventsHeadingRef} tabIndex={-1}>Recent integration activity</h5>
             <span>{eventItems.length === 0 ? "No recorded activity" : `${eventItems.length}${moreEvents ? "+" : ""} newest event${eventItems.length === 1 ? "" : "s"}`}</span>
           </div>
         </div>
@@ -369,14 +418,26 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
               </OperationsDataTableCell>
             </tr>)}
           </OperationsDataTable>}
-        {moreEvents && <p className={styles.limitNote}>Showing the newest {limits?.perCategory ?? 50} events. Older activity remains stored.</p>}
+        {events.error && (
+          <div className={styles.error} role="alert">
+            <CircleAlert size={16} aria-hidden="true" />
+            <span>{events.error}</span>
+            <button className="soft-button" type="button" onClick={() => void load("events", events.nextCursor)}>Retry</button>
+          </div>
+        )}
+        {eventItems.length > 0 && (
+          <p className={styles.limitNote}>
+            Showing {eventItems.length} event{eventItems.length === 1 ? "" : "s"}
+            {moreEvents ? ` (newest ${limits?.perCategory ?? 50} per fetch). Older activity remains stored.` : ""}
+          </p>
+        )}
         {moreEvents && (
           <div className={styles.loadMoreRow}>
             <button
               className="soft-button"
               type="button"
               disabled={events.loadingMore}
-              onClick={() => void load("events", events.nextCursor ?? undefined)}
+              onClick={() => void load("events", events.nextCursor)}
             >
               {events.loadingMore ? "Loading…" : <>Load more events <ChevronDown size={14} aria-hidden="true" /></>}
             </button>

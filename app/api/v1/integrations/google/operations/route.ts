@@ -7,6 +7,7 @@ import { requireOfficeUser } from "../../../../../lib/workspace-auth";
 
 const RESULT_LIMIT = 50;
 const QUERY_LIMIT = RESULT_LIMIT + 1;
+const VALID_CATEGORIES = new Set(["drive", "archive", "events"]);
 
 function encodeCursor(parts: Record<string, [number, string]>): string | null {
   const entries = Object.entries(parts).filter(([, v]) => v !== undefined);
@@ -14,10 +15,15 @@ function encodeCursor(parts: Record<string, [number, string]>): string | null {
   return btoa(JSON.stringify(Object.fromEntries(entries)));
 }
 
-function decodeCursor(cursor: string | null): Record<string, [number, string]> {
-  if (!cursor) return {};
+function decodeCursor(cursor: string | null):
+  | { ok: true; data: Record<string, [number, string]> }
+  | { ok: false } {
+  if (!cursor) return { ok: true, data: {} };
   try {
-    const parsed = JSON.parse(atob(cursor)) as Record<string, unknown>;
+    const parsed = JSON.parse(atob(cursor));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return { ok: false };
+    }
     const result: Record<string, [number, string]> = {};
     for (const [key, value] of Object.entries(parsed)) {
       if (
@@ -29,9 +35,9 @@ function decodeCursor(cursor: string | null): Record<string, [number, string]> {
         result[key] = [value[0], value[1]];
       }
     }
-    return result;
+    return { ok: true, data: result };
   } catch {
-    return {};
+    return { ok: false };
   }
 }
 
@@ -108,10 +114,26 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const cursorParam = searchParams.get("cursor");
   const categoryParam = searchParams.get("category");
-  const cursor = decodeCursor(cursorParam);
-  const categories = categoryParam
+
+  const decoded = decodeCursor(cursorParam);
+  if (!decoded.ok) {
+    return noStoreJson({ error: "Invalid cursor." }, 400);
+  }
+  const cursor = decoded.data;
+
+  const rawCategories = categoryParam
     ? categoryParam.split(",").map((s) => s.trim()).filter(Boolean)
-    : ["drive", "archive", "events"];
+    : null;
+  if (rawCategories !== null) {
+    const invalid = rawCategories.filter((c) => !VALID_CATEGORIES.has(c));
+    if (invalid.length > 0 || rawCategories.length === 0) {
+      return noStoreJson(
+        { error: `Invalid category: ${invalid[0] ?? ""}. Allowed: drive, archive, events.` },
+        400,
+      );
+    }
+  }
+  const categories = rawCategories ?? ["drive", "archive", "events"];
   const includeDrive = categories.includes("drive");
   const includeArchive = categories.includes("archive");
   const includeEvents = categories.includes("events");

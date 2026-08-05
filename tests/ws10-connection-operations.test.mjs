@@ -337,17 +337,46 @@ test("category param limits which tables are queried", async () => {
   assert.match(database.state.queries[0].sql, /FROM google_integration_events/u);
 });
 
-test("cursor decoding is tolerant of invalid input", async () => {
+test("unknown or malformed category param returns typed 400", async () => {
   const database = fakeDatabase();
   simulationEnvironment(database);
 
-  const response = await route.GET(routeRequest(ADMIN_EMAIL, "?cursor=not-valid-base64!!!"));
-  const body = await response.json();
+  const unknown = await route.GET(routeRequest(ADMIN_EMAIL, "?category=drive,unknown"));
+  assert.equal(unknown.status, 400);
+  const unknownBody = await unknown.json();
+  assert.ok(unknownBody.error.includes("Invalid category"), "unknown category must name the error");
 
-  assert.equal(response.status, 200);
-  assert.equal(body.driveOperations.items.length, 2);
-  assert.equal(body.failedArchives.items.length, 1);
-  assert.equal(body.events.items.length, 2);
+  const wrongCase = await route.GET(routeRequest(ADMIN_EMAIL, "?category=Events"));
+  assert.equal(wrongCase.status, 400, "wrong case must be rejected");
+
+  const commaOnly = await route.GET(routeRequest(ADMIN_EMAIL, "?category=,"));
+  assert.equal(commaOnly.status, 400, "comma-only must be rejected");
+
+  const valid = await route.GET(routeRequest(ADMIN_EMAIL, "?category=events"));
+  assert.equal(valid.status, 200, "valid category must succeed");
+
+  const absent = await route.GET(routeRequest(ADMIN_EMAIL, ""));
+  assert.equal(absent.status, 200, "absent category must query all");
+});
+
+test("bad cursor returns typed 400 instead of silent page-1 read", async () => {
+  const database = fakeDatabase();
+  simulationEnvironment(database);
+
+  const notBase64 = await route.GET(routeRequest(ADMIN_EMAIL, "?cursor=not-valid-base64!!!"));
+  assert.equal(notBase64.status, 400, "non-base64 cursor must be rejected");
+
+  const wrongShape = await route.GET(routeRequest(ADMIN_EMAIL, `?cursor=${btoa(JSON.stringify(["array"]))}`));
+  assert.equal(wrongShape.status, 400, "array cursor must be rejected");
+
+  const nonObject = await route.GET(routeRequest(ADMIN_EMAIL, `?cursor=${btoa("42")}`));
+  assert.equal(nonObject.status, 400, "non-object cursor must be rejected");
+
+  const truncated = await route.GET(routeRequest(ADMIN_EMAIL, `?cursor=${btoa(JSON.stringify({ d: [1] })).slice(0, -2)}`));
+  assert.equal(truncated.status, 400, "truncated cursor must be rejected");
+
+  const wellFormed = await route.GET(routeRequest(ADMIN_EMAIL, `?cursor=${btoa(JSON.stringify({ e: [Date.now(), "x"] }))}`));
+  assert.equal(wellFormed.status, 200, "well-formed cursor must succeed");
 });
 
 test("office and unauthenticated callers are denied before every database query", async (t) => {
@@ -409,7 +438,7 @@ test("the empty integration-activity state does not promise simulation reset in 
   assert.ok(emptyState, "the empty integration-activity state must still exist");
   assert.match(
     emptyState,
-    /simulation/u,
+    /\{simulation\s*\r?\n?\s*\?/u,
     "the empty integration-activity state must gate its copy on simulation mode",
   );
   assert.doesNotMatch(
@@ -425,4 +454,22 @@ test("card source contains per-category load-more buttons gated on hasMore", asy
   assert.match(card, /moreEvents/u, "card must track events hasMore state");
   assert.match(card, /nextCursor/u, "card must read nextCursor from response");
   assert.match(card, /"category", category/u, "card must pass category param dynamically");
+});
+
+test("card source surfaces per-category paging errors with retry affordance", async () => {
+  const card = await read("app/settings/components/workspace-operations/WorkspaceOperationsHealthCard.tsx");
+  assert.match(card, /drive\.error/u, "card must expose drive paging error");
+  assert.match(card, /archive\.error/u, "card must expose archive paging error");
+  assert.match(card, /events\.error/u, "card must expose events paging error");
+  assert.match(card, /load\("drive", drive\.nextCursor\)/u, "card must retry drive from its cursor");
+  assert.match(card, /load\("archive", archive\.nextCursor\)/u, "card must retry archive from its cursor");
+  assert.match(card, /load\("events", events\.nextCursor\)/u, "card must retry events from its cursor");
+});
+
+test("card source tracks per-category in-flight state independently", async () => {
+  const card = await read("app/settings/components/workspace-operations/WorkspaceOperationsHealthCard.tsx");
+  assert.match(card, /inFlight\.current\.has\(flightKey\)/u, "card must gate duplicate in-flight requests by key");
+  assert.match(card, /inFlight\.current\.add\(flightKey\)/u, "card must register in-flight key");
+  assert.match(card, /inFlight\.current\.delete\(flightKey\)/u, "card must deregister in-flight key");
+  assert.doesNotMatch(card, /requestSequence\.current/u, "card must not use a shared sequence counter");
 });
