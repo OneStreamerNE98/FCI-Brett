@@ -579,7 +579,7 @@ packets cover other cards; DES-06/08d own the Overview layout editor). New.
 ---
 
 ### FIX-20 · Wrap-insensitive documentation pins (small; from the July 27 devils-advocate review)
-**Status:** In progress — `kimi/fix20-wrap-insensitive-pins`
+**Status:** Complete — PR #312, August 5, 2026. Source-only and undeployed. Documentation prose pins across four suites are wrap-insensitive, so a markdown reflow no longer turns CI red. Review found three items: the doc06 sweep was completed, and a warning banner the change had falsified was corrected. The PR body's claim of four pre-existing failures on main did not reproduce — CI on a clean tree was green, and the discrepancy traced to a degraded local environment, which is what prompted the verification-block law in PR #316. The one genuine catch, a red main, was real and saved a triage cycle across four PRs.
 **Why:** several CI suites pin documentation prose at line-wrap granularity, so an innocent
 reflow of a guide sentence turns CI red with an error naming an unrelated feature:
 `tests/set11-directory-sync.test.mjs:59-62` and

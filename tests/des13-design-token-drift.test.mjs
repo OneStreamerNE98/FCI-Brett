@@ -226,6 +226,28 @@ test("DES-13 negative fixture proves a new inline-style raw hex fails the drift 
   assert.deepEqual(blocks.flatMap((block) => rawHexViolations(block)), ["#123456"]);
 });
 
+test("DES-25 keeps PhoneInstallPanel inside the design-token drift guard", async () => {
+  const componentPath = join(applicationRoot, "PhoneInstallPanel.tsx");
+  const stylesheetPath = join(applicationRoot, "PhoneInstallPanel.module.css");
+  const component = await readFile(componentPath, "utf8");
+  const stylesheet = cssSources.find(({ path }) => path === stylesheetPath);
+  assert.ok(stylesheet, "PhoneInstallPanel.module.css must be included in the app CSS census");
+  assert.match(component, /import styles from "\.\/PhoneInstallPanel\.module\.css";/u);
+  assert.doesNotMatch(component, /<style\b/u);
+  assert.equal("app/PhoneInstallPanel.tsx" in (allowlist.inlineStyleDeferrals ?? {}), false);
+  assert.deepEqual(rawHexViolations(stylesheet.source), []);
+
+  const mutated = stylesheet.source.replace(
+    /color:\s*var\(--color-ink\);/u,
+    "color:#123456;",
+  );
+  assert.notEqual(mutated, stylesheet.source, "the mutation must replace the panel's ink token");
+  const violations = rawHexViolations(mutated).map((value) => (
+    `${relative(repositoryRoot, stylesheetPath).replaceAll("\\", "/")}:${value}`
+  ));
+  assert.deepEqual(violations, ["app/PhoneInstallPanel.module.css:#123456"]);
+});
+
 test("DES-13 gap and padding values use only the 4-point spacing scale", () => {
   const expectedSpace = ["4px", "8px", "12px", "16px", "24px", "32px", "48px", "64px"];
   for (const [index, value] of expectedSpace.entries()) {

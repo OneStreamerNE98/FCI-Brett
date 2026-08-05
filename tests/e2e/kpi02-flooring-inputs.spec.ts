@@ -15,10 +15,7 @@ function monitorBrowserHealth(page: Page) {
   const issues: BrowserIssue[] = [];
   page.on("console", (message) => {
     const detail = message.text();
-    // Vinext emits absolute Windows next/font URLs in local development CSS.
-    // Keep every application error while excluding only that framework warning.
-    const localVinextFontWarning = detail.startsWith("Not allowed to load local resource: file:///") && detail.includes("/.vinext/fonts/");
-    if (message.type() === "error" && !localVinextFontWarning) issues.push({ kind: "console.error", detail });
+    if (message.type() === "error") issues.push({ kind: "console.error", detail });
   });
   page.on("pageerror", (error) => issues.push({ kind: "pageerror", detail: error.stack ?? error.message }));
   return issues;

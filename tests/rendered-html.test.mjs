@@ -157,6 +157,8 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(layout, /fci-app-icon-master\.svg/);
   assert.match(layout, /fci-app-icon-master\.png/);
   assert.match(layout, /shortcut: "\/fci-app-icon-master\.svg"/);
+  assert.match(layout, /<body>\s*<ClientDataFreshnessBoundary \/>/u);
+  assert.doesNotMatch(layout, /next\/font|DM_Sans|Manrope|--font-body|--font-display/u);
   assert.match(app, /Leads & opportunities/);
   assert.match(app, /Schedule & crews/);
   assert.match(app, /Gmail project inbox/);
