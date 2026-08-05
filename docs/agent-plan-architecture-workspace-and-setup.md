@@ -3948,6 +3948,7 @@ golden-hash change unless separately authorized).
 **Effort:** medium. **Cost:** $0.
 
 ### DES-25 · Retire the dead webfont loading and migrate the last inline-style island (small; after DES-13)
+**Status:** In progress — `codex/des25-font-retirement`
 
 **Why:** DES-13 moved the application to a system font stack (owner decision, August 4,
 2026 — see the correction banner in DES-13). Two residues could not be cleaned there
