@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
-import { SETTINGS_SECTIONS } from "../app/lib/operations-routes.ts";
+import { SETTINGS_SECTION_LABELS } from "../app/lib/operations-routes.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -45,7 +45,7 @@ test("keeps SettingsView as a nine-section, two-audience dispatcher without pane
   assert.ok(settingsView.startsWith("function SettingsView"));
   assert.deepEqual(
     [...settingsView.matchAll(/visibleSection === "([^"]+)"/g)].map((match) => match[1]),
-    [...SETTINGS_SECTIONS],
+    [...SETTINGS_SECTION_LABELS],
   );
 
   const branches = [
@@ -72,11 +72,11 @@ test("keeps SettingsView as a nine-section, two-audience dispatcher without pane
   assert.match(settingsView, /visibleSection === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow"/);
   assert.match(settingsView, /visibleSection === "AI assistant" && <AiAssistantSettingsCard notify=\{notify\} isAdmin=\{isAdmin\}/);
   assert.match(settingsView, /const visibleSection: SettingsSection = isAdmin \? section : "My settings"/);
-  for (const section of SETTINGS_SECTIONS.slice(1)) {
+  for (const section of SETTINGS_SECTION_LABELS.slice(1)) {
     assert.match(settingsView, new RegExp(`isAdmin && visibleSection === "${section.replace(/[&]/g, "\\&")}"`));
   }
   assert.match(settingsView, /<SettingsAudienceNavigation section=\{visibleSection\} isAdmin=\{isAdmin\}/);
-  assert.match(navigation, /label="My settings"/);
+  assert.match(navigation, /PERSONAL_SECTION_ENTRY/);
   assert.match(navigation, /Workspace &amp; company setup/);
   assert.match(navigation, /\{isAdmin && <section/);
   assert.doesNotMatch(settingsView, /\b(?:useState|useEffect|useCallback|cachedGetJson)\b|fetch\s*\(|<form\b|<table\b|OperationsDataTable/);

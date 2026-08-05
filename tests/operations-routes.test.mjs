@@ -10,6 +10,7 @@ import {
   operationsViewForPath,
   projectLifecycleFromSearch,
   projectStatusFromSearch,
+  SETTINGS_SECTIONS,
   settingsSectionFromSearch,
 } from "../app/lib/operations-routes.ts";
 
@@ -48,19 +49,23 @@ test("only bounded non-default page state is included in durable URLs", () => {
 });
 
 test("keeps every SET-07 Settings slug pinned while My settings remains the canonical default", () => {
-  const settingsRoutes = [
-    ["My settings", "/settings"],
-    ["Google Workspace", "/settings?section=google-workspace"],
-    ["Calendar & appointments", "/settings?section=calendar"],
-    ["Inbox & file rules", "/settings?section=inbox-rules"],
-    ["Client Directory", "/settings?section=client-directory"],
-    ["Workflow & notifications", "/settings?section=workflow-notifications"],
-    ["AI assistant", "/settings?section=ai-assistant"],
-    ["Data & security", "/settings?section=data-security"],
-    ["Testing & launch", "/settings?section=testing-launch"],
+  const settingsCatalog = [
+    ["My settings", "account", "Working", "/settings"],
+    ["Google Workspace", "google-workspace", "In development", "/settings?section=google-workspace"],
+    ["Calendar & appointments", "calendar", "Setup required", "/settings?section=calendar"],
+    ["Inbox & file rules", "inbox-rules", "In development", "/settings?section=inbox-rules"],
+    ["Client Directory", "client-directory", "Setup required", "/settings?section=client-directory"],
+    ["Workflow & notifications", "workflow-notifications", "In development", "/settings?section=workflow-notifications"],
+    ["AI assistant", "ai-assistant", "In development", "/settings?section=ai-assistant"],
+    ["Data & security", "data-security", "Planned", "/settings?section=data-security"],
+    ["Testing & launch", "testing-launch", "In development", "/settings?section=testing-launch"],
   ];
 
-  for (const [settingsSection, href] of settingsRoutes) {
+  assert.deepEqual(
+    SETTINGS_SECTIONS.map(({ label, slug, featureState }) => [label, slug, featureState]),
+    settingsCatalog.map(([label, slug, featureState]) => [label, slug, featureState]),
+  );
+  for (const [settingsSection, , , href] of settingsCatalog) {
     assert.equal(operationsHref("Settings", { settingsSection }), href);
   }
   assert.equal(settingsSectionFromSearch("section=account"), "My settings");

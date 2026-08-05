@@ -3,6 +3,20 @@
   gap: var(--space-2);
 }
 
+.navigation button {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sectionLabel {
+  flex: 1;
+  min-width: 0;
+}
+
+.badge {
+  flex: 0 0 auto;
+}
+
 .navigation section + section {
   padding-top: var(--space-2);
   border-top: 1px solid var(--line);
