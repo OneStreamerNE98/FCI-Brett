@@ -3616,6 +3616,20 @@ choices against that goal first: fewer, clearer paths beats more options; naviga
 simplicity and task-completion speed for office staff are the acceptance lens, and
 Apple styling serves adoption rather than the reverse.
 
+**CORRECTED August 4, 2026 (orchestrator, from the DES-13 build + review) — a premise in
+the direction above was wrong; the original text is preserved as written.** The direction
+says "an SF-adjacent type ramp on the existing system font stack" / "matching the system
+font stack already in use". That was FALSE: the app loaded DM Sans and Manrope as webfonts
+via `app/layout.tsx`, not a system stack. The DES-13 build acted on the premise and swapped
+the whole application to a system font stack. The implementer should have reported the
+disproven premise rather than acting on it silently (AGENTS.md implementer law), but the
+false premise was the orchestrator's. **Owner decision, August 4, 2026: the system stack
+STAYS** — SF on Apple platforms, Segoe on Windows serves the Apple direction more literally
+than the webfonts did. Consequence recorded rather than absorbed: the webfont loading in
+`app/layout.tsx` is now dead weight and `app/PhoneInstallPanel.tsx` still references the
+retired `--font-display`/`--font-body` variables — both are cleaned up by DES-25, a `.tsx`
+packet that CSS-only DES-13 could not carry.
+
 **Framework adoption (Tailwind/shadcn/Radix) was considered and REJECTED**, recorded here
 so it is not re-proposed casually: it rewrites the markup of every page including the two
 golden-hash-pinned ones, re-litigates the owner-approved design authority, and abandons the
@@ -3930,6 +3944,34 @@ around any verification content, materially wider content in screenshots, no
 golden-hash change unless separately authorized).
 **Effort:** medium. **Cost:** $0.
 
+### DES-25 · Retire the dead webfont loading and migrate the last inline-style island (small; after DES-13)
+
+**Why:** DES-13 moved the application to a system font stack (owner decision, August 4,
+2026 — see the correction banner in DES-13). Two residues could not be cleaned there
+because DES-13 was constrained to CSS-values-only: (1) `app/layout.tsx` still imports and
+loads DM Sans and Manrope via `next/font/google` and defines `--font-body`/`--font-display`,
+so every visitor still downloads two webfonts the stylesheets no longer reference; (2)
+`app/PhoneInstallPanel.tsx` carries an inline `<style>` block (~:118-147) still using
+`var(--font-display)`/`var(--font-body)` plus 12 raw hexes, off-scale radii, spacing and
+font sizes — the pre-DES-13 warm-brown language, rendered live inside Settings → Data
+security. It survives only because layout.tsx still defines those variables, so removing the
+webfonts without migrating the panel would break it: the two halves must land together.
+**Do:** (1) remove the `next/font/google` imports, the font instantiations, and the
+`--font-body`/`--font-display` definitions from `app/layout.tsx`, keeping whatever
+className/variable plumbing the shell needs for the system stack; (2) migrate
+`PhoneInstallPanel`'s inline `<style>` to the DES-13 tokens (semantic colors, type scale,
+4pt spacing, tokenized radii) — extracting it to a module CSS file is preferred; (3) remove
+the DES-13 drift-guard allowlist entry for `PhoneInstallPanel.tsx` so the guard enforces the
+file, and keep the guard's inline-`<style>` scanning active.
+**Accept:** no `next/font` import remains and no webfont is requested on load (verify in the
+built output or a network capture, and state which); `PhoneInstallPanel` renders with the
+token language at 390/834/1280 with before/after screenshots; the drift guard covers the
+panel with no allowlist entry and goes red on a reintroduced raw hex there; both golden-hash
+constants byte-identical (the panel is not on a pinned page — confirm); `npm test`,
+`npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** small. **Cost:** $0.
+
+# Workstream G — AI assistant & automation (AI)
 # Workstream G — AI assistant & automation (AI)
 
 Owner-approved July 23, 2026. Design authority: `docs/ai-assistant-spec.md`
