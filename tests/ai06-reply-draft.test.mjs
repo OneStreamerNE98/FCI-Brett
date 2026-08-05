@@ -894,11 +894,11 @@ test("AI-06 reply-draft styling and accessibility are defined, not implied", asy
   // The error text matches the repository's existing error treatment.
   assert.match(
     css,
-    /\.reply-ai-error\{[^}]*border:1px solid #e7cbc4;[^}]*background:#fff7f5;color:#8b4338/u,
+    /\.reply-ai-error\{[^}]*border:1px solid var\(--color-line\);[^}]*background:var\(--color-surface-muted\);color:var\(--color-danger\)/u,
   );
   assert.match(
     css,
-    /\.project-operation-error\{[^}]*border:1px solid #e7cbc4;[^}]*background:#fff7f5;color:#8b4338/u,
+    /\.project-operation-error\{[^}]*border:1px solid var\(--color-line\);[^}]*background:var\(--color-surface-muted\);color:var\(--color-danger\)/u,
   );
   assert.match(css, /\.reply-ai-draft>\.soft-button\[aria-disabled="true"\]\{[^}]*cursor:not-allowed/u);
 

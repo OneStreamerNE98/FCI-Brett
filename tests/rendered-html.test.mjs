@@ -72,7 +72,7 @@ test("renders feature-gated Google Chat routing without a webhook-value field", 
   assert.doesNotMatch(card, /<input[^>]+type="url"|<textarea[^>]+(?:webhook|secret|token)/i);
   assert.match(defaults, /<div className="settings-panel-stack">[\s\S]+<ChatNotificationSettingsCard notify=\{notify\} isAdmin=\{isAdmin\}/);
   assert.match(defaults, /loadState !== "ready"[\s\S]+mode === "workflow" \? <WorkflowSettingsStack/);
-  assert.match(css, /\.settings-panel-stack\{display:grid;min-width:0;gap:15px\}/);
+  assert.match(css, /\.settings-panel-stack\{display:grid;min-width:0;gap:var\(--space-4\)\}/);
   assert.match(css, /@media \(max-width:700px\)[\s\S]+\.chat-routing-list>li\{grid-template-columns:1fr\}/);
 });
 
@@ -163,7 +163,7 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(app, /Workspace Gmail/);
   assert.match(app, /Load messages/);
   assert.match(app, /Ask FCI Assistant/);
-  assert.match(css, /--cream:#f6f2ed/);
+  assert.match(css, /--cream:var\(--color-surface-muted\)/);
   assert.match(css, /\.sidebar \{ background:var\(--cream\); color:var\(--ink\);/);
   assert.match(css, /\.brand \{ height:82px; padding:0; margin:0 4px 26px; overflow:hidden; background:transparent; border:0;/);
   assert.match(css, /\.brand-full \{ display:block; width:100%; height:100%; object-fit:contain;/);
@@ -189,7 +189,7 @@ test("keeps the global design-token and responsive foundations canonical", async
   assert.doesNotMatch(app, /workspace-connection-card-actions|workspace-connection-status|workspace-connection-health-summary|className="workspace-connection"/);
 
   for (const token of [
-    "--line-soft:#e6e0d8",
+    "--line-soft:var(--color-line-soft)",
     "--radius-chip:6px",
     "--radius-control:8px",
     "--radius-card:10px",
@@ -207,11 +207,11 @@ test("keeps the global design-token and responsive foundations canonical", async
 
   assert.match(
     css,
-    /\.workspace-blueprint-footer\{[^}]*box-shadow:0 -5px 18px #3c342c12[^}]*\}/,
+    /\.workspace-blueprint-footer\{[^}]*box-shadow:0 -5px 18px var\(--color-overlay-soft\)[^}]*\}/,
   );
   assert.match(
     css,
-    /\.project-drawer\{[^}]*box-shadow:-15px 0 50px #231f2055[^}]*\}/,
+    /\.project-drawer\{[^}]*box-shadow:-15px 0 50px var\(--color-scrim\)[^}]*\}/,
   );
 });
 
@@ -290,7 +290,7 @@ test("DES-04 keeps shell controls honest, reachable, and responsive", async () =
   assert.match(css, /\.sidebar-collapse\{[^}]*width:var\(--target-min\);min-height:var\(--target-min\)/);
   assert.match(css, /\.sidebar\.collapsed \.main-nav>a\{[^}]*min-height:var\(--target-min\)/);
   assert.match(css, /\.sidebar\.collapsed \.sidebar-collapse\{position:static/);
-  assert.match(css, /\.topbar \{[^}]*gap:14px/);
+  assert.match(css, /\.topbar \{[^}]*gap:var\(--space-3\)/);
   assert.match(css, /\.topbar\.topbar-hidden\{[^}]*translateY/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
   assert.match(css, /\.topbar\{transition:none!important\}/);
@@ -943,10 +943,10 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
   assert.match(css, /\.metric-card-static\{cursor:default\}/);
   assert.match(css, /\.metric-card-link\{[^}]*box-shadow:var\(--shadow-card\)[^}]*cursor:pointer[^}]*transition:/);
   assert.match(css, /\.metric-card-link:hover,.metric-card-link:focus-visible\{[^}]*box-shadow:var\(--shadow-raised\)[^}]*transform:translateY\(-1px\)/);
-  assert.match(css, /\.metric-card-chevron\{[^}]*color:#8b5d35/);
+  assert.match(css, /\.metric-card-chevron\{[^}]*color:var\(--color-warning\)/);
   assert.doesNotMatch(css, /\.metric-card-static:(?:hover|focus-visible)/);
   assert.match(css, /\.panel-header-subtitle\{[^}]*overflow:hidden[^}]*text-overflow:ellipsis[^}]*white-space:nowrap/);
-  assert.match(css, /\.panel-header-subtitle-status\{[^}]*background:#f3f5f2/);
+  assert.match(css, /\.panel-header-subtitle-status\{[^}]*background:var\(--color-canvas\)/);
   assert.match(css, /\.panel-header-subtitle-source\{[^}]*background:transparent/);
 
   assert.match(findings, /### FIX-08 · FloorOpsApp honesty polish bundle \(P3s; small\)\s+\*\*Status:\*\* Superseded — absorbed into DES-05\./);
@@ -1002,7 +1002,7 @@ test("DES-07 unifies operation metrics, empty states, and pill aliases", async (
     assert.ok(operationSurfaces.includes(copy), `Empty-state copy changed: ${copy}`);
   }
 
-  assert.match(css, /\.pill,\.status,\.feature-state\{display:inline-flex;border-radius:var\(--radius-pill\);font-size:12px;font-weight:800;white-space:nowrap\}/);
+  assert.match(css, /\.pill,\.status,\.feature-state\{display:inline-flex;border-radius:var\(--radius-pill\);font-size:var\(--font-size-caption\);font-weight:var\(--font-weight-semibold\);white-space:nowrap\}/);
   assert.match(primitives, /className=\{`status status-\$\{text\.toLowerCase\(\)\.replaceAll\(" ", "-"\)\}`\}/);
   assert.match(featureStateBadge, /className=\{`feature-state feature-state-\$\{className\}\$\{compact \? " feature-state-compact" : ""\}`\}/);
 });
@@ -1035,8 +1035,8 @@ test("keeps mobile project status, schedule truth, site, and value visible with 
   assert.match(css, /\.project-row-value\{grid-column:1\/4;grid-row:3;display:flex!important/);
   assert.doesNotMatch(css, /projects-table-row>span:nth-child\(3\),\.projects-table-row>strong:nth-child\(4\)\{display:none\}/);
   assert.match(css, /\.metric-top span,.metric-card p,.panel-header-subtitle,.panel-header button/);
-  assert.match(css, /\.projects-table-row strong,.projects-table-row small\{font-size:12px\}/);
-  assert.match(css, /color:#655f59/);
+  assert.match(css, /\.projects-table-row strong,.projects-table-row small\{font-size:var\(--font-size-caption\)\}/);
+  assert.match(css, /color:var\(--color-ink-muted\)/);
 });
 
 test("captures durable project meetings and bounded Otter evidence", async () => {

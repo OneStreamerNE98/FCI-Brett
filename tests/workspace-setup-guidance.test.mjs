@@ -109,12 +109,12 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   assert.match(panel, /statusSourcesLoading[\s\S]+CHECKING[\s\S]+statusSourcesUnavailable[\s\S]+UNAVAILABLE/);
   assert.match(panel, /statusSourcesLoading[\s\S]+Stage status pending[\s\S]+statusSourcesUnavailable[\s\S]+Current stage unavailable/);
   assert.match(panel, /statusSourcesLoading \|\| statusSourcesUnavailable[\s\S]+panelStyles\.statusModeNeutral/);
-  assert.match(panelStyles, /\.statusModeNeutral[\s\S]+background: #f0eeeb[\s\S]+color: #6c655f/);
+  assert.match(panelStyles, /\.statusModeNeutral[\s\S]+background: var\(--color-accent-soft\)[\s\S]+color: var\(--color-ink-muted\)/);
   assert.match(panel, /const neutralStageStatus = statusSourcesLoading[\s\S]+CHECKING[\s\S]+statusSourcesUnavailable[\s\S]+UNAVAILABLE/);
   assert.equal(panel.match(/tone=\{neutralStageStatus \? "neutral"/g)?.length, 3);
   assert.match(panel, /tone=\{stageFourStatusNeutral \? "neutral" : stageFourReady \? "ready"/);
   assert.match(panel, /panelStyles\.stageChipNeutral/);
-  assert.match(panelStyles, /\.stageChipNeutral[\s\S]+background: #f0eeeb[\s\S]+color: #6c655f/);
+  assert.match(panelStyles, /\.stageChipNeutral[\s\S]+background: var\(--color-accent-soft\)[\s\S]+color: var\(--color-ink-muted\)/);
   assert.match(panelStyles, /\.stageAnchor[\s\S]+scroll-margin-top: 86px/);
   assert.match(panel, /workspace-status-banner/);
   assert.match(panel, /workspace-status-mode/);

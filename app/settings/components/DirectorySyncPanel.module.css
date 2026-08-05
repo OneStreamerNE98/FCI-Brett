@@ -1,12 +1,12 @@
 .intakePanel {
   min-width: 0;
-  padding: 22px;
+  padding: var(--space-5);
 }
 
 .statusLine {
   margin: 0 0 14px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -14,14 +14,14 @@
 .createdWarning {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0 0 14px;
-  padding: 10px 12px;
-  border: 1px solid #d8e8dc;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-line-soft);
   border-radius: var(--radius-control);
-  background: #f4f9f5;
-  color: #397056;
-  font-size: 12px;
+  background: var(--color-canvas);
+  color: var(--color-accent);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -33,9 +33,9 @@
 .createdWarning {
   grid-column: 1 / -1;
   margin: 0;
-  border-color: #ead8c5;
-  background: #fff9f1;
-  color: #7b6250;
+  border-color: var(--color-line);
+  background: var(--color-danger-soft);
+  color: var(--color-ink-muted);
 }
 
 .empty {
@@ -44,7 +44,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-1);
   border: 1px dashed var(--line);
   border-radius: var(--radius-card);
   color: var(--text-muted);
@@ -53,75 +53,75 @@
 
 .empty strong {
   color: var(--ink);
-  font: 700 13px var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-body) var(--font-ui);
 }
 
 .empty span {
   max-width: 420px;
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
 .reviewList {
   display: grid;
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .reviewCard {
   min-width: 0;
-  padding: 15px;
+  padding: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .reviewHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   margin-bottom: 12px;
 }
 
 .reviewHeader h3 {
   margin: 6px 0 3px;
-  font: 700 14px var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-label) var(--font-ui);
 }
 
 .reviewHeader small {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
 }
 
 .state {
   display: inline-flex;
   min-height: 22px;
   align-items: center;
-  padding: 3px 7px;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
-  background: #edf5ef;
-  color: #397056;
-  font-size: 12px;
-  font-weight: 800;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
 }
 
 .reviewCard[data-review-state="duplicate"] .state,
 .reviewCard[data-review-state="invalid"] .state {
-  background: #fff0e0;
-  color: #8b4718;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 
 .reviewWarning {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
   margin-bottom: 12px;
-  padding: 10px 12px;
-  border: 1px solid #ead8c5;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-control);
-  background: #fff9f1;
-  color: #7b6250;
-  font-size: 12px;
+  background: var(--color-danger-soft);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
 }
 
 .reviewWarning svg {
@@ -134,62 +134,62 @@
 
 .reviewWarning ul {
   margin: 5px 0 0;
-  padding-left: 18px;
+  padding-left: var(--space-4);
   line-height: 1.5;
 }
 
 .responseContext {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0 0 13px;
 }
 
 .responseContext div {
   min-width: 0;
-  padding: 9px 10px;
+  padding: var(--space-2) var(--space-2);
   border-radius: var(--radius-control);
-  background: #f8faf8;
+  background: var(--color-surface-muted);
 }
 
 .responseContext dt {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
 }
 
 .responseContext dd {
   margin: 3px 0 0;
   overflow-wrap: anywhere;
   color: var(--ink);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
 }
 
 .reviewForm {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 11px 12px;
+  gap: var(--space-3) var(--space-3);
 }
 
 .reviewForm label {
   min-width: 0;
   display: grid;
-  gap: 5px;
-  color: #5c554f;
-  font-size: 12px;
-  font-weight: 800;
+  gap: var(--space-1);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
 }
 
 .reviewForm input,
 .reviewForm textarea {
   width: 100%;
   min-height: 44px;
-  border: 1px solid #ded7cf;
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-control);
-  background: #fff;
-  padding: 9px 10px;
+  background: var(--color-surface);
+  padding: var(--space-2) var(--space-2);
   color: var(--ink);
-  font: 400 13px var(--font-ui);
+  font: var(--font-weight-regular) var(--font-size-body) var(--font-ui);
 }
 
 .reviewForm textarea {
@@ -213,25 +213,25 @@
 .ownerLine {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
 }
 
 .error {
-  color: #9a3f32;
-  font-size: 12px;
+  color: var(--color-danger);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
 .reviewActions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  padding-top: 2px;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
 }
 
 @media (max-width: 700px) {
   .intakePanel {
-    padding: 16px;
+    padding: var(--space-4);
   }
 
   .responseContext,

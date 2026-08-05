@@ -196,7 +196,7 @@ test("NFIX-04 wraps long readiness identifiers and stacks every Settings heading
   );
   const phone = mediaRules(globals, "max-width:560px");
   assert.match(phone.get(".settings-heading") ?? "", /display:grid/);
-  assert.match(phone.get(".settings-heading") ?? "", /gap:12px/);
+  assert.match(phone.get(".settings-heading") ?? "", /gap:var\(--space-3\)/);
   assert.match(phone.get(".settings-heading>.soft-button") ?? "", /width:100%/);
 });
 
@@ -270,10 +270,10 @@ test("NFIX-04 pins a complete, explicit raise-or-keep census for every below-44 
 });
 
 test("NFIX-04 keeps the three named control gaps at eight pixels or more", () => {
-  assert.match(resourceStyles, /\.actionButtons\s*\{[^}]*gap:\s*8px/s);
-  assert.match(defaultsStyles, /\.plannedField\s*\{[^}]*gap:\s*8px/s);
-  assert.match(defaultsStyles, /\.plannedFieldHeader\s*\{[^}]*gap:\s*8px/s);
-  assert.match(defaultsStyles, /\.plannedFieldLabel\s*\{[^}]*gap:\s*8px/s);
+  assert.match(resourceStyles, /\.actionButtons\s*\{[^}]*gap:\s*var\(--space-2\)/s);
+  assert.match(defaultsStyles, /\.plannedField\s*\{[^}]*gap:\s*var\(--space-2\)/s);
+  assert.match(defaultsStyles, /\.plannedFieldHeader\s*\{[^}]*gap:\s*var\(--space-2\)/s);
+  assert.match(defaultsStyles, /\.plannedFieldLabel\s*\{[^}]*gap:\s*var\(--space-2\)/s);
 });
 
 test("NFIX-04 leaves both exhausted page-layout golden hashes byte-identical", () => {

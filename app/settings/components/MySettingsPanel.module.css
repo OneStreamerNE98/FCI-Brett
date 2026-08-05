@@ -1,35 +1,35 @@
 .preferenceSection {
   display: grid;
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .sectionHeading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .sectionHeading h3 {
   margin: 0;
-  font: 700 14px var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-label) var(--font-ui);
 }
 
 .sectionHeading p,
 .notificationSection > p {
   margin: 4px 0 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
 .fieldHelp {
   display: flex;
   align-items: flex-start;
-  gap: 5px;
+  gap: var(--space-1);
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
   line-height: 1.4;
 }
 
@@ -41,27 +41,27 @@
 .notificationSection {
   min-width: 0;
   margin: 2px 0 0;
-  padding: 16px;
-  border: 1px solid #e1d8ce;
-  border-radius: 9px;
-  background: #fcfaf7;
+  padding: var(--space-4);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted);
 }
 
 .notificationSection legend {
-  padding: 0 5px;
+  padding: 0 var(--space-1);
   color: var(--ink);
-  font: 700 14px var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-label) var(--font-ui);
 }
 
 .notificationSection legend span {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
 .notificationList {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   margin-top: 13px;
 }
 
@@ -69,11 +69,11 @@
   display: grid !important;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
-  gap: 10px !important;
-  padding: 12px;
-  border: 1px solid #dce6df;
-  border-radius: 8px;
-  background: #fff;
+  gap: var(--space-2) !important;
+  padding: var(--space-3);
+  border: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
   cursor: pointer;
 }
 
@@ -82,23 +82,23 @@
   min-height: 15px !important;
   margin: 2px 0 0;
   padding: 0 !important;
-  accent-color: #49735c;
+  accent-color: var(--color-accent);
 }
 
 .notificationRow > span:nth-child(2) {
   display: grid;
-  gap: 3px;
+  gap: var(--space-1);
 }
 
 .notificationRow strong {
   color: var(--ink);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
 }
 
 .notificationRow small {
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
   line-height: 1.45;
 }
 

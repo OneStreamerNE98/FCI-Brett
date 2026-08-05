@@ -1,7 +1,7 @@
 .plannedField {
   display: grid;
   min-width: 0;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .plannedFieldHeader {
@@ -9,18 +9,18 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .plannedFieldHeader label {
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .plannedFieldLabel {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .plannedFieldLabel label {
@@ -29,7 +29,7 @@
 
 .plannedField > small {
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
   line-height: 1.45;
 }

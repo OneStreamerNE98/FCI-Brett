@@ -1,0 +1,4 @@
+{
+  "semanticColorTokenLimit": 28,
+  "lengthExceptions": ["0", "50%", "999px"]
+}

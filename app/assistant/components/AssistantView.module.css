@@ -1,28 +1,28 @@
 .tabs {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   margin: 0 0 16px;
-  padding: 4px;
+  padding: var(--space-1);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  background: #f6f3ee;
+  background: var(--color-canvas);
 }
 
 .tabs button {
   min-height: 40px;
-  padding: 8px 16px;
+  padding: var(--space-2) var(--space-4);
   border: 1px solid transparent;
-  border-radius: calc(var(--radius-control) - 2px);
+  border-radius: var(--radius-chip);
   background: transparent;
   color: var(--text-muted);
-  font: 800 13px var(--font-body);
+  font: var(--font-weight-semibold) var(--font-size-body) var(--font-ui);
   cursor: pointer;
 }
 
 .tabs button[aria-selected="true"] {
   border-color: var(--line);
-  background: #fff;
+  background: var(--color-surface);
   color: var(--ink);
   box-shadow: var(--shadow-subtle);
 }

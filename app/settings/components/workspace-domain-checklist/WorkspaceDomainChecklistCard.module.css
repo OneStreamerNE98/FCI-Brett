@@ -4,7 +4,7 @@
 
 .list {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -15,22 +15,22 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 10px;
-  padding: 11px;
-  border: 1px solid #e2e8e3;
-  border-radius: 8px;
-  background: #fff;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
 }
 
 .copy {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .copy strong {
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -40,11 +40,11 @@
   width: max-content;
   max-width: 100%;
   border-radius: 999px;
-  padding: 4px 7px;
-  background: #f0eeeb;
-  color: #6c655f;
-  font-size: 12px;
-  font-weight: 800;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-accent-soft);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
   line-height: 1.25;
   white-space: nowrap;
 }
@@ -52,8 +52,8 @@
 .administrator-setup,
 .unavailable,
 .manual-check {
-  background: #f0eeeb;
-  color: #6c655f;
+  background: var(--color-accent-soft);
+  color: var(--color-ink-muted);
 }
 
 .configuration-present,
@@ -62,8 +62,8 @@
 .account-matched,
 .secrets-present,
 .restricted {
-  background: #edf4ef;
-  color: #35674d;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .setup-required,
@@ -71,35 +71,35 @@
 .needs-review,
 .reconnect-required,
 .account-mismatch {
-  background: #f7ede2;
-  color: #805b38;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 
 .simulated {
-  background: #e9eef7;
-  color: #405f8a;
+  background: var(--color-info-soft);
+  color: var(--color-info);
 }
 
 .not-verified {
-  background: #f0eeeb;
-  color: #6c655f;
+  background: var(--color-accent-soft);
+  color: var(--color-ink-muted);
 }
 
 .done {
-  background: #edf4ef;
-  color: #35674d;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .missing {
-  background: #f7ede2;
-  color: #805b38;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 
 .link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--space-1);
   min-height: 30px;
   white-space: nowrap;
   text-decoration: none;
@@ -107,27 +107,27 @@
 
 .hostedPrerequisites {
   margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #e4ded7;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-line-soft);
 }
 
 .hostedPrerequisitesHeading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   margin-bottom: 10px;
 }
 
 .hostedPrerequisitesHeading h4 {
   margin: 0;
-  font: 700 12px var(--font-display);
+  font: var(--font-weight-bold) var(--font-size-caption) var(--font-ui);
 }
 
 .hostedPrerequisitesHeading p {
   margin: 4px 0 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -135,26 +135,26 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-2);
   margin: 12px 0 0;
-  padding: 10px 11px;
-  border: 1px solid #e4ded7;
-  border-radius: 8px;
-  background: #fff;
-  font-size: 12px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  font-size: var(--font-size-caption);
 }
 
 .safeguards {
   display: flex;
   align-items: flex-start;
-  gap: 7px;
+  gap: var(--space-2);
   margin: 12px 0 0 !important;
-  padding: 11px;
-  border: 1px solid #d8e8dc;
-  border-radius: 8px;
-  background: #f4f9f5;
-  color: #397056 !important;
-  font-size: 12px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-control);
+  background: var(--color-canvas);
+  color: var(--color-accent) !important;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -180,7 +180,7 @@
 
   .hostedPrerequisitesHeading {
     flex-direction: column;
-    gap: 7px;
+    gap: var(--space-2);
   }
 
   .restrictions {

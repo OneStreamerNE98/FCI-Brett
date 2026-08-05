@@ -51,16 +51,43 @@ counts saved meeting notes — a cumulative stat; see §5). Reports summary metr
 follow the same mapping where a destination exists. Cards render as non-links
 while records are not `ready`.
 
-## 3. Design tokens (DES-01 establishes; values = current dominants, so paint is unchanged)
+## 3. Design tokens (DES-01 foundation; DES-13 value language)
 
+DES-13 keeps one `:root` block and extends the existing radius, control, and shadow
+foundation with an Apple-aligned value language. The intent is restrained: neutral
+surfaces, one application accent, a compact system type ramp, and a 4 pt spacing grid.
+Selectors and component markup do not change to adopt these values.
+
+| Scale | Tokens |
+|---|---|
+| Ink | `--color-ink`, `--color-ink-secondary`, `--color-ink-muted`, `--color-ink-subtle`, `--color-ink-inverse` |
+| Surfaces and lines | `--color-canvas`, `--color-surface`, `--color-surface-sunken`, `--color-surface-muted`, `--color-line`, `--color-line-soft`, `--color-line-strong` |
+| Accent and state | `--color-accent`, `--color-accent-hover`, `--color-accent-soft`, paired `success`, `warning`, `danger`, `info`, and `violet` foreground/soft-surface tokens |
+| Type | caption `12px`, body `13px`, label `14px`, headings `16/20/24px`, display `28px`; weights `400/500/600/700`; caption/body/heading line-height tokens |
+| Space | six everyday component steps (`--space-1…6`: `4/8/12/16/24/32px`) plus two macro-layout steps (`--space-7…8`: `48/64px`) |
+| Motion | `--motion-duration-fast:120ms`, `--motion-duration-standard:180ms`, and one `--motion-ease` curve |
+
+The original compatibility names (`--ink`, `--surface`, `--line`, `--accent`, and
+their siblings) remain as aliases during the value-only migration. Radius and shadow
+values remain the DES-01 values because those dimensions already tested well:
 `--radius-chip:6px · --radius-control:8px · --radius-card:10px ·
 --radius-pill:999px · --control-compact:34px · --control-standard:40px ·
 --control-page:42px · --target-min:44px · --shadow-card:0 1px 2px
 rgba(29,55,40,.04) · --shadow-raised:0 5px 15px rgba(29,55,40,.06) ·
---shadow-overlay:0 25px 70px rgba(35,31,32,.65)` — one `:root` block only; the
-duplicate block and alias tokens (`--muted`, `--green`…) are removed after their
-usages are rewritten. Green-tinted legacy borders normalize to `var(--line)` /
-`--line-soft:#e6e0d8` (the series' one deliberately visible, subtle change).
+--shadow-overlay:0 25px 70px rgba(35,31,32,.65)`.
+
+The packet's approximately six-step spacing direction is the six-step component scale.
+The two larger values are retained as named macro-layout steps so existing page-shell
+padding also leaves the raw-value census; they are not additional component spacing
+choices.
+
+### Reset layer decision
+
+`@import "tailwindcss"` is deliberately retained at `app/globals.css:1` as the app's
+load-bearing Preflight reset layer. No Tailwind utility classes are in use, and DES-13
+does not adopt the Tailwind framework. A future removal must provide an equivalent
+minimal reset in the same change and re-run the complete visual regression gate; it is
+never a dependency-cleanup-only deletion.
 
 ## 4. Brand & nav decisions (owner, July 22)
 

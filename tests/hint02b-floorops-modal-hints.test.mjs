@@ -124,9 +124,9 @@ test("modal hint layout and panel-scoped Escape guard remain wired", async () =>
   ]);
 
   assert.match(styles, /\.modal-hinted-field\{min-width:0;margin-bottom:14px\}/u);
-  assert.match(styles, /\.modal-hint-label-row\{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:7px\}/u);
+  assert.match(styles, /\.modal-hint-label-row\{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:var\(--space-2\)\}/u);
   assert.match(styles, /\.modal-hint-label-row>label\{min-width:0;margin-bottom:0\}/u);
-  assert.match(styles, /@media \(min-width:561px\)\{\.modal-hint-form-row>label\{padding-top:16px\}\}/u);
+  assert.match(styles, /@media \(min-width:561px\)\{\.modal-hint-form-row>label\{padding-top:var\(--space-4\)\}\}/u);
   assert.match(
     overlay,
     /if \(event\.key === "Escape"\) \{\s*if \(panel\.querySelector\("\.info-hint\.open"\)\) return;\s*const eventTarget = event\.target instanceof HTMLElement \? event\.target : null;[\s\S]{0,240}if \(eventTarget\?\.matches\('\[role="combobox"\]\[aria-expanded="true"\]'\)\) return;\s*event\.preventDefault\(\);/u,
