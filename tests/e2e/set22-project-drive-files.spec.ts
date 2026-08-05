@@ -23,9 +23,7 @@ function monitorBrowserHealth(page: Page) {
   const issues: BrowserIssue[] = [];
   page.on("console", (message) => {
     const detail = message.text();
-    const localVinextFontWarning = detail.startsWith("Not allowed to load local resource: file:///")
-      && detail.includes("/.vinext/fonts/");
-    if (message.type() === "error" && !localVinextFontWarning) {
+    if (message.type() === "error") {
       issues.push({ kind: "console.error", detail });
     }
   });
