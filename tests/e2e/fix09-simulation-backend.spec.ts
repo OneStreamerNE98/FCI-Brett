@@ -97,11 +97,12 @@ test("FIX-09 gmail filing drives real simulation messages and file endpoint", as
   await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible();
 
   // The real simulation backend returns three seeded messages.
-  const messageRow = page.getByRole("button", { name: /revised phasing plan/ });
+  // Message rows are <article> elements; the subject is plain text, not a button.
+  const messageRow = page.locator(".message-row").filter({ hasText: /revised phasing plan/ });
   await expect(messageRow).toBeVisible();
 
-  // Open the filing modal.
-  await messageRow.click();
+  // Open the filing modal via the "Review & copy" button inside the row.
+  await messageRow.getByRole("button", { name: "Review & copy" }).click();
   const drawer = page.getByRole("dialog");
   await expect(drawer).toBeVisible();
 
@@ -133,7 +134,7 @@ test("FIX-09 calendar test-hold creates a real simulation event", async ({ page 
   await expect(stage4Toggle).toHaveAttribute("aria-expanded", "true");
 
   // The calendar verification row should show a state from the real backend.
-  const calendarRow = page.locator('[data-stage-four-surface="calendar"]');
+  const calendarRow = page.locator('[data-stage-four-verification="calendar"]');
   await expect(calendarRow).toBeVisible();
 
   // The real simulation backend returns verification status.
