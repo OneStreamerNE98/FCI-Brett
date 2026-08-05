@@ -36,6 +36,67 @@ Start with [`docs/README.md`](docs/README.md), the audience-grouped index of eve
 4. Run the relevant tests during development and run `npm test` before handoff.
 5. Open a pull request with a concise summary, verification evidence, and data/security impact note.
 6. Do not deploy, change hosted configuration, migrate data, or merge to production without owner approval.
+- **Verification is a CI run id, not a number you typed (the verification block,
+  recorded August 5, 2026, after FIX-20 reported four failures on a `main` whose own
+  run had one).** This is what item 5's "verification evidence" means; the Handoff
+  requirements test bullet is satisfied by quoting this block in the handoff report,
+  never by omitting it there. Every pull request body carries:
+
+  ```
+  ### Verification
+  - **Run:** `<run-id>` <conclusion> — tests <n> / pass <n> / fail <n> / cancelled <n> / skipped <n> / todo <n>
+  - **Main:** `<run-id>` <success|failure> — fail <n>
+  - **Not mine:** each failure in Run that Main also shows, named; or `none`
+  - **Coverage:** output of `git diff --stat <APPROVED-HEAD>..HEAD -- tests/`, or `no approved head yet`
+  ```
+
+  **Run** is this branch's own CI run; **Main** is `main`'s newest run whose conclusion
+  is `success` or `failure`, because a `cancelled` run adjudicated nothing. Read both
+  with `gh run view <id> --log | grep -E "# (tests|pass|fail|cancelled|skipped|todo) "`
+  — six buckets, not three. Every number in the block therefore comes from CI and a
+  reviewer re-derives it with one command; **no local test count is ever load-bearing**,
+  which is what makes a degraded local environment harmless instead of persuasive.
+  **Never write "pre-existing" in a PR body.** A failure may sit on **Not mine** only if
+  it appears verbatim in
+  `gh run view <main-run-id> --log-failed | grep -E "not ok [0-9]"`:
+  cite it and you are believed, argue it and you are not. **Reporting a
+  genuinely red `main` is never held against the PR that reports it** — FIX-20's DES-13
+  catch was correct and saved a triage cycle across four pull requests. A **Coverage**
+  diff that removes an assertion names the assertion that replaced it and shows the
+  replacement still fails for the original defect, because green CI cannot detect a
+  change that deletes its own detector. Any line that cannot be produced reads
+  `blocked: <exact blocker>`, under the standing rule in `## Useful commands` that a
+  command which cannot run is recorded rather than assumed; a missing line is a claim
+  nobody made and is a review-blocking finding. The block describes exactly one head —
+  the one `gh run view <id> --json headSha` prints for its **Run**. An agent pushing to
+  a pull request it does not own, including a fix agent under stop-verify-resume,
+  **appends a new block and leaves the author's block unedited**; a block naming a
+  superseded head is stale rather than false, which is a finding against the pusher who
+  failed to append and never against the branch owner. Nothing in this law authorizes
+  editing another agent's pull request body.
+- **The reviewed head must still be an ancestor (containment, recorded August 5, 2026,
+  after `codex/set42-swr-doctrine` was rebuilt, dropped `a863e41`, and put a P1 back on
+  an all-green pull request).** The approval-head law above says what an orphaned commit
+  is worth; this says how anyone sees it. Run
+  `git merge-base --is-ancestor <APPROVED-HEAD> <current head>` before merge and at the
+  start of any review: exit 0 means the reviewed work is still there. A non-zero exit is
+  the approval-head law firing — the branch is unreviewed work in its entirety, disclosed
+  or not; this law adds a duty and never a cure. Before any verdict exists, the anchor is
+  the head named by the newest verification block's **Run** id.
+  **Fast-forward pushes stay legal and are expected**: one agent applying review fixes to
+  another agent's branch preserves containment by construction, owes no disclosure, and is
+  the mechanism that recovers from this incident — the target here is a head that no longer
+  contains reviewed work, never collaboration. Whoever moved a head past containment posts,
+  in the same working minute, a pull request comment carrying the before and after SHAs and
+  the complete output of
+  `git range-diff --no-patch origin/main..<before> origin/main..<after>` — **the whole
+  table, not a grep for `< -:`**, because a rebuild that preserves a commit's subject
+  reports as `!` and carries the same damage. If the before SHA cannot be fetched, that
+  comment reads `blocked: <exact blocker>`, names every SHA that is still known, and goes
+  to the owner the same minute. **Green CI is not evidence that nothing was lost:** the
+  SET-42 rebuild also cut `tests/e2e/set42-swr-doctrine.spec.ts` from 328 lines to 187 and
+  dropped both `/settings?section=google-workspace` visits, leaving an assertion that is
+  vacuously true on the pages the spec still opens.
 
 ## Deploying the Sites app — record every deployment
 
