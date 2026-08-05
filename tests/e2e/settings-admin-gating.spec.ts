@@ -65,6 +65,8 @@ async function expectConservativeSettingsPresentation(page: Page) {
   const settingsNavigation = page.locator(".settings-nav");
   await expect(settingsNavigation.getByRole("button")).toHaveCount(1);
   await expect(settingsNavigation.getByRole("button", { name: "My settings", exact: true })).toHaveAttribute("aria-current", "page");
+  // DES-16: the one row a non-admin sees must carry no build badge.
+  await expect(settingsNavigation.locator(".feature-state")).toHaveCount(0);
   await expect(settingsNavigation.getByText("Workspace & company setup", { exact: true })).toHaveCount(0);
   await expect(page.locator(".workspace-status-banner, .workspace-setup-stage, .workspace-prerequisites, .workspace-connection-health, .workspace-blueprint-card, .administrator-action-note")).toHaveCount(0);
 
@@ -115,6 +117,8 @@ test("Administrator identity keeps protected Settings actions available", async 
   await page.locator(".workspace-card").click();
   await expect(page.locator(".settings-nav").getByText("Workspace & company setup", { exact: true })).toBeVisible();
   await expect(page.locator(".settings-nav").getByRole("button")).toHaveCount(9);
+  // DES-16: an administrator's nine Settings rows carry no build badges either.
+  await expect(page.locator(".settings-nav").locator(".feature-state")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Save calendar plan" })).toBeEnabled();
   await expect(page.locator(".administrator-action-note")).toHaveCount(0);
 
@@ -167,6 +171,11 @@ test("Office identity sees My settings only and never renders company or Adminis
   await expect(navigation.getByRole("button")).toHaveCount(1);
   await expect(navigation.getByRole("button", { name: "My settings", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(navigation.getByText("Workspace & company setup", { exact: true })).toHaveCount(0);
+  // DES-16: a non-admin's entire Settings nav is this one row, and it carries no build badge.
+  await expect(navigation.locator(".feature-state")).toHaveCount(0);
+  for (const buildWord of ["Working", "Dev", "Setup", "Planned"]) {
+    await expect(navigation.getByText(buildWord, { exact: true })).toHaveCount(0);
+  }
   await expect(page.locator('[data-settings-audience="personal"]')).toBeVisible();
   await expect(page.locator('[data-session-profile="true"]')).toContainText("E2E Office");
   await expect(page.locator('[data-session-profile="true"]')).toContainText("e2e-office@example.test");

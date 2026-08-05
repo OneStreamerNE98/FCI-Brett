@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
-import { FeatureStateBadge, type FeatureState } from "../../components/FeatureStateBadge";
+import type { FeatureState } from "../../components/FeatureStateBadge";
 import { cachedGetJson } from "../../lib/client-get-cache";
 import {
   SETTINGS_SECTIONS,
@@ -29,19 +29,15 @@ function SectionButton({ entry, state, current, onSection }: {
   current: SettingsSection;
   onSection: (section: SettingsSection) => void;
 }) {
-  const stateId = useId();
   return <button
     className={current === entry.label ? "active" : ""}
     aria-current={current === entry.label ? "page" : undefined}
     aria-label={entry.navigationLabel}
-    aria-describedby={stateId}
     data-settings-feature-state={state}
     type="button"
     onClick={() => onSection(entry.label)}
   >
     <span className={styles.sectionLabel}>{entry.navigationLabel}</span>
-    <span className={styles.badge} aria-hidden="true"><FeatureStateBadge state={state} variant="compact" /></span>
-    <span className="sr-only" id={stateId}>{state}</span>
     <ChevronRight size={15} aria-hidden="true" />
   </button>;
 }

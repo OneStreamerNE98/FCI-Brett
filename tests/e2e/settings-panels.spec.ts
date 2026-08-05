@@ -55,7 +55,7 @@ for (const section of settingsSections) {
     });
     page.on("pageerror", (error) => browserIssues.push(`pageerror: ${error.stack ?? error.message}`));
 
-    if (section.navigation === "Testing & launch") {
+    if (section.navigation === "Test & launch checklist") {
       await page.route("**/api/v1/settings/employee-login-readiness", async (route) => {
         await route.fulfill({
           status: 200,
@@ -118,33 +118,38 @@ for (const section of settingsSections) {
   });
 }
 
-test("SET-07 renders the section badge census and computes only endpoint-backed states", async ({ page }) => {
+test("SET-07 computes only endpoint-backed states and keeps build badges out of the Settings nav", async ({ page }) => {
   await mockSettingsFeatureState(page, false);
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/settings");
 
   const expectedStates = new Map([
-    ["My settings", ["Working", "Working"]],
-    ["Google Workspace", ["In development", "Dev"]],
-    ["Calendar & appointments", ["Setup required", "Setup"]],
-    ["Inbox & file rules", ["In development", "Dev"]],
-    ["Client Directory & Project Register", ["Setup required", "Setup"]],
-    ["Workflow & notifications", ["In development", "Dev"]],
-    ["AI assistant", ["In development", "Dev"]],
-    ["Data & security", ["Planned", "Planned"]],
-    ["Test & launch checklist", ["In development", "Dev"]],
+    ["My settings", "Working"],
+    ["Google Workspace", "In development"],
+    ["Calendar & appointments", "Setup required"],
+    ["Inbox & file rules", "In development"],
+    ["Client Directory & Project Register", "Setup required"],
+    ["Workflow & notifications", "In development"],
+    ["AI assistant", "In development"],
+    ["Data & security", "Planned"],
+    ["Test & launch checklist", "In development"],
   ] as const);
   const navigation = page.locator(".settings-nav");
   await expect(navigation.getByRole("button")).toHaveCount(expectedStates.size);
-  for (const [label, [state, compactLabel]] of expectedStates) {
+  for (const [label, state] of expectedStates) {
     const button = navigation.getByRole("button", { name: label, exact: true });
     await expect(button).toHaveAttribute("data-settings-feature-state", state);
-    await expect(button.locator(".feature-state")).toHaveText(compactLabel);
+  }
+  // DES-16: build status is not user-facing. The computed state stays a data attribute; the
+  // administrator nav must never render a FeatureStateBadge, compact or otherwise.
+  await expect(navigation.locator(".feature-state")).toHaveCount(0);
+  for (const buildWord of ["Working", "Dev", "Setup", "Planned"]) {
+    await expect(navigation.getByText(buildWord, { exact: true })).toHaveCount(0);
   }
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(navigation).toBeVisible();
-  await expect(navigation.locator(".feature-state")).toHaveCount(expectedStates.size);
+  await expect(navigation.locator(".feature-state")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   const readyPage = await page.context().newPage();

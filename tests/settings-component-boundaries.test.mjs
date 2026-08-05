@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
-import { SETTINGS_SECTION_LABELS } from "../app/lib/operations-routes.ts";
+import { SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS } from "../app/lib/operations-routes.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -76,7 +76,14 @@ test("keeps SettingsView as a nine-section, two-audience dispatcher without pane
     assert.match(settingsView, new RegExp(`isAdmin && visibleSection === "${section.replace(/[&]/g, "\\&")}"`));
   }
   assert.match(settingsView, /<SettingsAudienceNavigation section=\{visibleSection\} isAdmin=\{isAdmin\}/);
-  assert.match(navigation, /PERSONAL_SECTION_ENTRY/);
+  // Must pin the render, not the const declaration: a bare /PERSONAL_SECTION_ENTRY/ still passes
+  // with the whole "For you" section deleted, which is a non-admin's only Settings affordance.
+  assert.match(navigation, /entry=\{PERSONAL_SECTION_ENTRY\}/);
+  const personalEntry = SETTINGS_SECTIONS.find((entry) => entry.label === "My settings");
+  assert.deepEqual(
+    { label: personalEntry?.label, navigationLabel: personalEntry?.navigationLabel },
+    { label: "My settings", navigationLabel: "My settings" },
+  );
   assert.match(navigation, /Workspace &amp; company setup/);
   assert.match(navigation, /\{isAdmin && <section/);
   assert.doesNotMatch(settingsView, /\b(?:useState|useEffect|useCallback|cachedGetJson)\b|fetch\s*\(|<form\b|<table\b|OperationsDataTable/);
