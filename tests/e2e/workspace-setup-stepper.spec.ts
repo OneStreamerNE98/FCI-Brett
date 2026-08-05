@@ -144,6 +144,30 @@ function connectedHealth(): ConnectionHealthPayload {
   };
 }
 
+function operationsHealthPayload(detail: string, nextCursor?: string) {
+  return {
+    runtimeMode: "simulation",
+    simulation: true,
+    checkedAt: Date.UTC(2026, 7, 4, 20),
+    limits: { perCategory: 50 },
+    driveOperations: { items: [], hasMore: false },
+    failedArchives: { items: [], hasMore: false },
+    events: {
+      items: [{
+        id: `event-${detail.toLowerCase().replaceAll(" ", "-")}`,
+        eventType: "workspace.test",
+        actor: "admin@example.test",
+        entityType: "connection",
+        entityId: "simulation",
+        detail,
+        createdAt: Date.UTC(2026, 7, 4, 20),
+      }],
+      hasMore: Boolean(nextCursor),
+      nextCursor,
+    },
+  };
+}
+
 function workspaceResources(overrides: Partial<WorkspaceResourcesPayload> = {}): WorkspaceResourcesPayload {
   return {
     resources: [
@@ -1043,6 +1067,158 @@ test("Operations health enumerates recorded simulation failures and activity wit
   expect(operationsReads).toBe(1);
   await triggerAutomaticWorkspaceRefresh(page);
   await expect.poll(() => operationsReads).toBe(2);
+});
+
+test("Operations health lets a terminal trailing refresh supersede a delayed page replay", async ({ page }) => {
+  await mockReadyWorkspaceForStageThree(page);
+  let baseReads = 0;
+  let releaseReplay = () => undefined;
+  let markReplayStarted = () => undefined;
+  const replayGate = new Promise<void>((resolve) => {
+    releaseReplay = resolve;
+  });
+  const replayStarted = new Promise<void>((resolve) => {
+    markReplayStarted = resolve;
+  });
+
+  await page.route("**/api/v1/integrations/google/operations**", async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const url = new URL(route.request().url());
+    const category = url.searchParams.get("category");
+    const cursor = url.searchParams.get("cursor");
+    if (category === "events" && cursor === "initial-more") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Initial extra row")) });
+      return;
+    }
+    if (category === "events" && cursor === "delayed-replay") {
+      markReplayStarted();
+      await replayGate;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Stale delayed row")) });
+      return;
+    }
+    expect(category).toBeNull();
+    baseReads += 1;
+    if (baseReads === 1) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Initial base row", "initial-more")) });
+      return;
+    }
+    if (baseReads === 2) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Fresh base awaiting replay", "delayed-replay")) });
+      return;
+    }
+    await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "Administrator access expired." }) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  await setStageExpanded(page, 4, true);
+  const row = upkeepRow(page, "operations-health");
+  await row.getByRole("button", { name: "Load more events", exact: true }).click();
+  await expect(row.getByText("Initial extra row", { exact: true })).toBeVisible();
+
+  const firstRefresh = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/v1/integrations/google/operations"
+      && !url.search
+      && response.status() === 200;
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await firstRefresh;
+  await replayStarted;
+
+  let staleReplayResponse: Promise<unknown> | undefined;
+  try {
+    // The global lifecycle census has completed by the time its base response
+    // has notified the card; let its promise settle while replay remains held.
+    await page.waitForTimeout(50);
+    const terminalRefresh = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/integrations/google/operations"
+        && !url.search
+        && response.status() === 403;
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await terminalRefresh;
+
+    await expect(row.getByText("Recorded Google operations could not be loaded", { exact: true })).toBeVisible();
+    await expect(row.getByText("Initial base row", { exact: true })).toHaveCount(0);
+    await expect(row.getByText("Initial extra row", { exact: true })).toHaveCount(0);
+    staleReplayResponse = page.waitForResponse((response) => (
+      new URL(response.url()).searchParams.get("cursor") === "delayed-replay"
+    ));
+  } finally {
+    // Never leave the mocked request unresolved when an assertion fails.
+    releaseReplay();
+  }
+  await staleReplayResponse;
+  await expect(row.getByText("Stale delayed row", { exact: true })).toHaveCount(0);
+});
+
+test("Operations health replay failure Retry restarts base reconciliation from fresh cursors", async ({ page }) => {
+  await mockReadyWorkspaceForStageThree(page);
+  let baseReads = 0;
+  const categoryCursors: string[] = [];
+  await page.route("**/api/v1/integrations/google/operations**", async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const url = new URL(route.request().url());
+    const category = url.searchParams.get("category");
+    const cursor = url.searchParams.get("cursor");
+    if (category === "events") {
+      expect(cursor).not.toBeNull();
+      categoryCursors.push(cursor ?? "");
+      if (cursor === "initial-page-two") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Initial page two")) });
+        return;
+      }
+      if (cursor === "failed-refresh-page-two") {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Replay temporarily unavailable." }) });
+        return;
+      }
+      expect(cursor).toBe("recovered-page-two");
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(operationsHealthPayload("Recovered page two")) });
+      return;
+    }
+
+    baseReads += 1;
+    const payload = baseReads === 1
+      ? operationsHealthPayload("Initial page one", "initial-page-two")
+      : baseReads === 2
+        ? operationsHealthPayload("Failed refresh page one", "failed-refresh-page-two")
+        : operationsHealthPayload("Recovered page one", "recovered-page-two");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(payload) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  await setStageExpanded(page, 4, true);
+  const row = upkeepRow(page, "operations-health");
+  await row.getByRole("button", { name: "Load more events", exact: true }).click();
+  await expect(row.getByText("Initial page two", { exact: true })).toBeVisible();
+
+  const replayFailure = page.waitForResponse((response) => (
+    new URL(response.url()).searchParams.get("cursor") === "failed-refresh-page-two"
+  ));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await replayFailure;
+  await expect(row.getByText("Replay temporarily unavailable.", { exact: true })).toBeVisible();
+
+  const recoveredBase = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/v1/integrations/google/operations" && !url.search;
+  });
+  const recoveredReplay = page.waitForResponse((response) => (
+    new URL(response.url()).searchParams.get("cursor") === "recovered-page-two"
+  ));
+  await row.getByRole("button", { name: "Retry", exact: true }).click();
+  await Promise.all([recoveredBase, recoveredReplay]);
+
+  await expect(row.getByText("Recovered page one", { exact: true })).toBeVisible();
+  await expect(row.getByText("Recovered page two", { exact: true })).toBeVisible();
+  await expect(row.getByText("Initial page one", { exact: true })).toHaveCount(0);
+  await expect(row.getByText("Initial page two", { exact: true })).toHaveCount(0);
+  expect(categoryCursors).toEqual([
+    "initial-page-two",
+    "failed-refresh-page-two",
+    "recovered-page-two",
+  ]);
 });
 
 test("InfoHint opens on keyboard focus and hover and Escape dismisses it", async ({ page }) => {
@@ -2986,10 +3162,18 @@ test("administrator edits and saves a structured Workspace blueprint while syste
   await blueprintCard.getByLabel("new-spreadsheet spreadsheet name", { exact: true }).fill("First-run Import");
   await blueprintCard.getByLabel("new-spreadsheet spreadsheet role", { exact: true }).selectOption("import");
   await expect(blueprintCard.getByRole("button", { name: "Save blueprint", exact: true })).toBeEnabled();
+  let derivedResourcesReadsAfterSave = 0;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.pathname === "/api/v1/integrations/google/setup/resources") {
+      derivedResourcesReadsAfterSave += 1;
+    }
+  });
   await blueprintCard.getByRole("button", { name: "Save blueprint", exact: true }).click();
 
   await expect(blueprintCard.getByText("Saved version 1", { exact: true })).toBeVisible();
   await expect(blueprintCard.getByText("All blueprint changes saved", { exact: true })).toBeVisible();
+  await expect.poll(() => derivedResourcesReadsAfterSave).toBeGreaterThan(0);
   const reflected = await page.evaluate(async () => {
     const response = await fetch("/api/v1/integrations/google/setup/blueprint", { cache: "no-store" });
     return { status: response.status, body: await response.json() };

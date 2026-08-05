@@ -17,6 +17,7 @@ import type { InboxLeadProposal } from "./inbox/components/InboxView";
 import { DEFAULT_FILING_RULES, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
 import { AccessibleOverlay } from "./components/AccessibleOverlay";
+import { ClientDataNotice } from "./components/ClientDataNotice";
 import { FeatureStateBadge } from "./components/FeatureStateBadge";
 import { WorkspaceInfoHint } from "./components/WorkspaceInfoHint";
 import { Avatar, Metric, OperationsEmptyState, PageTitle, PanelHeader, Status } from "./components/operations/OperationsPrimitives";
@@ -1932,8 +1933,15 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
 
 function LiveDataBanner({ state, error, onRetry }: { state: LiveDataState; error: string; onRetry: () => void }) {
   if (state === "ready") return null;
-  if (state === "loading") return <section className="client-directory-banner" role="status" aria-live="polite"><div className="directory-badge"><RefreshCw size={19} /></div><div><strong>Loading live records</strong><span>Reading leads, clients, projects, activity, and Google directory status.</span></div></section>;
-  return <section className="schedule-alert" role="alert"><CircleAlert size={19} /><div><strong>Live records could not be loaded</strong><span>{error}</span></div><button onClick={onRetry}>Try again</button></section>;
+  return <ClientDataNotice
+    state={state}
+    error={error}
+    onRetry={onRetry}
+    loadingTitle="Loading live records"
+    loadingDetail="Reading leads, clients, projects, activity, and Google directory status."
+    errorTitle="Live records could not be loaded"
+    retryLabel="Try again"
+  />;
 }
 
 function unavailableMetricNote(state: LiveDataState) {
@@ -2964,7 +2972,7 @@ function ProjectMeetings({ project, notify, onMeetingRecorded }: { project: Proj
   return <section className="project-meetings">
     <header className="meeting-section-header"><div><p className="eyebrow">Project knowledge</p><h3>Meeting notes</h3><span>Link Otter, paste its summary or transcript, and keep decisions with this independent project.</span></div><button className="primary-button" onClick={() => setAdding(true)}><Plus size={15} /> Add meeting</button></header>
     <div className="meeting-capture-guide"><MessageSquareText size={18} /><div><strong>Recommended Otter workflow</strong><span>Copy the private Otter conversation link, paste the Summary and Action Items, then add the exported transcript when the record needs full searchable detail.</span></div></div>
-    {loading ? <OperationsEmptyState variant="meeting"><RefreshCw size={21} /><strong>Loading project meetings…</strong></OperationsEmptyState> : error ? <OperationsEmptyState variant="meeting" tone="error"><CircleAlert size={21} /><strong>{error}</strong><button className="soft-button" onClick={() => void loadMeetings(false, true)}>Try again</button></OperationsEmptyState> : meetings.length === 0 ? <OperationsEmptyState variant="meeting"><MessageSquareText size={24} /><strong>No meeting notes yet</strong><span>Add a client meeting, site walk, internal huddle, pre-install meeting, or closeout review.</span><button className="soft-button" onClick={() => setAdding(true)}><Plus size={14} /> Capture the first meeting</button></OperationsEmptyState> : <div className="meeting-list">{meetings.map((meeting) => <article className="meeting-card" key={meeting.id}>
+    {loading ? <OperationsEmptyState variant="meeting"><RefreshCw size={21} /><strong>Loading project meetings…</strong></OperationsEmptyState> : error ? <ClientDataNotice state="error" error={error} errorTitle="Project meetings are unavailable" retryLabel="Try again" titleLevel={4} onRetry={() => void loadMeetings(false, true)} /> : meetings.length === 0 ? <OperationsEmptyState variant="meeting"><MessageSquareText size={24} /><strong>No meeting notes yet</strong><span>Add a client meeting, site walk, internal huddle, pre-install meeting, or closeout review.</span><button className="soft-button" onClick={() => setAdding(true)}><Plus size={14} /> Capture the first meeting</button></OperationsEmptyState> : <div className="meeting-list">{meetings.map((meeting) => <article className="meeting-card" key={meeting.id}>
       <header><div className="meeting-icon"><MessageSquareText size={17} /></div><div><div className="meeting-badges"><span>{meeting.meetingType.replaceAll("-", " ")}</span><b className={meeting.sourceProvider}>{meeting.sourceProvider === "otter" ? "Otter" : meeting.sourceProvider === "link" ? "Linked" : "Manual"}</b></div><h4>{meeting.title}</h4><small>{formatMeetingDate(meeting.meetingAt)} · Saved by {meeting.createdBy}</small></div>{meeting.sourceUrl && <a className="meeting-source-link" href={meeting.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Open source</a>}</header>
       {meeting.attendees.length > 0 && <p className="meeting-attendees"><Users size={14} /><span>{meeting.attendees.join(" · ")}</span></p>}
       {meeting.summary && <div className="meeting-summary"><strong>Summary</strong><p>{meeting.summary}</p></div>}

@@ -322,6 +322,7 @@ export function WorkspaceBlueprintEditor({
         throw new Error(payload.error ?? "The Workspace blueprint could not be saved.");
       }
       invalidateCachedGet("/api/v1/integrations/google/setup/blueprint");
+      invalidateCachedGet("/api/v1/integrations/google/setup/resources");
       const saved = cloneBlueprint(payload.blueprint);
       setDraft(saved);
       setSavedBlueprint(cloneBlueprint(saved));

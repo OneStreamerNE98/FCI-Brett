@@ -7,7 +7,11 @@ import {
   OperationsDataTable,
   OperationsDataTableCell,
 } from "../../../components/operations/OperationsDataTable";
-import { cachedGetJson } from "../../../lib/client-get-cache";
+import {
+  cachedGetJson,
+  invalidateCachedGet,
+  isTerminalCachedGetError,
+} from "../../../lib/client-get-cache";
 import {
   useCachedGetSubscription,
   useClientLoadState,
@@ -63,12 +67,29 @@ type OperationsPayload = Readonly<{
 
 type CategoryKey = "drive" | "archive" | "events";
 
+type CategoryDepths = Record<CategoryKey, number>;
+
+type CategoryRequestTicket = Readonly<{
+  category: CategoryKey;
+  epoch: number;
+  token: number;
+  url: string;
+}>;
+
+type BaseRequestTicket = Readonly<{
+  epoch: number;
+  token: number;
+  desiredDepths: CategoryDepths;
+  canceledUrls: string[];
+}>;
+
 type AccumulatedCategory<T> = {
   items: T[];
   hasMore: boolean;
   nextCursor?: string;
   loadingMore: boolean;
   error?: string;
+  retryMode?: "category" | "base";
 };
 
 const OPERATIONS_URL = "/api/v1/integrations/google/operations";
@@ -121,7 +142,173 @@ function mergeAccumulator<T>(
     nextCursor: incoming.nextCursor,
     loadingMore: false,
     error: undefined,
+    retryMode: undefined,
   };
+}
+
+const EMPTY_CATEGORY_DEPTHS: CategoryDepths = { drive: 0, archive: 0, events: 0 };
+
+/**
+ * Keeps a lifecycle base read and explicit cursor reads in one generation.
+ * A base read supersedes cursor requests, but remembers each pending click so
+ * the fresh generation can replay to the same visible depth before swapping.
+ */
+export function createOperationsRequestCoordinator() {
+  let epoch = 0;
+  let nextToken = 0;
+  let depths: CategoryDepths = { ...EMPTY_CATEGORY_DEPTHS };
+  let requestedDepths: CategoryDepths = { ...EMPTY_CATEGORY_DEPTHS };
+  let baseToken: number | null = null;
+  const baseReplayUrls = new Set<string>();
+  const categories = new Map<CategoryKey, CategoryRequestTicket>();
+
+  const isCurrentCategory = (ticket: CategoryRequestTicket) => (
+    baseToken === null
+    && ticket.epoch === epoch
+    && categories.get(ticket.category)?.token === ticket.token
+  );
+
+  const isCurrentBase = (ticket: BaseRequestTicket) => (
+    ticket.epoch === epoch && baseToken === ticket.token
+  );
+
+  return {
+    beginCategory(category: CategoryKey, url: string) {
+      if (baseToken !== null || categories.has(category)) return null;
+      const ticket: CategoryRequestTicket = {
+        category,
+        epoch,
+        token: ++nextToken,
+        url,
+      };
+      categories.set(category, ticket);
+      return ticket;
+    },
+    beginBase() {
+      // A new lifecycle signal is authoritative immediately. The prior base
+      // request may keep using the network, but its ticket can no longer
+      // publish rows while this trailing generation resolves.
+      epoch += 1;
+      const desiredDepths: CategoryDepths = {
+        drive: Math.max(depths.drive, requestedDepths.drive),
+        archive: Math.max(depths.archive, requestedDepths.archive),
+        events: Math.max(depths.events, requestedDepths.events),
+      };
+      for (const category of categories.keys()) {
+        desiredDepths[category] = Math.max(desiredDepths[category], depths[category] + 1);
+      }
+      requestedDepths = { ...desiredDepths };
+      const canceledUrls = [
+        ...[...categories.values()].map((ticket) => ticket.url),
+        ...baseReplayUrls,
+      ];
+      categories.clear();
+      baseReplayUrls.clear();
+      baseToken = ++nextToken;
+      return {
+        epoch,
+        token: baseToken,
+        desiredDepths,
+        canceledUrls,
+      } satisfies BaseRequestTicket;
+    },
+    isCurrentCategory,
+    isCurrentBase,
+    supersedeBase() {
+      if (baseToken === null) return false;
+      epoch += 1;
+      baseToken = null;
+      return true;
+    },
+    registerBaseReplayUrl(ticket: BaseRequestTicket, url: string) {
+      if (!isCurrentBase(ticket)) return false;
+      baseReplayUrls.add(url);
+      return true;
+    },
+    settleCategory(ticket: CategoryRequestTicket, appended: boolean) {
+      if (!isCurrentCategory(ticket)) return false;
+      categories.delete(ticket.category);
+      if (appended) {
+        depths[ticket.category] += 1;
+        requestedDepths[ticket.category] = depths[ticket.category];
+      }
+      return true;
+    },
+    settleBase(ticket: BaseRequestTicket, nextDepths: CategoryDepths) {
+      if (!isCurrentBase(ticket)) return false;
+      depths = { ...nextDepths };
+      requestedDepths = { ...nextDepths };
+      baseToken = null;
+      baseReplayUrls.clear();
+      return true;
+    },
+    cancelBase(ticket: BaseRequestTicket) {
+      if (!isCurrentBase(ticket)) return false;
+      baseToken = null;
+      return true;
+    },
+    failClosed() {
+      epoch += 1;
+      depths = { ...EMPTY_CATEGORY_DEPTHS };
+      requestedDepths = { ...EMPTY_CATEGORY_DEPTHS };
+      baseToken = null;
+      const canceledUrls = [
+        ...[...categories.values()].map((ticket) => ticket.url),
+        ...baseReplayUrls,
+      ];
+      categories.clear();
+      baseReplayUrls.clear();
+      return canceledUrls;
+    },
+  };
+}
+
+export async function replayOperationsCategoryPages<T>(
+  initial: CategoryResult<T>,
+  desiredExtraPages: number,
+  readPage: (cursor: string) => Promise<CategoryResult<T>>,
+) {
+  let result: CategoryResult<T> = {
+    items: [...initial.items],
+    hasMore: initial.hasMore,
+    nextCursor: initial.nextCursor,
+  };
+  let loadedExtraPages = 0;
+  try {
+    while (loadedExtraPages < desiredExtraPages && result.hasMore && result.nextCursor) {
+      const page = await readPage(result.nextCursor);
+      result = {
+        items: [...result.items, ...page.items],
+        hasMore: page.hasMore,
+        nextCursor: page.nextCursor,
+      };
+      loadedExtraPages += 1;
+    }
+    return { result, loadedExtraPages } as const;
+  } catch (failure) {
+    return { result, loadedExtraPages, failure } as const;
+  }
+}
+
+export function shouldQueueOperationsBaseLoad(
+  silent: boolean,
+  visibleBaseReadsInFlight: number,
+) {
+  return silent && visibleBaseReadsInFlight > 0;
+}
+
+function operationsCategoryUrl(category: CategoryKey, cursor?: string) {
+  const search = new URLSearchParams({ category });
+  if (cursor) search.set("cursor", cursor);
+  return `${OPERATIONS_URL}?${search.toString()}`;
+}
+
+async function readOperationsPayload(url: string, force: boolean) {
+  const body = await cachedGetJson<OperationsPayload>(url, { force });
+  if (!body || !("driveOperations" in body)) {
+    throw new Error("Google operations could not be loaded.");
+  }
+  return body;
 }
 
 export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean }) {
@@ -131,85 +318,258 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
   const [drive, setDrive] = useState<AccumulatedCategory<DriveOperation>>(emptyAccumulator);
   const [archive, setArchive] = useState<AccumulatedCategory<FailedArchive>>(emptyAccumulator);
   const [events, setEvents] = useState<AccumulatedCategory<IntegrationEvent>>(emptyAccumulator);
+  const [reconciling, setReconciling] = useState(false);
   const { state, error, run: runLoad } = useClientLoadState(
     "Google operations could not be loaded.",
   );
-  const inFlight = useRef<Set<CategoryKey>>(new Set());
+  const requestCoordinator = useRef(createOperationsRequestCoordinator());
+  const visibleBaseReadsInFlight = useRef(0);
+  const trailingBaseLoadQueued = useRef(false);
+  const baseLoadRef = useRef<((force?: boolean, silent?: boolean) => Promise<void> | undefined) | undefined>(undefined);
+  const operationsCardActive = useRef(false);
   const failuresHeadingRef = useRef<HTMLHeadingElement>(null);
   const eventsHeadingRef = useRef<HTMLHeadingElement>(null);
   const prevDriveHasMore = useRef(drive.hasMore);
   const prevArchiveHasMore = useRef(archive.hasMore);
   const prevEventsHasMore = useRef(events.hasMore);
 
-  const load = useCallback((force = false, silent = false) => {
-    if (!isAdmin) return;
-    return runLoad(
-      () => cachedGetJson<OperationsPayload>(OPERATIONS_URL, { force }).then((body) => {
-        if (!body || !("driveOperations" in body)) {
-          throw new Error("Google operations could not be loaded.");
-        }
-        return body;
-      }),
+  const clearPrivilegedOperations = useCallback(() => {
+    setSimulation(null);
+    setCheckedAt(null);
+    setLimits(null);
+    setDrive(emptyAccumulator());
+    setArchive(emptyAccumulator());
+    setEvents(emptyAccumulator());
+    setReconciling(false);
+  }, []);
+
+  const invalidateCanceledCategoryReads = useCallback((urls: readonly string[]) => {
+    for (const url of urls) invalidateCachedGet(url, { notify: false });
+  }, []);
+
+  const stopCategoryLoads = useCallback(() => {
+    setDrive((current) => ({ ...current, loadingMore: false }));
+    setArchive((current) => ({ ...current, loadingMore: false }));
+    setEvents((current) => ({ ...current, loadingMore: false }));
+  }, []);
+
+  const resetCoordinatorAndClear = useCallback(() => {
+    invalidateCanceledCategoryReads(requestCoordinator.current.failClosed());
+    clearPrivilegedOperations();
+  }, [clearPrivilegedOperations, invalidateCanceledCategoryReads]);
+
+  const failClosedOperations = useCallback(async (loadError: unknown) => {
+    resetCoordinatorAndClear();
+    invalidateCachedGet(OPERATIONS_URL, { notify: false });
+    await runLoad(
+      () => Promise.reject(loadError),
       {
-        onSuccess: (body) => {
-          setSimulation(body.simulation);
-          setCheckedAt(body.checkedAt);
-          setLimits(body.limits);
-          setDrive({ ...body.driveOperations, loadingMore: false });
-          setArchive({ ...body.failedArchives, loadingMore: false });
-          setEvents({ ...body.events, loadingMore: false });
-        },
-        onFailure: () => {
-          setSimulation(null);
-          setCheckedAt(null);
-          setLimits(null);
-          setDrive(emptyAccumulator());
-          setArchive(emptyAccumulator());
-          setEvents(emptyAccumulator());
-        },
+        onSuccess: () => undefined,
+        onFailure: clearPrivilegedOperations,
       },
-      { silent },
+      { silent: true },
     );
-  }, [isAdmin, runLoad]);
+  }, [clearPrivilegedOperations, resetCoordinatorAndClear, runLoad]);
+
+  const load = useCallback(async (force = false, silent = false) => {
+    if (!isAdmin || !operationsCardActive.current) return;
+    // useClientLoadState deliberately declines a silent read while a visible
+    // one is pending. Fence that visible ticket now and queue one trailing
+    // read, rather than dropping a mutation/terminal cache notification.
+    if (shouldQueueOperationsBaseLoad(silent, visibleBaseReadsInFlight.current)) {
+      trailingBaseLoadQueued.current = true;
+      requestCoordinator.current.supersedeBase();
+      return;
+    }
+    const ticket = requestCoordinator.current.beginBase();
+    if (!ticket) return;
+    invalidateCanceledCategoryReads(ticket.canceledUrls);
+    setReconciling(true);
+
+    if (!silent) visibleBaseReadsInFlight.current += 1;
+    let body: OperationsPayload | undefined;
+    try {
+      body = await runLoad(
+        () => readOperationsPayload(OPERATIONS_URL, force),
+        {
+          onSuccess: () => undefined,
+          onFailure: resetCoordinatorAndClear,
+        },
+        { silent },
+      );
+    } finally {
+      if (!silent) {
+        visibleBaseReadsInFlight.current -= 1;
+        if (visibleBaseReadsInFlight.current === 0 && trailingBaseLoadQueued.current) {
+          trailingBaseLoadQueued.current = false;
+          queueMicrotask(() => void baseLoadRef.current?.(false, true));
+        }
+      }
+    }
+
+    if (!body || !requestCoordinator.current.isCurrentBase(ticket)) {
+      if (requestCoordinator.current.cancelBase(ticket)) {
+        stopCategoryLoads();
+        setReconciling(false);
+      }
+      return;
+    }
+
+    const [nextDrive, nextArchive, nextEvents] = await Promise.all([
+      replayOperationsCategoryPages(
+        body.driveOperations,
+        ticket.desiredDepths.drive,
+        async (cursor) => {
+          const url = operationsCategoryUrl("drive", cursor);
+          if (!requestCoordinator.current.registerBaseReplayUrl(ticket, url)) {
+            throw new Error("The operations refresh was superseded.");
+          }
+          const page = await readOperationsPayload(url, true);
+          return page.driveOperations;
+        },
+      ),
+      replayOperationsCategoryPages(
+        body.failedArchives,
+        ticket.desiredDepths.archive,
+        async (cursor) => {
+          const url = operationsCategoryUrl("archive", cursor);
+          if (!requestCoordinator.current.registerBaseReplayUrl(ticket, url)) {
+            throw new Error("The operations refresh was superseded.");
+          }
+          const page = await readOperationsPayload(url, true);
+          return page.failedArchives;
+        },
+      ),
+      replayOperationsCategoryPages(
+        body.events,
+        ticket.desiredDepths.events,
+        async (cursor) => {
+          const url = operationsCategoryUrl("events", cursor);
+          if (!requestCoordinator.current.registerBaseReplayUrl(ticket, url)) {
+            throw new Error("The operations refresh was superseded.");
+          }
+          const page = await readOperationsPayload(url, true);
+          return page.events;
+        },
+      ),
+    ]);
+
+    const failures = [nextDrive.failure, nextArchive.failure, nextEvents.failure].filter(
+      (failure) => failure !== undefined,
+    );
+    const terminalFailure = failures.find(isTerminalCachedGetError);
+    if (terminalFailure) {
+      await failClosedOperations(terminalFailure);
+      return;
+    }
+    if (!requestCoordinator.current.isCurrentBase(ticket)) return;
+    if (failures.length > 0) {
+      if (nextDrive.failure !== undefined) {
+        const message = nextDrive.failure instanceof Error
+          ? nextDrive.failure.message
+          : "Google operations could not be loaded.";
+        setDrive((current) => ({ ...current, loadingMore: false, error: message, retryMode: "base" }));
+      }
+      if (nextArchive.failure !== undefined) {
+        const message = nextArchive.failure instanceof Error
+          ? nextArchive.failure.message
+          : "Google operations could not be loaded.";
+        setArchive((current) => ({ ...current, loadingMore: false, error: message, retryMode: "base" }));
+      }
+      if (nextEvents.failure !== undefined) {
+        const message = nextEvents.failure instanceof Error
+          ? nextEvents.failure.message
+          : "Google operations could not be loaded.";
+        setEvents((current) => ({ ...current, loadingMore: false, error: message, retryMode: "base" }));
+      }
+      requestCoordinator.current.cancelBase(ticket);
+      stopCategoryLoads();
+      setReconciling(false);
+      return;
+    }
+
+    if (!requestCoordinator.current.settleBase(ticket, {
+      drive: nextDrive.loadedExtraPages,
+      archive: nextArchive.loadedExtraPages,
+      events: nextEvents.loadedExtraPages,
+    })) return;
+    setSimulation(body.simulation);
+    setCheckedAt(body.checkedAt);
+    setLimits(body.limits);
+    setDrive({ ...nextDrive.result, loadingMore: false });
+    setArchive({ ...nextArchive.result, loadingMore: false });
+    setEvents({ ...nextEvents.result, loadingMore: false });
+    setReconciling(false);
+  }, [
+    failClosedOperations,
+    invalidateCanceledCategoryReads,
+    isAdmin,
+    resetCoordinatorAndClear,
+    runLoad,
+    stopCategoryLoads,
+  ]);
+
+  useEffect(() => {
+    baseLoadRef.current = load;
+    return () => {
+      if (baseLoadRef.current === load) baseLoadRef.current = undefined;
+    };
+  }, [load]);
 
   const loadCategory = useCallback(async (category: CategoryKey, cursor?: string) => {
-    if (!isAdmin || inFlight.current.has(category)) return;
-    inFlight.current.add(category);
-    const search = new URLSearchParams({ category });
-    if (cursor) search.set("cursor", cursor);
-    const url = `${OPERATIONS_URL}?${search.toString()}`;
-    if (category === "drive") setDrive((current) => ({ ...current, loadingMore: true, error: undefined }));
-    if (category === "archive") setArchive((current) => ({ ...current, loadingMore: true, error: undefined }));
-    if (category === "events") setEvents((current) => ({ ...current, loadingMore: true, error: undefined }));
+    if (!isAdmin) return;
+    const url = operationsCategoryUrl(category, cursor);
+    const ticket = requestCoordinator.current.beginCategory(category, url);
+    if (!ticket) return;
+    if (category === "drive") setDrive((current) => ({ ...current, loadingMore: true, error: undefined, retryMode: undefined }));
+    if (category === "archive") setArchive((current) => ({ ...current, loadingMore: true, error: undefined, retryMode: undefined }));
+    if (category === "events") setEvents((current) => ({ ...current, loadingMore: true, error: undefined, retryMode: undefined }));
 
+    let appended = false;
     try {
-      const body = await cachedGetJson<OperationsPayload>(url, { force: true });
-      if (!body || !("driveOperations" in body)) {
-        throw new Error("Google operations could not be loaded.");
-      }
+      const body = await readOperationsPayload(url, true);
+      if (!requestCoordinator.current.isCurrentCategory(ticket)) return;
       if (category === "drive") setDrive((current) => mergeAccumulator(current, body.driveOperations));
       if (category === "archive") setArchive((current) => mergeAccumulator(current, body.failedArchives));
       if (category === "events") setEvents((current) => mergeAccumulator(current, body.events));
+      appended = true;
     } catch (loadError) {
+      if (isTerminalCachedGetError(loadError)) {
+        await failClosedOperations(loadError);
+        return;
+      }
+      if (!requestCoordinator.current.isCurrentCategory(ticket)) return;
       const message = loadError instanceof Error
         ? loadError.message
         : "Google operations could not be loaded.";
-      if (category === "drive") setDrive((current) => ({ ...current, loadingMore: false, error: message }));
-      if (category === "archive") setArchive((current) => ({ ...current, loadingMore: false, error: message }));
-      if (category === "events") setEvents((current) => ({ ...current, loadingMore: false, error: message }));
+      if (category === "drive") setDrive((current) => ({ ...current, loadingMore: false, error: message, retryMode: "category" }));
+      if (category === "archive") setArchive((current) => ({ ...current, loadingMore: false, error: message, retryMode: "category" }));
+      if (category === "events") setEvents((current) => ({ ...current, loadingMore: false, error: message, retryMode: "category" }));
     } finally {
-      inFlight.current.delete(category);
+      requestCoordinator.current.settleCategory(ticket, appended);
     }
-  }, [isAdmin]);
+  }, [failClosedOperations, isAdmin]);
+
+  const retryCategory = useCallback((
+    category: CategoryKey,
+    cursor: string | undefined,
+    retryMode: "category" | "base" | undefined,
+  ) => {
+    if (retryMode === "base") return load(true);
+    return loadCategory(category, cursor);
+  }, [load, loadCategory]);
 
   useEffect(() => {
     if (!isAdmin) return;
+    operationsCardActive.current = true;
     void Promise.resolve().then(load);
-    const flight = inFlight.current;
+    const coordinator = requestCoordinator.current;
     return () => {
-      flight.clear();
+      operationsCardActive.current = false;
+      trailingBaseLoadQueued.current = false;
+      invalidateCanceledCategoryReads(coordinator.failClosed());
     };
-  }, [isAdmin, load]);
+  }, [invalidateCanceledCategoryReads, isAdmin, load]);
 
   useCachedGetSubscription([OPERATIONS_URL], () => load(false, true), isAdmin);
 
@@ -246,7 +606,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
   const hasFailedDriveOperation = driveOperations.some((operation) => operation.condition === "failed");
   const moreFailures = drive.hasMore || archive.hasMore;
   const moreEvents = events.hasMore;
-  const anyLoading = state === "loading" || drive.loadingMore || archive.loadingMore || events.loadingMore;
+  const anyLoading = state === "loading" || reconciling || drive.loadingMore || archive.loadingMore || events.loadingMore;
 
   return <div className={styles.card} data-workspace-operations-health={state} aria-live="polite" aria-busy={anyLoading}>
     <div className={styles.toolbar}>
@@ -321,14 +681,14 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
           <div className={styles.error} role="alert">
             <CircleAlert size={16} aria-hidden="true" />
             <span>{drive.error}</span>
-            <button className="soft-button" type="button" onClick={() => void loadCategory("drive", drive.nextCursor)}>Retry</button>
+            <button className="soft-button" type="button" disabled={reconciling} onClick={() => void retryCategory("drive", drive.nextCursor, drive.retryMode)}>Retry</button>
           </div>
         )}
         {archive.error && (
           <div className={styles.error} role="alert">
             <CircleAlert size={16} aria-hidden="true" />
             <span>{archive.error}</span>
-            <button className="soft-button" type="button" onClick={() => void loadCategory("archive", archive.nextCursor)}>Retry</button>
+            <button className="soft-button" type="button" disabled={reconciling} onClick={() => void retryCategory("archive", archive.nextCursor, archive.retryMode)}>Retry</button>
           </div>
         )}
         {failureCount > 0 && (
@@ -343,7 +703,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
               <button
                 className="soft-button"
                 type="button"
-                disabled={drive.loadingMore}
+                disabled={reconciling || drive.loadingMore}
                 onClick={() => void loadCategory("drive", drive.nextCursor)}
               >
                 {drive.loadingMore ? "Loading…" : <>Load more Drive issues <ChevronDown size={14} aria-hidden="true" /></>}
@@ -353,7 +713,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
               <button
                 className="soft-button"
                 type="button"
-                disabled={archive.loadingMore}
+                disabled={reconciling || archive.loadingMore}
                 onClick={() => void loadCategory("archive", archive.nextCursor)}
               >
                 {archive.loadingMore ? "Loading…" : <>Load more archive issues <ChevronDown size={14} aria-hidden="true" /></>}
@@ -403,7 +763,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
           <div className={styles.error} role="alert">
             <CircleAlert size={16} aria-hidden="true" />
             <span>{events.error}</span>
-            <button className="soft-button" type="button" onClick={() => void loadCategory("events", events.nextCursor)}>Retry</button>
+            <button className="soft-button" type="button" disabled={reconciling} onClick={() => void retryCategory("events", events.nextCursor, events.retryMode)}>Retry</button>
           </div>
         )}
         {eventItems.length > 0 && (
@@ -417,7 +777,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
             <button
               className="soft-button"
               type="button"
-              disabled={events.loadingMore}
+              disabled={reconciling || events.loadingMore}
               onClick={() => void loadCategory("events", events.nextCursor)}
             >
               {events.loadingMore ? "Loading…" : <>Load more events <ChevronDown size={14} aria-hidden="true" /></>}

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
+import { posix as path } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -9,12 +10,12 @@ const appRoot = new URL("../app/", import.meta.url);
 const rootPath = fileURLToPath(root).replaceAll("\\", "/");
 const read = (path) => readFile(new URL(path, root), "utf8");
 
-async function nestedFiles(directory, suffix) {
+async function nestedFiles(directory, suffixes) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const child = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, directory);
-    if (entry.isDirectory()) files.push(...await nestedFiles(child, suffix));
-    else if (entry.isFile() && entry.name.endsWith(suffix)) files.push(child);
+    if (entry.isDirectory()) files.push(...await nestedFiles(child, suffixes));
+    else if (entry.isFile() && suffixes.some((suffix) => entry.name.endsWith(suffix))) files.push(child);
   }
   return files;
 }
@@ -47,7 +48,7 @@ function rawFetchSites(source, label) {
     source,
     ts.ScriptTarget.Latest,
     true,
-    ts.ScriptKind.TSX,
+    label.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
   assert.equal(sourceFile.parseDiagnostics.length, 0, `${label} must remain parseable`);
   const sites = [];
@@ -88,26 +89,102 @@ function rawFetchSites(source, label) {
   return sites;
 }
 
-test("client component GET census permits only the four exact action-gated Gmail reads", async () => {
-  const files = await nestedFiles(appRoot, ".tsx");
+function clientModuleSpecifiers(source, label) {
+  const sourceFile = ts.createSourceFile(
+    label,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    label.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const specifiers = [];
+  for (const statement of sourceFile.statements) {
+    if (
+      ts.isImportDeclaration(statement)
+      && !statement.importClause?.isTypeOnly
+      && ts.isStringLiteral(statement.moduleSpecifier)
+    ) specifiers.push(statement.moduleSpecifier.text);
+    if (
+      ts.isExportDeclaration(statement)
+      && !statement.isTypeOnly
+      && statement.moduleSpecifier
+      && ts.isStringLiteral(statement.moduleSpecifier)
+    ) specifiers.push(statement.moduleSpecifier.text);
+  }
+  return specifiers.filter((specifier) => specifier.startsWith("."));
+}
+
+function hasUseClientDirective(source, label) {
+  const sourceFile = ts.createSourceFile(
+    label,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    label.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  for (const statement of sourceFile.statements) {
+    if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) return false;
+    if (statement.expression.text === "use client") return true;
+  }
+  return false;
+}
+
+function resolveClientImport(label, specifier, sourceByLabel) {
+  const base = path.normalize(path.join(path.dirname(label), specifier));
+  const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`];
+  return candidates.find((candidate) => sourceByLabel.has(candidate));
+}
+
+function clientReachableSources(sources) {
+  const sourceByLabel = new Map(sources.map((source) => [source.label, source]));
+  const queue = sources
+    .filter(({ source, label }) => hasUseClientDirective(source, label))
+    .map(({ label }) => label);
+  const reachable = new Set();
+  while (queue.length > 0) {
+    const label = queue.shift();
+    if (!label || reachable.has(label)) continue;
+    reachable.add(label);
+    const current = sourceByLabel.get(label);
+    if (!current) continue;
+    for (const specifier of clientModuleSpecifiers(current.source, label)) {
+      const dependency = resolveClientImport(label, specifier, sourceByLabel);
+      if (dependency && !reachable.has(dependency)) queue.push(dependency);
+    }
+  }
+  return [...reachable].map((label) => sourceByLabel.get(label)).filter(Boolean);
+}
+
+test("client GET census covers TS and TSX modules reachable from client components", async () => {
+  // Follow the client import graph instead of trusting an exact byte-zero
+  // `"use client";` header on every file. Moving a browser transport into a
+  // client-used .ts helper cannot evade the guard, while server-only routes do
+  // not become accidental browser-policy pins.
+  const files = await nestedFiles(appRoot, [".ts", ".tsx"]);
   const sources = await Promise.all(files.map(async (file) => ({
     file,
     label: sourcePath(file),
     source: await readFile(file, "utf8"),
   })));
-  const clientSources = sources.filter(({ source }) => /^"use client";/u.test(source));
-  const rawSites = clientSources.flatMap(({ source, label }) => rawFetchSites(source, label));
+  const rawSites = clientReachableSources(sources)
+    .flatMap(({ source, label }) => rawFetchSites(source, label))
+    .sort((left, right) => (
+      left.label.localeCompare(right.label)
+      || left.functionName.localeCompare(right.functionName)
+      || left.kind.localeCompare(right.kind)
+    ));
 
   assert.deepEqual(
     rawSites,
     [
       { label: "app/inbox/components/InboxView.tsx", functionName: "loadMessages", kind: "implicit-get" },
       { label: "app/inbox/components/InboxView.tsx", functionName: "previewGmailFiling", kind: "implicit-get" },
+      { label: "app/lib/client-get-cache.ts", functionName: "startJsonGet", kind: "implicit-get" },
       { label: "app/settings/components/AiAssistantSettingsCard.tsx", functionName: "mutateLabel", kind: "reviewed-helper" },
       { label: "app/settings/components/GoogleWorkspacePanel.tsx", functionName: "runWorkspaceMutation", kind: "reviewed-helper" },
       { label: "app/settings/components/workspace-reconcile/WorkspaceReconcileCard.tsx", functionName: "readJson", kind: "reviewed-helper" },
     ],
-    "new component GETs must use cachedGetJson; only the two exact Gmail reads and two mutation-gated helpers are reviewed exceptions",
+    "new browser GETs must use cachedGetJson; only its central transport, two exact Gmail reads, and method-constrained mutation helpers are reviewed raw-fetch sites",
   );
 
   const inbox = await read("app/inbox/components/InboxView.tsx");
@@ -179,7 +256,7 @@ test("one loader hook replaces the six FIX-12 clones and lifecycle reads stay ti
 });
 
 test("assistant config and Sheets status use the one cached transport", async () => {
-  const files = await nestedFiles(appRoot, ".tsx");
+  const files = await nestedFiles(appRoot, [".tsx"]);
   const sources = await Promise.all(files.map((file) => readFile(file, "utf8")));
   const joined = sources.join("\n");
   assert.doesNotMatch(joined, /fetch\([^)]*["'`]\/api\/v1\/assistant\/config/u);
@@ -268,6 +345,11 @@ test("mutation invalidations refresh dependent projections and explicit retries 
   assert.match(app, /refreshDirectoryData\(false, true\)/u);
   assert.match(app, /loadMeetings\(false, true\)/u);
   assert.match(blueprint, /loadBlueprint\(true\) : saveBlueprint\(\)/u);
+  assert.match(
+    blueprint,
+    /invalidateCachedGet\("\/api\/v1\/integrations\/google\/setup\/blueprint"\);\s*invalidateCachedGet\("\/api\/v1\/integrations\/google\/setup\/resources"\);\s*const saved = cloneBlueprint\(payload\.blueprint\);/u,
+    "a successful blueprint save must invalidate both the edited blueprint and its derived resource projection",
+  );
   assert.match(access, /invalidateCachedGet\("\/api\/v1\/admin\/access", \{ notify: false \}\)/u);
   assert.match(activity, /invalidateCachedGetPrefix\("\/api\/v1\/admin\/audit\?", \{ notify: false \}\)/u);
 
@@ -324,21 +406,36 @@ test("sliding audit windows, stage verification readers, and editor snapshots st
 });
 
 test("failure-recovery reads converge on the shared notice primitive", async () => {
-  const files = [
-    "app/settings/components/SettingsDataNotice.tsx",
-    "app/import/components/FirstRunImportCard.tsx",
-    "app/assistant/components/TodayPanel.tsx",
-    "app/assistant/components/TaskManagementPanel.tsx",
-    "app/projects/components/ProjectFilesPanel.tsx",
-    "app/management/access/AdminAccessPage.tsx",
-    "app/management/access/AdminActivityPanel.tsx",
-    "app/settings/components/GoogleWorkspacePanel.tsx",
-    "app/settings/components/WorkspaceDriveResourceActions.tsx",
+  const recoverySurfaces = [
+    { name: "settings reader wrapper", path: "app/settings/components/SettingsDataNotice.tsx", pattern: /<ClientDataNotice\b/u },
+    { name: "first-run import", path: "app/import/components/FirstRunImportCard.tsx", pattern: /<ClientDataNotice\b/u },
+    { name: "Today", path: "app/assistant/components/TodayPanel.tsx", pattern: /<ClientDataNotice\b/u },
+    { name: "task management", path: "app/assistant/components/TaskManagementPanel.tsx", pattern: /<ClientDataNotice\b/u },
+    { name: "project files", path: "app/projects/components/ProjectFilesPanel.tsx", pattern: /<ClientDataNotice\b/u },
+    { name: "People & Access", path: "app/management/access/AdminAccessPage.tsx", pattern: /<ClientDataNotice\b/u },
+    { name: "security activity", path: "app/management/access/AdminActivityPanel.tsx", pattern: /<ClientDataNotice\b/u },
+    { name: "Google Sheets status", path: "app/settings/components/GoogleWorkspacePanel.tsx", pattern: /sheetsStatusError[\s\S]{0,220}<ClientDataNotice\b/u },
+    { name: "Workspace resources", path: "app/settings/components/WorkspaceDriveResourceActions.tsx", pattern: /resourcesError && <ClientDataNotice\b/u },
+    { name: "live directory", path: "app/FloorOpsApp.tsx", pattern: /function LiveDataBanner[\s\S]{0,500}return <ClientDataNotice\b/u },
+    { name: "project meetings", path: "app/FloorOpsApp.tsx", pattern: /function ProjectMeetings[\s\S]{0,3000}error \? <ClientDataNotice\b/u },
+    { name: "Inbox connection", path: "app/inbox/components/InboxView.tsx", pattern: /error && <ClientDataNotice[\s\S]{0,500}retryLabel="Retry connection"/u },
   ];
-  const sources = await Promise.all(files.map(read));
-  for (const [index, source] of sources.entries()) {
-    assert.match(source, /ClientDataNotice/u, `${files[index]} must use the shared failure notice`);
+  assert.equal(recoverySurfaces.length, 12, "the original twelve recovery surfaces must stay explicit");
+  const sourceByPath = new Map(await Promise.all(
+    [...new Set(recoverySurfaces.map(({ path }) => path))]
+      .map(async (path) => [path, await read(path)]),
+  ));
+  for (const { name, path, pattern } of recoverySurfaces) {
+    assert.match(sourceByPath.get(path) ?? "", pattern, `${name} must render the shared failure notice`);
   }
+
+  const app = sourceByPath.get("app/FloorOpsApp.tsx") ?? "";
+  const inbox = sourceByPath.get("app/inbox/components/InboxView.tsx") ?? "";
+  assert.doesNotMatch(app, /function LiveDataBanner[\s\S]{0,500}<section[\s\S]{0,300}>Try again</u);
+  assert.doesNotMatch(app, /error \? <OperationsEmptyState[^>]+tone="error"[\s\S]{0,300}>Try again</u);
+  assert.doesNotMatch(inbox, /error && <button[\s\S]{0,220}Retry connection/u);
+  assert.doesNotMatch(inbox, /error && <p className="workspace-missing">\{error\}<\/p>/u);
+
   const primitive = await read("app/components/ClientDataNotice.tsx");
   assert.match(primitive, /state: ClientDataNoticeState/u);
   assert.match(primitive, /retryLabel = "Retry"/u);

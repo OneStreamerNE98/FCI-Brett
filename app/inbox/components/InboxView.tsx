@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
+import { ClientDataNotice } from "../../components/ClientDataNotice";
 import { OperationsEmptyState, PageTitle } from "../../components/operations/OperationsPrimitives";
 import {
   DEFAULT_ASSISTANT_LABEL_DEFINITIONS,
@@ -1537,13 +1538,19 @@ export function InboxView({
         </span>
       </div>
       <div className="inbox-state-actions">
-        {error && <button className="soft-button" onClick={() => void checkGmailConnection(true)} disabled={checking}>
-          {checking ? "Checking…" : "Retry connection"}
-        </button>}
         <button className="soft-button" onClick={onRules}>Manage rules</button>
       </div>
     </section>
-    {error && <p className="workspace-missing">{error}</p>}
+    {error && <ClientDataNotice
+      state={checking ? "loading" : "error"}
+      error={error}
+      errorTitle="Gmail connection is unavailable"
+      retryLabel="Retry connection"
+      loadingTitle="Checking Gmail connection…"
+      loadingDetail="Reading the saved Workspace connection without loading Gmail messages."
+      titleLevel={2}
+      onRetry={() => void checkGmailConnection(true)}
+    />}
     <div className="inbox-layout">
       <section className="panel message-list">
         <header className="live-inbox-toolbar">
