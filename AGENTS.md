@@ -150,9 +150,11 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
     precision before any PR comment is posted; the reviewer receives that scorecard —
     real findings, noise, and what the orchestrator's fleet caught that it missed — and
     the channel goes live on PRs after ONE scored dry-run unless precision is poor —
-    shortened from two by owner decision, August 5, 2026, because Kimi is now the only
-    non-Claude model in the pipeline and every orchestrator review fleet shares a single
-    model family, so the cross-model second opinion outweighs a longer probation).
+    shortened from two by owner decision, August 5, 2026: the BUILD layer already spans
+    three model families (Claude, OpenAI/Codex, Moonshot/Kimi), but the REVIEW layer is
+    entirely Claude — the orchestrator and every fleet agent — so an independent reviewer
+    from another family covers a blind spot nothing else in the process covers, and that
+    outweighs a longer probation).
     Every agent joining the review layer reads
     [`docs/agent-reviewer-briefing.md`](docs/agent-reviewer-briefing.md) first. When live: findings post as PR comments
     prefixed with the literal token `KIMI-ADVISORY:`; such comments are EXCLUDED from
