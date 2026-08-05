@@ -1132,8 +1132,13 @@ test("SET-22 provides an office-safe Project Files tab with honest catalog state
   assert.match(projectFiles, /cachedGetJson<unknown>\(catalogUrl\)/);
   assert.match(projectFiles, /useCachedGetSubscription\(\[catalogUrl\]/);
   assert.match(projectFiles, /invalidateCachedGet\(catalogUrl\)/);
-  assert.match(projectFilesRoute, /export async function GET/);
-  assert.match(projectFilesRoute, /return noStoreJson\(\{/);
+  const projectFilesGetStart = projectFilesRoute.indexOf("export async function GET");
+  const projectFilesPostStart = projectFilesRoute.indexOf("export async function POST");
+  assert.notEqual(projectFilesGetStart, -1);
+  assert.ok(projectFilesPostStart > projectFilesGetStart);
+  const projectFilesGet = projectFilesRoute.slice(projectFilesGetStart, projectFilesPostStart);
+  assert.match(projectFilesGet, /return noStoreResponse\(auth\.response\)/);
+  assert.match(projectFilesGet, /return noStoreJson\(\{/);
   assert.match(projectFiles, /`\/api\/v1\/projects\/\$\{encodeURIComponent\(projectId\)\}\/drive\/files`/);
   assert.doesNotMatch(projectFiles, /\/api\/v1\/integrations\/google\/setup\/blueprint/);
   assert.match(projectFiles, /Loading project files…/);
