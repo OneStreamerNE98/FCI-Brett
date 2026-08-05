@@ -1,9 +1,16 @@
 "use client";
 
 import { type FormEvent, type RefObject, useEffect, useId, useRef, useState } from "react";
-import { CheckCircle2, ExternalLink, FilePlus2, FolderTree, RefreshCw, X } from "lucide-react";
+import { CheckCircle2, ExternalLink, FilePlus2, FolderTree, X } from "lucide-react";
 
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
+import { ClientDataNotice } from "../../components/ClientDataNotice";
+import {
+  cachedGetJson,
+  invalidateCachedGet,
+  isTerminalCachedGetError,
+} from "../../lib/client-get-cache";
+import { useCachedGetSubscription } from "../../lib/client-get-hooks";
 import styles from "./ProjectFilesPanel.module.css";
 
 type ProjectFileKind = "doc" | "sheet" | "slides";
@@ -142,6 +149,7 @@ export function useProjectFilesController(projectId: string, driveFolderId?: str
   }>>({ projectId, files: [] });
   const [modalProjectId, setModalProjectId] = useState<string | null>(null);
   const [catalogRevision, setCatalogRevision] = useState(0);
+  const catalogUrl = `/api/v1/projects/${encodeURIComponent(projectId)}/drive/files`;
   const requestKey = `${projectId}:${driveFolderId ?? "unprovisioned"}:${catalogRevision}`;
   const catalogState = catalogResult?.requestKey === requestKey
     ? catalogResult.state
@@ -149,23 +157,19 @@ export function useProjectFilesController(projectId: string, driveFolderId?: str
   const createdFiles = createdSession.projectId === projectId ? createdSession.files : [];
 
   useEffect(() => {
-    const abortController = new AbortController();
-
+    let active = true;
     void (async () => {
       try {
-        const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/drive/files`, {
-          cache: "no-store",
-          signal: abortController.signal,
-        });
-        if (!response.ok) {
-          throw new Error(await responseError(response, "Project file choices could not be loaded."));
-        }
-        const catalog = normalizeCatalog(await response.json());
-        if (!abortController.signal.aborted) {
+        const catalog = normalizeCatalog(await cachedGetJson<unknown>(catalogUrl));
+        if (active) {
           setCatalogResult({ requestKey, state: { status: "ready", catalog } });
         }
       } catch (error) {
-        if (abortController.signal.aborted) return;
+        if (!active) return;
+        if (isTerminalCachedGetError(error)) {
+          setCreatedSession({ projectId, files: [] });
+          setModalProjectId(null);
+        }
         setCatalogResult({
           requestKey,
           state: {
@@ -176,8 +180,12 @@ export function useProjectFilesController(projectId: string, driveFolderId?: str
       }
     })();
 
-    return () => abortController.abort();
-  }, [projectId, requestKey]);
+    return () => { active = false; };
+  }, [catalogUrl, projectId, requestKey]);
+
+  useCachedGetSubscription([catalogUrl], () => {
+    setCatalogRevision((current) => current + 1);
+  });
 
   return {
     catalogState,
@@ -189,7 +197,10 @@ export function useProjectFilesController(projectId: string, driveFolderId?: str
       projectId,
       files: current.projectId === projectId ? [...current.files, file] : [file],
     })),
-    retryCatalog: () => setCatalogRevision((current) => current + 1),
+    retryCatalog: () => {
+      invalidateCachedGet(catalogUrl);
+      setCatalogRevision((current) => current + 1);
+    },
   };
 }
 
@@ -226,13 +237,13 @@ export function ProjectFilesPanel({
       <span>Checking the project folder and available starter templates.</span>
     </div>}
 
-    {controller.catalogState.status === "error" && <div className={`${styles.state} ${styles.error}`} role="alert">
-      <strong>Project files are unavailable</strong>
-      <span>{controller.catalogState.message}</span>
-      <button type="button" className="soft-button" onClick={controller.retryCatalog}>
-        <RefreshCw size={15} aria-hidden="true" /> Try again
-      </button>
-    </div>}
+    {controller.catalogState.status === "error" && <ClientDataNotice
+      state="error"
+      error={controller.catalogState.message}
+      errorTitle="Project files are unavailable"
+      retryLabel="Try again"
+      onRetry={controller.retryCatalog}
+    />}
 
     {controller.catalogState.status === "ready" && !controller.catalogState.catalog.provisioned && <div className={`${styles.state} ${styles.unprovisioned}`} role="status">
       <FolderTree size={19} aria-hidden="true" />
@@ -315,6 +326,7 @@ export function ProjectFileCreationModal({
         throw new Error(await responseError(response, "The project file could not be created."));
       }
       const data = await response.json() as { file?: unknown; simulated?: unknown; environment?: unknown };
+      invalidateCachedGet(`/api/v1/projects/${encodeURIComponent(projectId)}/drive/files`);
       const file = normalizeCreatedFile(data.file, data.simulated, data.environment);
       controller.recordCreatedFile(file);
       setCreated(file);

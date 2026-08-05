@@ -1,12 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, CircleAlert, ChevronDown, RefreshCw } from "lucide-react";
+import { CheckCircle2, CircleAlert, ChevronDown } from "lucide-react";
 
 import {
   OperationsDataTable,
   OperationsDataTableCell,
 } from "../../../components/operations/OperationsDataTable";
+import { cachedGetJson } from "../../../lib/client-get-cache";
+import {
+  useCachedGetSubscription,
+  useClientLoadState,
+} from "../../../lib/client-get-hooks";
+import { SettingsDataNotice } from "../SettingsDataNotice";
 import styles from "./WorkspaceOperationsHealthCard.module.css";
 
 type DriveOperation = Readonly<{
@@ -55,7 +61,6 @@ type OperationsPayload = Readonly<{
   events: CategoryResult<IntegrationEvent>;
 }>;
 
-type LoadState = "idle" | "loading" | "ready" | "error";
 type CategoryKey = "drive" | "archive" | "events";
 
 type AccumulatedCategory<T> = {
@@ -65,6 +70,8 @@ type AccumulatedCategory<T> = {
   loadingMore: boolean;
   error?: string;
 };
+
+const OPERATIONS_URL = "/api/v1/integrations/google/operations";
 
 const FAILURE_COLUMNS = [
   { key: "kind", label: "Work item" },
@@ -118,115 +125,93 @@ function mergeAccumulator<T>(
 }
 
 export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean }) {
-  const [state, setState] = useState<LoadState>("idle");
   const [simulation, setSimulation] = useState<boolean | null>(null);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const [limits, setLimits] = useState<{ perCategory: number } | null>(null);
   const [drive, setDrive] = useState<AccumulatedCategory<DriveOperation>>(emptyAccumulator);
   const [archive, setArchive] = useState<AccumulatedCategory<FailedArchive>>(emptyAccumulator);
   const [events, setEvents] = useState<AccumulatedCategory<IntegrationEvent>>(emptyAccumulator);
-  const [error, setError] = useState<string | null>(null);
-  const inFlight = useRef<Set<CategoryKey | "initial">>(new Set());
+  const { state, error, run: runLoad } = useClientLoadState(
+    "Google operations could not be loaded.",
+  );
+  const inFlight = useRef<Set<CategoryKey>>(new Set());
   const failuresHeadingRef = useRef<HTMLHeadingElement>(null);
   const eventsHeadingRef = useRef<HTMLHeadingElement>(null);
   const prevDriveHasMore = useRef(drive.hasMore);
   const prevArchiveHasMore = useRef(archive.hasMore);
   const prevEventsHasMore = useRef(events.hasMore);
 
-  const load = useCallback(async (category?: CategoryKey, cursor?: string) => {
+  const load = useCallback((force = false, silent = false) => {
     if (!isAdmin) return;
-    const flightKey: CategoryKey | "initial" = category ?? "initial";
-    if (inFlight.current.has(flightKey)) return;
-    inFlight.current.add(flightKey);
+    return runLoad(
+      () => cachedGetJson<OperationsPayload>(OPERATIONS_URL, { force }).then((body) => {
+        if (!body || !("driveOperations" in body)) {
+          throw new Error("Google operations could not be loaded.");
+        }
+        return body;
+      }),
+      {
+        onSuccess: (body) => {
+          setSimulation(body.simulation);
+          setCheckedAt(body.checkedAt);
+          setLimits(body.limits);
+          setDrive({ ...body.driveOperations, loadingMore: false });
+          setArchive({ ...body.failedArchives, loadingMore: false });
+          setEvents({ ...body.events, loadingMore: false });
+        },
+        onFailure: () => {
+          setSimulation(null);
+          setCheckedAt(null);
+          setLimits(null);
+          setDrive(emptyAccumulator());
+          setArchive(emptyAccumulator());
+          setEvents(emptyAccumulator());
+        },
+      },
+      { silent },
+    );
+  }, [isAdmin, runLoad]);
 
-    const url = new URL("/api/v1/integrations/google/operations", window.location.origin);
-    if (category) {
-      url.searchParams.set("category", category);
-    }
-    if (cursor) {
-      url.searchParams.set("cursor", cursor);
-    }
-
-    if (!category) {
-      setState("loading");
-      setError(null);
-      setDrive(emptyAccumulator());
-      setArchive(emptyAccumulator());
-      setEvents(emptyAccumulator());
-    } else {
-      if (category === "drive") setDrive((d) => ({ ...d, loadingMore: true, error: undefined }));
-      if (category === "archive") setArchive((a) => ({ ...a, loadingMore: true, error: undefined }));
-      if (category === "events") setEvents((e) => ({ ...e, loadingMore: true, error: undefined }));
-    }
+  const loadCategory = useCallback(async (category: CategoryKey, cursor?: string) => {
+    if (!isAdmin || inFlight.current.has(category)) return;
+    inFlight.current.add(category);
+    const search = new URLSearchParams({ category });
+    if (cursor) search.set("cursor", cursor);
+    const url = `${OPERATIONS_URL}?${search.toString()}`;
+    if (category === "drive") setDrive((current) => ({ ...current, loadingMore: true, error: undefined }));
+    if (category === "archive") setArchive((current) => ({ ...current, loadingMore: true, error: undefined }));
+    if (category === "events") setEvents((current) => ({ ...current, loadingMore: true, error: undefined }));
 
     try {
-      const response = await fetch(url.toString(), { cache: "no-store" });
-      const body = await response.json().catch(() => null) as OperationsPayload | { error?: string } | null;
-      if (!response.ok || !body || !("driveOperations" in body)) {
-        throw new Error(body && "error" in body && body.error
-          ? body.error
-          : "Google operations could not be loaded.");
+      const body = await cachedGetJson<OperationsPayload>(url, { force: true });
+      if (!body || !("driveOperations" in body)) {
+        throw new Error("Google operations could not be loaded.");
       }
-
-      if (!category) {
-        setSimulation(body.simulation);
-        setCheckedAt(body.checkedAt);
-        setLimits(body.limits);
-        setDrive({
-          items: body.driveOperations.items,
-          hasMore: body.driveOperations.hasMore,
-          nextCursor: body.driveOperations.nextCursor,
-          loadingMore: false,
-        });
-        setArchive({
-          items: body.failedArchives.items,
-          hasMore: body.failedArchives.hasMore,
-          nextCursor: body.failedArchives.nextCursor,
-          loadingMore: false,
-        });
-        setEvents({
-          items: body.events.items,
-          hasMore: body.events.hasMore,
-          nextCursor: body.events.nextCursor,
-          loadingMore: false,
-        });
-        setState("ready");
-      } else {
-        if (category === "drive") {
-          setDrive((current) => mergeAccumulator(current, body.driveOperations));
-        }
-        if (category === "archive") {
-          setArchive((current) => mergeAccumulator(current, body.failedArchives));
-        }
-        if (category === "events") {
-          setEvents((current) => mergeAccumulator(current, body.events));
-        }
-      }
+      if (category === "drive") setDrive((current) => mergeAccumulator(current, body.driveOperations));
+      if (category === "archive") setArchive((current) => mergeAccumulator(current, body.failedArchives));
+      if (category === "events") setEvents((current) => mergeAccumulator(current, body.events));
     } catch (loadError) {
       const message = loadError instanceof Error
         ? loadError.message
         : "Google operations could not be loaded.";
-      if (!category) {
-        setError(message);
-        setState("error");
-      } else {
-        if (category === "drive") setDrive((d) => ({ ...d, loadingMore: false, error: message }));
-        if (category === "archive") setArchive((a) => ({ ...a, loadingMore: false, error: message }));
-        if (category === "events") setEvents((e) => ({ ...e, loadingMore: false, error: message }));
-      }
+      if (category === "drive") setDrive((current) => ({ ...current, loadingMore: false, error: message }));
+      if (category === "archive") setArchive((current) => ({ ...current, loadingMore: false, error: message }));
+      if (category === "events") setEvents((current) => ({ ...current, loadingMore: false, error: message }));
     } finally {
-      inFlight.current.delete(flightKey);
+      inFlight.current.delete(category);
     }
   }, [isAdmin]);
 
   useEffect(() => {
     if (!isAdmin) return;
-    void Promise.resolve().then(() => load());
+    void Promise.resolve().then(load);
     const flight = inFlight.current;
     return () => {
       flight.clear();
     };
   }, [isAdmin, load]);
+
+  useCachedGetSubscription([OPERATIONS_URL], () => load(false, true), isAdmin);
 
   useEffect(() => {
     if (prevDriveHasMore.current && !drive.hasMore && !drive.loadingMore) {
@@ -268,21 +253,17 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
       <p>{simulation
         ? "Simulation only — these are locally recorded test operations and no Google call is made."
         : "Recorded Google work for the current company connection. This does not contact Google."}</p>
-      <button className="soft-button" type="button" onClick={() => void load()} disabled={state === "loading"}>
-        <RefreshCw size={14} aria-hidden="true" />
-        {state === "loading" ? "Refreshing…" : "Refresh operations"}
-      </button>
     </div>
 
     {state === "loading" && !driveOperations.length && !failedArchives.length && !eventItems.length
       ? <p className={styles.message} role="status">Loading recorded Google operations…</p>
       : null}
-    {error && state === "error" && !driveOperations.length && !failedArchives.length && !eventItems.length
-      ? <div className={styles.error} role="alert">
-        <CircleAlert size={16} aria-hidden="true" />
-        <span>{error}</span>
-      </div>
-      : null}
+    {state === "error" ? <SettingsDataNotice
+      state="error"
+      error={error || "Google operations could not be loaded."}
+      errorTitle="Recorded Google operations could not be loaded"
+      onRetry={() => void load(true)}
+    /> : null}
 
     {state === "ready" || driveOperations.length > 0 || failedArchives.length > 0 || eventItems.length > 0 ? <>
       <section className={styles.section} aria-labelledby="workspace-operations-failures-heading">
@@ -340,14 +321,14 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
           <div className={styles.error} role="alert">
             <CircleAlert size={16} aria-hidden="true" />
             <span>{drive.error}</span>
-            <button className="soft-button" type="button" onClick={() => void load("drive", drive.nextCursor)}>Retry</button>
+            <button className="soft-button" type="button" onClick={() => void loadCategory("drive", drive.nextCursor)}>Retry</button>
           </div>
         )}
         {archive.error && (
           <div className={styles.error} role="alert">
             <CircleAlert size={16} aria-hidden="true" />
             <span>{archive.error}</span>
-            <button className="soft-button" type="button" onClick={() => void load("archive", archive.nextCursor)}>Retry</button>
+            <button className="soft-button" type="button" onClick={() => void loadCategory("archive", archive.nextCursor)}>Retry</button>
           </div>
         )}
         {failureCount > 0 && (
@@ -363,7 +344,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
                 className="soft-button"
                 type="button"
                 disabled={drive.loadingMore}
-                onClick={() => void load("drive", drive.nextCursor)}
+                onClick={() => void loadCategory("drive", drive.nextCursor)}
               >
                 {drive.loadingMore ? "Loading…" : <>Load more Drive issues <ChevronDown size={14} aria-hidden="true" /></>}
               </button>
@@ -373,7 +354,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
                 className="soft-button"
                 type="button"
                 disabled={archive.loadingMore}
-                onClick={() => void load("archive", archive.nextCursor)}
+                onClick={() => void loadCategory("archive", archive.nextCursor)}
               >
                 {archive.loadingMore ? "Loading…" : <>Load more archive issues <ChevronDown size={14} aria-hidden="true" /></>}
               </button>
@@ -422,7 +403,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
           <div className={styles.error} role="alert">
             <CircleAlert size={16} aria-hidden="true" />
             <span>{events.error}</span>
-            <button className="soft-button" type="button" onClick={() => void load("events", events.nextCursor)}>Retry</button>
+            <button className="soft-button" type="button" onClick={() => void loadCategory("events", events.nextCursor)}>Retry</button>
           </div>
         )}
         {eventItems.length > 0 && (
@@ -437,7 +418,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
               className="soft-button"
               type="button"
               disabled={events.loadingMore}
-              onClick={() => void load("events", events.nextCursor)}
+              onClick={() => void loadCategory("events", events.nextCursor)}
             >
               {events.loadingMore ? "Loading…" : <>Load more events <ChevronDown size={14} aria-hidden="true" /></>}
             </button>

@@ -472,7 +472,10 @@ test("Assistant task review creates only through an explicit per-proposal Accept
   assert.match(view.slice(acceptStart, renderStart), /source: "meeting"/u);
   assert.match(view.slice(acceptStart, renderStart), /sourceRef: meetingId/u);
   assert.equal(view.match(/fetch\("\/api\/v1\/tasks"/gu)?.length, 1);
-  assert.match(view, /fetch\("\/api\/v1\/assistant\/config"/u);
+  // SET-42 keeps the same availability gate while moving its GET into the
+  // shared stale-while-revalidate transport.
+  assert.match(view, /cachedGetJson<[\s\S]{0,180}>\(ASSISTANT_CONFIG_URL\)/u);
+  assert.match(view, /useCachedGetSubscription\(\[ASSISTANT_CONFIG_URL\], loadAvailability\)/u);
   assert.match(
     view,
     /if \(data\.keyState === "Missing"\)/u,

@@ -7,6 +7,13 @@ import { AdministratorActionButton } from "../../components/AdministratorActionB
 import { FeatureStateBadge } from "../../components/FeatureStateBadge";
 import { WorkspaceInfoHint } from "../../components/WorkspaceInfoHint";
 import {
+  cachedGetJson,
+  invalidateCachedGet,
+  invalidateWorkspaceOperationsReadCache,
+  isTerminalCachedGetError,
+} from "../../lib/client-get-cache";
+import { useCachedGetSubscription } from "../../lib/client-get-hooks";
+import {
   flattenWorkspaceBlueprintFolders,
   flattenWorkspaceRootFolders,
   WORKSPACE_BLUEPRINT_LIMITS,
@@ -170,16 +177,25 @@ export function WorkspaceBlueprintEditor({
   const [errorAction, setErrorAction] = useState<ErrorAction | null>(null);
   const [conflictVersion, setConflictVersion] = useState<number | null>(null);
 
-  const loadBlueprint = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setErrorAction(null);
+  const loadBlueprint = useCallback(async (
+    force = false,
+    silent = false,
+    preserveDraft = false,
+  ) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+      setErrorAction(null);
+    }
     try {
-      const response = await fetch("/api/v1/integrations/google/setup/blueprint", { cache: "no-store" });
-      const payload = await response.json().catch(() => ({})) as BlueprintResponse;
-      if (!response.ok || !payload.blueprint || !Number.isSafeInteger(payload.version)) {
+      const payload = await cachedGetJson<BlueprintResponse>(
+        "/api/v1/integrations/google/setup/blueprint",
+        { force },
+      );
+      if (!payload.blueprint || !Number.isSafeInteger(payload.version)) {
         throw new Error(payload.error ?? "The Workspace blueprint could not be loaded.");
       }
+      if (preserveDraft) return;
       const next = cloneBlueprint(payload.blueprint);
       setDraft(next);
       setSavedBlueprint(cloneBlueprint(next));
@@ -187,15 +203,24 @@ export function WorkspaceBlueprintEditor({
       setSeeded(payload.seeded === true);
       setConflictVersion(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "The Workspace blueprint could not be loaded.");
-      setErrorAction("load");
+      if (isTerminalCachedGetError(loadError)) {
+        setDraft(null);
+        setSavedBlueprint(null);
+        setVersion(0);
+        setSeeded(true);
+        setConflictVersion(null);
+      }
+      if (!silent || isTerminalCachedGetError(loadError)) {
+        setError(loadError instanceof Error ? loadError.message : "The Workspace blueprint could not be loaded.");
+        setErrorAction("load");
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void Promise.resolve().then(loadBlueprint);
+    void Promise.resolve().then(() => loadBlueprint(refreshKey > 0));
   }, [loadBlueprint, refreshKey]);
 
   const updateDraft = useCallback((operation: (next: BlueprintDraft) => void) => {
@@ -210,6 +235,10 @@ export function WorkspaceBlueprintEditor({
   const folderOptions = useMemo(() => draft ? flattenWorkspaceBlueprintFolders(draft) : [], [draft]);
   const spreadsheetFolderOptions = useMemo(() => draft ? flattenWorkspaceRootFolders(draft) : [], [draft]);
   const dirty = Boolean(draft && savedBlueprint && JSON.stringify(draft) !== JSON.stringify(savedBlueprint));
+  useCachedGetSubscription(
+    ["/api/v1/integrations/google/setup/blueprint"],
+    () => void loadBlueprint(false, true, dirty || saving),
+  );
   const headerStatus = loading
     ? "Loading"
     : error
@@ -292,6 +321,7 @@ export function WorkspaceBlueprintEditor({
       if (!response.ok || !payload.blueprint || !Number.isSafeInteger(payload.version)) {
         throw new Error(payload.error ?? "The Workspace blueprint could not be saved.");
       }
+      invalidateCachedGet("/api/v1/integrations/google/setup/blueprint");
       const saved = cloneBlueprint(payload.blueprint);
       setDraft(saved);
       setSavedBlueprint(cloneBlueprint(saved));
@@ -303,6 +333,7 @@ export function WorkspaceBlueprintEditor({
       setError(saveError instanceof Error ? saveError.message : "The Workspace blueprint could not be saved.");
       setErrorAction("save");
     } finally {
+      invalidateWorkspaceOperationsReadCache();
       setSaving(false);
     }
   }
@@ -310,7 +341,7 @@ export function WorkspaceBlueprintEditor({
   const content = <>
     <p>Define the names and structure FCI will use when later setup steps create Workspace resources. Nothing is created in Google from this editor.</p>
     {loading && !draft && <p className="workspace-blueprint-message" role="status">Loading the Workspace blueprint…</p>}
-    {error && <div className={`workspace-blueprint-error${conflictVersion !== null ? " conflict" : ""}`} role="alert"><span>{error}</span><button type="button" className="soft-button" onClick={() => void (conflictVersion !== null || errorAction !== "save" ? loadBlueprint() : saveBlueprint())}>{conflictVersion !== null ? `Load latest${conflictVersion ? ` (v${conflictVersion})` : ""}` : errorAction === "save" ? "Retry save" : "Retry"}</button></div>}
+    {error && <div className={`workspace-blueprint-error${conflictVersion !== null ? " conflict" : ""}`} role="alert"><span>{error}</span><button type="button" className="soft-button" onClick={() => void (conflictVersion !== null || errorAction !== "save" ? loadBlueprint(true) : saveBlueprint())}>{conflictVersion !== null ? `Load latest${conflictVersion ? ` (v${conflictVersion})` : ""}` : errorAction === "save" ? "Retry save" : "Retry"}</button></div>}
     {draft && <div className="workspace-blueprint-editor">
       <fieldset className="workspace-blueprint-fields">
         <legend>Business and naming</legend>

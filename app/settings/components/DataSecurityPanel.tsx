@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Building2,
   CircleAlert,
@@ -9,13 +9,18 @@ import {
   Copy,
   Globe2,
   Mail,
-  RefreshCw,
   Settings,
   ShieldCheck,
   UserRoundCheck,
   Users,
 } from "lucide-react";
 import { BUILD_INFORMATION } from "../../lib/build-information";
+import { cachedGetJson } from "../../lib/client-get-cache";
+import {
+  useCachedGetSubscription,
+  useClientLoadState,
+} from "../../lib/client-get-hooks";
+import { SettingsDataNotice } from "./SettingsDataNotice";
 import styles from "./DataSecurityPanel.module.css";
 
 const PhoneInstallPanel = dynamic(
@@ -30,7 +35,6 @@ type DevelopmentAccess = {
   officeDomains: string[];
   adminEmails: string[];
 };
-type LoadState = "loading" | "ready" | "error";
 type CopyState = "idle" | "copied" | "error";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -126,41 +130,24 @@ function BuildInformationCard() {
 
 function WhoHasAccessCard() {
   const [access, setAccess] = useState<DevelopmentAccess | null>(null);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [loadError, setLoadError] = useState("");
-  const requestRef = useRef(0);
+  const { state: loadState, error: loadError, run: runLoad } = useClientLoadState(
+    "Development access configuration could not be loaded.",
+  );
 
-  const loadAccess = useCallback(async () => {
-    const requestId = ++requestRef.current;
-    setLoadState("loading");
-    setLoadError("");
-    try {
-      const response = await fetch(DEVELOPMENT_ACCESS_URL, { cache: "no-store" });
-      const body = await response.json().catch(() => null) as unknown;
-      if (!response.ok) {
-        const message = isRecord(body) && typeof body.error === "string"
-          ? body.error
-          : "Development access configuration could not be loaded.";
-        throw new Error(message);
-      }
-      const nextAccess = parseDevelopmentAccess(body);
-      if (requestId !== requestRef.current) return;
-      setAccess(nextAccess);
-      setLoadState("ready");
-    } catch (error) {
-      if (requestId !== requestRef.current) return;
-      setAccess(null);
-      setLoadError(error instanceof Error ? error.message : "Development access configuration could not be loaded.");
-      setLoadState("error");
-    }
-  }, []);
+  const loadAccess = useCallback((force = false, silent = false) => runLoad(
+    () => cachedGetJson<unknown>(DEVELOPMENT_ACCESS_URL, { force }).then(parseDevelopmentAccess),
+    {
+      onSuccess: setAccess,
+      onFailure: () => setAccess(null),
+    },
+    { silent },
+  ), [runLoad]);
 
   useEffect(() => {
-    void Promise.resolve().then(loadAccess);
-    return () => {
-      requestRef.current += 1;
-    };
+    void Promise.resolve().then(() => loadAccess());
   }, [loadAccess]);
+
+  useCachedGetSubscription([DEVELOPMENT_ACCESS_URL], () => loadAccess(false, true));
 
   const officeAccessConfigured = Boolean(
     access && (access.officeEmails.length > 0 || access.officeDomains.length > 0),
@@ -176,22 +163,14 @@ function WhoHasAccessCard() {
       <UserRoundCheck size={22} aria-hidden="true" />
     </div>
 
-    {loadState !== "ready" || !access ? <div
-      className={`settings-data-notice ${loadState === "error" ? "error" : "loading"}`}
-      role={loadState === "error" ? "alert" : "status"}
-      aria-live={loadState === "error" ? "assertive" : "polite"}
-    >
-      {loadState === "error"
-        ? <CircleAlert size={19} aria-hidden="true" />
-        : <RefreshCw size={19} aria-hidden="true" />}
-      <div>
-        <strong>{loadState === "error" ? "Access configuration could not be loaded" : "Checking development access…"}</strong>
-        <span>{loadState === "error" ? loadError : "Reading the hosted identifier lists without exposing secrets."}</span>
-      </div>
-      {loadState === "error" && <button type="button" className="soft-button" onClick={() => void loadAccess()}>
-        <RefreshCw size={14} aria-hidden="true" /> Retry
-      </button>}
-    </div> : <>
+    {loadState !== "ready" || !access ? <SettingsDataNotice
+      state={loadState === "ready" ? "error" : loadState}
+      error={loadError || "Development access configuration could not be loaded."}
+      onRetry={() => void loadAccess(true)}
+      loadingTitle="Checking development access…"
+      loadingDetail="Reading the hosted identifier lists without exposing secrets."
+      errorTitle="Access configuration could not be loaded"
+    /> : <>
       {!officeAccessConfigured && <div className="settings-data-notice error" role="status">
         <CircleAlert size={19} aria-hidden="true" />
         <div>

@@ -489,17 +489,18 @@ test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard 
   assert.match(assistant, /<section role="tabpanel" id="assistant-today-panel" aria-labelledby="assistant-today-tab" hidden=\{tab !== "today"\}>\{tab === "today" && <TodayPanel \/>\}<\/section>/u);
   assert.match(assistant, /<section role="tabpanel" id="assistant-ask-panel" aria-labelledby="assistant-ask-tab" hidden=\{tab !== "ask"\}>\{tab === "ask" && <>/u);
   assert.match(assistant, /<section role="tabpanel" id="assistant-tasks-panel" aria-labelledby="assistant-tasks-tab" hidden=\{tab !== "tasks"\}>\{tab === "tasks" && <TaskManagementPanel projects=\{projects\} \/>\}<\/section>/u);
-  assert.match(panel, /fetch\("\/api\/v1\/assistant\/today"/u);
-  assert.match(panel, /const loadIdRef = useRef\(0\);/u);
-  assert.match(panel, /const loadId = \+\+loadIdRef\.current;/u);
-  assert.match(panel, /if \(loadId !== loadIdRef\.current\) return;\s*setToday\(data\);/u);
-  assert.match(panel, /if \(signal\?\.aborted \|\| loadId !== loadIdRef\.current\) return;/u);
+  // SET-42 moves the read and latest-request guard into shared SWR/load-state
+  // primitives. Pin the public Today behavior instead of the retired local counter.
+  assert.match(panel, /cachedGetJson<TodayAssembly[\s\S]*>\(TODAY_URL,/u);
+  assert.match(panel, /useClientLoadState\("Today could not be loaded\."\)/u);
+  assert.match(panel, /onSuccess: setToday,\s*onFailure: \(\) => setToday\(null\)/u);
+  assert.match(panel, /useCachedGetSubscription\(\[TODAY_URL\], \(\) => load\(\{ silent: true \}\)\)/u);
   assert.match(panel, /fetch\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(task\.id\)\}`[\s\S]*method: "PATCH"[\s\S]*body: JSON\.stringify\(\{ status: "done" \}\)/u);
   assert.match(panel, /if \(!response\.ok\) throw new Error\(data\.error \?\? "The task could not be completed\."\)/u);
   // Completion refreshes in place: a silent reload keeps the current list mounted
   // instead of swapping in the loading empty state.
-  assert.match(panel, /setAnnouncement\(`\$\{task\.title\} completed\.`\);\s+const refreshed = await load\(\{ silent: true \}\);/u);
-  assert.match(panel, /if \(!options\?\.silent\) setState\("loading"\);/u);
+  assert.match(panel, /setAnnouncement\(`\$\{task\.title\} completed\.`\);\s+invalidateTaskReadCaches\(\{ notifyToday: false \}\);\s+const refreshed = await load\(\{ force: true, silent: true \}\);/u);
+  assert.match(panel, /\{ silent: options\?\.silent \}/u);
   // One live region stays mounted across every state (loading/error/ready), so
   // the announcement renders into an already-present region — it is the first
   // child of the always-rendered panel wrapper, before the state-dependent body.
@@ -513,7 +514,7 @@ test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard 
   assert.match(panel, /return \{ heading: true \};/u);
   assert.match(panel, /<h2 id="today-summary-title" ref=\{headingRef\} tabIndex=\{-1\}>/u);
   assert.match(panel, /Loading today&apos;s saved records…/u);
-  assert.match(panel, /<h2>Today is unavailable<\/h2>/u);
+  assert.match(panel, /errorTitle="Today is unavailable"/u);
   assert.match(panel, /Nothing due in saved records/u);
   assert.match(panel, /href=\{today\.inbox\.href\}/u);
   assert.match(panel, /<label className=\{styles\.taskControl\}>[\s\S]*aria-label=\{`Complete task \$\{task\.title\}`\}/u);
@@ -526,7 +527,7 @@ test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard 
   assert.match(app, /localDayRolloverDelay\(Date\.now\(\), displayTimezone\)/u);
   assert.match(app, /window\.clearTimeout\(timeoutId\)/u);
   assert.match(app, /onMeetingRecorded=\{\(\) => void refreshDashboardSnapshot\(\)/u);
-  assert.match(panel, /const currentTimestamp = Date\.now\(\);[\s\S]*calendarDateRange\(\s*currentTimestamp,\s*today\.displayTimezone,\s*\)\.day === today\.day;[\s\S]*responseIsCurrent\s*\? localDayRolloverDelay\(currentTimestamp, today\.displayTimezone\)\s*: 0;[\s\S]*window\.setTimeout\(\(\) => void load\(\), Math\.max\(1_000, rolloverDelay\)\)/u);
+  assert.match(panel, /const currentTimestamp = Date\.now\(\);[\s\S]*calendarDateRange\(\s*currentTimestamp,\s*today\.displayTimezone,\s*\)\.day === today\.day;[\s\S]*responseIsCurrent\s*\? localDayRolloverDelay\(currentTimestamp, today\.displayTimezone\)\s*: 0;[\s\S]*window\.setTimeout\(\s*\(\) => void load\(\{ force: true \}\),\s*Math\.max\(1_000, rolloverDelay\),?\s*\)/u);
   assert.match(goldens, /const OVERVIEW_LEGACY_SECTIONS_SHA256 = "4b2d9803d4d5d6e7d8fc7544ab7f862d87a076f4bfa0412ba498c66e8a12dd12";/u);
   assert.match(goldens, /const REPORTS_LEGACY_SECTIONS_SHA256 = "4ba01e91ed4a31e0b6da7a0a6ec2334894145cddaacf63bc99e24efd30b999b6";/u);
 });

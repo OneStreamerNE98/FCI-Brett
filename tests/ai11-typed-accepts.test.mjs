@@ -44,7 +44,10 @@ test("AI-11(a) keeps every queue intent human-approved through an ordinary route
   assert.match(taskAccept, /sourceRef:\s*proposal\.row\.analysis\.gmailMessageId/u);
   assert.match(taskAccept, /inboxReviewId:\s*proposal\.row\.id/u);
   assert.match(taskAccept, /inboxReviewIntent:\s*proposal\.kind/u);
-  assert.doesNotMatch(taskAccept, /\/api\/v1\/inbox-analysis/u);
+  // SET-42 invalidates the read-only queue projection after the ordinary task
+  // route retires the review; it still must not write through that queue route.
+  assert.doesNotMatch(taskAccept, /fetch\([^)]*\/api\/v1\/inbox-analysis/u);
+  assert.match(taskAccept, /invalidateCachedGet\("\/api\/v1\/inbox-analysis"/u);
   assert.doesNotMatch(taskAccept, /method:\s*"PATCH"/u);
 
   assert.match(inbox, /Nothing is created until you submit this form\./u);

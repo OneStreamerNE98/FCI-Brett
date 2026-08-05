@@ -17,6 +17,9 @@ import {
   type AdminAuditResultFilter,
   readAdminAuditActivity,
 } from "../../lib/admin-audit-client";
+import { invalidateCachedGetPrefix } from "../../lib/client-get-cache";
+import { useClientLifecycleRefresh } from "../../lib/client-get-hooks";
+import { ClientDataNotice } from "../../components/ClientDataNotice";
 
 type ActivityFilters = Readonly<{
   period: AdminAuditPeriod;
@@ -143,6 +146,10 @@ export function AdminActivityPanel({
         onSessionEnded();
         return;
       }
+      if (error instanceof AdminAuditClientError && error.status === 403) {
+        setActivityPage(null);
+        setAppliedRequest(null);
+      }
       if (append) {
         setLoadMoreError("More activity could not be loaded. The records already shown were kept.");
       } else {
@@ -155,6 +162,27 @@ export function AdminActivityPanel({
       }
     }
   }, [onSessionEnded, secureSessionReady]);
+
+  useClientLifecycleRefresh(
+    () => {
+      if (appliedRequest === null) return;
+      // Relative period bounds slide on every lifecycle trigger. This reader is
+      // callback-only so no obsolete timestamped URL is fetched first.
+      const nextRequest = requestFor(appliedFilters);
+      invalidateCachedGetPrefix("/api/v1/admin/audit?", { notify: false });
+      return loadPage(nextRequest, null, false, appliedFilters);
+    },
+    active && appliedRequest !== null,
+  );
+
+  const wasActive = useRef(active);
+  useEffect(() => {
+    const becameActive = active && !wasActive.current;
+    wasActive.current = active;
+    if (!becameActive || !hasStarted || appliedRequest === null) return;
+    const nextRequest = requestFor(appliedFilters);
+    void loadPage(nextRequest, null, false, appliedFilters);
+  }, [active, appliedFilters, appliedRequest, hasStarted, loadPage]);
 
   useEffect(() => {
     if (!active || hasStarted) return;
@@ -203,17 +231,17 @@ export function AdminActivityPanel({
   }
 
   if (activityPage === null) {
-    return <section className="panel access-management-state" role="alert">
-      <h2>Activity is unavailable</h2>
-      <p>{loadError || "The activity projection could not be loaded."}</p>
-      <button
-        type="button"
-        className="soft-button"
-        onClick={() => {
+    return <section className="panel access-management-state">
+      <ClientDataNotice
+        state="error"
+        error={loadError || "The activity projection could not be loaded."}
+        errorTitle="Activity is unavailable"
+        onRetry={() => {
+          invalidateCachedGetPrefix("/api/v1/admin/audit?", { notify: false });
           const request = appliedRequest ?? requestFor(appliedFilters);
           void loadPage(request, null, false, appliedFilters);
         }}
-      >Retry</button>
+      />
     </section>;
   }
 
@@ -343,10 +371,15 @@ export function AdminActivityPanel({
 
     <footer className="access-management-activity-footer">
       <span>Updated {dateFormatter.format(activityPage.generatedAt)}</span>
-      {loadMoreError && <div role="alert">
-        <span>{loadMoreError}</span>
-        <button type="button" className="text-button" onClick={loadMore} disabled={loadingMore}>Retry</button>
-      </div>}
+      {loadMoreError && <ClientDataNotice
+        state="error"
+        error={loadMoreError}
+        errorTitle="More activity could not be loaded"
+        onRetry={() => {
+          invalidateCachedGetPrefix("/api/v1/admin/audit?", { notify: false });
+          loadMore();
+        }}
+      />}
       {!loadMoreError && activityPage.nextCursor && <button
         type="button"
         className="soft-button"

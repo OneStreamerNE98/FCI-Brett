@@ -1,9 +1,13 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { BellRing, Check, Clock3, Reply, UserRound } from "lucide-react";
 import { FeatureStateBadge } from "../../components/FeatureStateBadge";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
+import {
+  useCachedGetSubscription,
+  useClientLoadState,
+} from "../../lib/client-get-hooks";
 import {
   defaultUserSettingsPreferences,
   normalizeUserNotificationPreferences,
@@ -17,7 +21,6 @@ import styles from "./MySettingsPanel.module.css";
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
 type Notify = (message: string, kind?: NotificationKind, action?: NotificationAction) => void;
-type LoadState = "loading" | "ready" | "error";
 type ReconciledSettingsSnapshot = {
   preferences: { displayTimezone: string; pageLayouts: unknown };
   isAdmin: boolean;
@@ -38,27 +41,32 @@ function preferencesFromPayload(value: unknown): UserSettingsPreferences | null 
 
 export function MySettingsPanel({ notify, userName, userEmail, isAdmin, onTimezoneChange, onSettingsLoaded }: { notify: Notify; userName: string; userEmail: string; isAdmin: boolean; onTimezoneChange: (timezone: string) => void; onSettingsLoaded: (snapshot: ReconciledSettingsSnapshot) => void }) {
   const [preferences, setPreferences] = useState<UserSettingsPreferences>(defaultUserSettingsPreferences);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [loadError, setLoadError] = useState("");
+  const [savedPreferences, setSavedPreferences] = useState<UserSettingsPreferences>(defaultUserSettingsPreferences);
   const [saving, setSaving] = useState(false);
-  const loadRequestRef = useRef(0);
+  const { state: loadState, error: loadError, run: runLoad } = useClientLoadState(
+    "Your saved settings could not be loaded.",
+  );
   const sessionName = userName.trim();
   const sessionEmail = userEmail.trim();
   const hasDistinctDisplayName = Boolean(sessionName) && sessionName.toLowerCase() !== sessionEmail.toLowerCase();
   const accountTitle = hasDistinctDisplayName ? sessionName : sessionEmail;
   const accountSubtitle = hasDistinctDisplayName ? sessionEmail : "The current sign-in session did not provide a separate display name.";
 
-  const loadMySettings = useCallback(async (force = false) => {
-    const requestId = ++loadRequestRef.current;
-    setLoadState("loading");
-    setLoadError("");
-    try {
-      const data = await cachedGetJson<{ preferences?: unknown; isAdmin?: unknown }>("/api/v1/settings/me", { force });
-      if (requestId !== loadRequestRef.current) return;
+  const loadMySettings = useCallback((
+    force = false,
+    silent = false,
+    preserveDraft = false,
+  ) => runLoad(
+    () => cachedGetJson<{ preferences?: unknown; isAdmin?: unknown }>("/api/v1/settings/me", { force }),
+    {
+      onSuccess: (data) => {
       const nextPreferences = preferencesFromPayload(data.preferences);
       if (!nextPreferences || typeof data.isAdmin !== "boolean") throw new Error("The server returned no valid saved settings for this account.");
-      setPreferences(nextPreferences);
-      onTimezoneChange(nextPreferences.displayTimezone);
+      if (!preserveDraft) {
+        setPreferences(nextPreferences);
+        setSavedPreferences(nextPreferences);
+        onTimezoneChange(nextPreferences.displayTimezone);
+      }
       onSettingsLoaded({
         preferences: {
           displayTimezone: nextPreferences.displayTimezone,
@@ -66,18 +74,24 @@ export function MySettingsPanel({ notify, userName, userEmail, isAdmin, onTimezo
         },
         isAdmin: data.isAdmin,
       });
-      setLoadState("ready");
-    } catch (error) {
-      if (requestId !== loadRequestRef.current) return;
-      setLoadError(error instanceof Error ? error.message : "Your saved settings could not be loaded.");
-      setLoadState("error");
-    }
-  }, [onSettingsLoaded, onTimezoneChange]);
+      },
+      onFailure: () => {
+        setPreferences(defaultUserSettingsPreferences);
+        setSavedPreferences(defaultUserSettingsPreferences);
+      },
+    },
+    { silent },
+  ), [onSettingsLoaded, onTimezoneChange, runLoad]);
 
   useEffect(() => {
     void Promise.resolve().then(() => loadMySettings());
-    return () => { loadRequestRef.current += 1; };
   }, [loadMySettings]);
+
+  const draftDirty = JSON.stringify(preferences) !== JSON.stringify(savedPreferences);
+  useCachedGetSubscription(
+    ["/api/v1/settings/me"],
+    () => loadMySettings(false, true, draftDirty || saving),
+  );
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -94,6 +108,7 @@ export function MySettingsPanel({ notify, userName, userEmail, isAdmin, onTimezo
       if (!response.ok || !savedPreferences) throw new Error(data.error ?? "Your settings could not be saved.");
       invalidateCachedGet("/api/v1/settings/me");
       setPreferences(savedPreferences);
+      setSavedPreferences(savedPreferences);
       onTimezoneChange(savedPreferences.displayTimezone);
       notify("My settings are saved to this signed-in FCI account", "success");
     } catch (error) {

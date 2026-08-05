@@ -29,7 +29,14 @@ import { ProjectSegmentSelector } from "./features/projects/ProjectSegmentSelect
 import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocus, reportsReturnFocusHistoryKey } from "./features/reports/report-navigation";
 import { JobSiteMapCard } from "./features/maps/JobSiteMapCard";
 import { normalizeJobSiteLocation, type JobSiteLocation, type JobSiteMapsRuntimeConfig } from "./features/maps/job-site-map";
-import { cachedGetJson, invalidateCachedGet } from "./lib/client-get-cache";
+import {
+  cachedGetJson,
+  invalidateCachedGet,
+  isTerminalCachedGetError,
+} from "./lib/client-get-cache";
+import {
+  useCachedGetSubscription,
+} from "./lib/client-get-hooks";
 import { CLIENT_INDUSTRY_OPTIONS, clientIndustryReportState } from "./lib/client-industries";
 import { formatUsd } from "./lib/format-usd";
 import {
@@ -587,6 +594,19 @@ function projectManagerLabel(managerId: string | null, currentUserEmail: string,
   return managerId;
 }
 
+const DIRECTORY_GET_URLS = [
+  "/api/v1/filing-rules",
+  "/api/v1/integrations/google/sheets/status",
+  "/api/v1/leads",
+  "/api/v1/clients",
+  "/api/v1/projects",
+  "/api/v1/dashboard",
+] as const;
+
+function invalidateDirectoryGets() {
+  for (const url of DIRECTORY_GET_URLS) invalidateCachedGet(url);
+}
+
 export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, userEmail, accessLabel, signOutHref }: { initialView: OperationsView; environment: AppEnvironment; jobSiteMaps: JobSiteMapsRuntimeConfig; userName: string; userEmail: string; accessLabel: "Admin" | "Office"; signOutHref: string }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -642,6 +662,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [pageLayoutsError, setPageLayoutsError] = useState("");
   const pageLayoutsLoadIdRef = useRef(0);
   const directoryLoadIdRef = useRef(0);
+  const directoryVisibleLoadsInFlightRef = useRef(0);
   const dashboardRefreshLoadIdRef = useRef(0);
   const dashboardAppliedLoadIdRef = useRef(0);
   const dashboardTimezoneRef = useRef(displayTimezone);
@@ -705,15 +726,12 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     router.replace(operationsHref("Settings", { settingsSection: "My settings" }), { scroll: false });
   }, [isAdmin, router, settingsArea, view]);
 
-  const refreshDirectoryData = useCallback(() => {
+  const refreshDirectoryData = useCallback((silent = false, force = false) => {
+    if (silent && directoryVisibleLoadsInFlightRef.current > 0) return Promise.resolve();
+    if (!silent) directoryVisibleLoadsInFlightRef.current += 1;
     const directoryLoadId = ++directoryLoadIdRef.current;
     const dashboardLoadId = ++dashboardRefreshLoadIdRef.current;
-    async function getJson(path: string) {
-      const response = await fetch(path, { headers: { Accept: "application/json" } });
-      const data = await response.json().catch(() => ({})) as Record<string, unknown>;
-      if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : `Live data request failed (${response.status}).`);
-      return data;
-    }
+    const getJson = (path: string) => cachedGetJson<Record<string, unknown>>(path, { force });
     const optionalRequests = Promise.allSettled([
       getJson("/api/v1/filing-rules"),
       getJson("/api/v1/integrations/google/sheets/status"),
@@ -726,7 +744,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     ]);
     // Requests start synchronously; loading state moves to a microtask so the
     // mount effect does not cause a cascading render before I/O begins.
-    void Promise.resolve().then(() => {
+    if (!silent) void Promise.resolve().then(() => {
       if (directoryLoadId !== directoryLoadIdRef.current) return;
       setLiveDataState("loading");
       setLiveDataError("");
@@ -736,9 +754,9 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const leadRows = Array.isArray(leadData.leads) ? leadData.leads as Record<string, unknown>[] : [];
       const clientRows = Array.isArray(clientData.clients) ? clientData.clients as Record<string, unknown>[] : [];
       const projectRows = Array.isArray(projectData.projects) ? projectData.projects as Record<string, unknown>[] : [];
-      setLeads(leadRows.map(mapLeadRecord));
-      setClients(clientRows.map(mapClientRecord));
-      setProjectItems(projectRows.map((project) => {
+      const nextLeads = leadRows.map(mapLeadRecord);
+      const nextClients = clientRows.map(mapClientRecord);
+      const nextProjects = projectRows.map((project) => {
         const managerId = typeof project.project_manager_id === "string" && project.project_manager_id.trim()
           ? project.project_manager_id.trim().toLowerCase()
           : null;
@@ -750,7 +768,19 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         const callbackNote = typeof project.callback_note === "string" && project.callback_note.trim() ? project.callback_note.trim() : null;
         const jobSite = normalizeJobSiteLocation({ address: project.site, latitude: project.latitude, longitude: project.longitude });
         return { id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory: optionalFlooringCategory(project.flooring_category), squareFeet: squareFeet !== null && Number.isSafeInteger(squareFeet) && squareFeet > 0 ? squareFeet : null, contractValue: contractValue !== null && Number.isSafeInteger(contractValue) && contractValue >= 0 ? contractValue : null, segment: resolveProjectSegment(project.segment), installationStartedAt, installationCompletedAt, hadCallback: project.had_callback === true || project.had_callback === 1, callbackNote, site: jobSite?.address ?? "Site pending", jobSite, managerId, lead: projectManagerLabel(managerId, userEmail, userName), date: "Not scheduled", accent: "sage", createdAt: optionalRecordNumber(project.created_at), updatedAt: optionalRecordNumber(project.updated_at), version: normalizeRecordVersion(project.version) ?? undefined, driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined };
-      }));
+      });
+      setLeads(nextLeads);
+      setClients(nextClients);
+      setProjectItems(nextProjects);
+      setSelectedLeadId((current) => current && nextLeads.some(({ id }) => id === current)
+        ? current
+        : null);
+      setSelectedClient((current) => current
+        ? nextClients.find(({ id }) => id === current.id) ?? null
+        : null);
+      setSelectedProject((current) => current
+        ? nextProjects.find(({ id }) => id === current.id) ?? null
+        : null);
       if (dashboardLoadId > dashboardAppliedLoadIdRef.current) {
         dashboardAppliedLoadIdRef.current = dashboardLoadId;
         setDashboard(dashboardData as unknown as DashboardSummary);
@@ -772,22 +802,30 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       });
     }).catch((error) => {
       if (directoryLoadId !== directoryLoadIdRef.current) return;
-      setLiveDataState("error");
-      setLiveDataError(error instanceof Error ? error.message : "Live application data could not be loaded.");
+      if (!silent || isTerminalCachedGetError(error)) {
+        if (isTerminalCachedGetError(error)) {
+          setLeads([]);
+          setClients([]);
+          setProjectItems([]);
+          setSelectedLeadId(null);
+          setSelectedClient(null);
+          setSelectedProject(null);
+          setLeadOpen(false);
+          setClientOpen(false);
+          setProjectOpen(false);
+          setDashboard(null);
+        }
+        setLiveDataState("error");
+        setLiveDataError(error instanceof Error ? error.message : "Live application data could not be loaded.");
+      }
+    }).finally(() => {
+      if (!silent) directoryVisibleLoadsInFlightRef.current -= 1;
     });
   }, [userEmail, userName]);
 
   const refreshDashboardSnapshot = useCallback(async () => {
     const loadId = ++dashboardRefreshLoadIdRef.current;
-    const response = await fetch("/api/v1/dashboard", {
-      headers: { Accept: "application/json" },
-    });
-    const data = await response.json().catch(() => ({})) as Record<string, unknown>;
-    if (!response.ok) {
-      throw new Error(typeof data.error === "string"
-        ? data.error
-        : `Dashboard refresh failed (${response.status}).`);
-    }
+    const data = await cachedGetJson<Record<string, unknown>>("/api/v1/dashboard", { force: true });
     if (loadId > dashboardAppliedLoadIdRef.current) {
       dashboardAppliedLoadIdRef.current = loadId;
       setDashboard(data as unknown as DashboardSummary);
@@ -797,6 +835,8 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   useEffect(() => {
     void refreshDirectoryData();
   }, [refreshDirectoryData]);
+
+  useCachedGetSubscription(DIRECTORY_GET_URLS, () => refreshDirectoryData(true));
 
   useEffect(() => {
     const previousTimeZone = dashboardTimezoneRef.current;
@@ -840,6 +880,20 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       });
     return () => { pageLayoutsLoadIdRef.current += 1; };
   }, [failClosedCurrentUserSettings, reconcileCurrentUserSettings]);
+
+  useCachedGetSubscription(["/api/v1/settings/me"], async () => {
+    const loadId = ++pageLayoutsLoadIdRef.current;
+    try {
+      const data = await cachedGetJson<CurrentUserSettingsPayload>("/api/v1/settings/me");
+      if (loadId === pageLayoutsLoadIdRef.current) reconcileCurrentUserSettings(data);
+    } catch (error) {
+      // Transient background failures preserve the last authenticated snapshot;
+      // revoked/expired access must remove its role and layout material immediately.
+      if (loadId === pageLayoutsLoadIdRef.current && isTerminalCachedGetError(error)) {
+        failClosedCurrentUserSettings();
+      }
+    }
+  });
 
   const retryPageLayouts = useCallback(async () => {
     const loadId = ++pageLayoutsLoadIdRef.current;
@@ -1114,6 +1168,8 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     setLeadModal(null);
     notify(`${lead.company} added to your live pipeline`, "success");
     if (afterCreate) await afterCreate();
+    invalidateDirectoryGets();
+    invalidateCachedGet("/api/v1/assistant/today");
     await refreshDirectoryData();
   }
 
@@ -1139,6 +1195,9 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       throw new Error(data.error ?? "Lead changes could not be saved.");
     }
     const saved = mapLeadRecord(data.lead);
+    invalidateCachedGet("/api/v1/leads");
+    invalidateCachedGet("/api/v1/dashboard");
+    invalidateCachedGet("/api/v1/assistant/today");
     setLeads((current) => current.map((item) => item.id === saved.id ? saved : item));
     void refreshDashboardSnapshot().catch(() => {
       // The lead write already succeeded. Preserve the last honest snapshot
@@ -1169,6 +1228,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const errorData = await response.clone().json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(errorData.error ?? "Client could not be saved.");
       const data = await response.json() as { id: string; clientCode: string; sheetSync?: { status?: string; message?: string } };
+      invalidateDirectoryGets();
       await refreshDirectoryData();
       setClientModal(false);
       notify(data.sheetSync?.message ?? `${client.name} saved in FCI Operations`, data.sheetSync?.status === "pending" ? "warning" : data.sheetSync?.status === "not-configured" ? "info" : "success");
@@ -1199,6 +1259,10 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       throw new Error(data.error ?? "Client changes could not be saved.");
     }
     const saved = data.client;
+    invalidateCachedGet("/api/v1/clients");
+    invalidateCachedGet("/api/v1/projects");
+    invalidateCachedGet("/api/v1/dashboard");
+    invalidateCachedGet("/api/v1/assistant/today");
     const update = (item: Client): Client => item.id === client.id
       ? {
           ...item,
@@ -1254,6 +1318,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       throw new Error("The saved contact no longer belongs to this client.");
     }
     const saved = data.contact;
+    invalidateCachedGet("/api/v1/clients");
     const update = (item: Client): Client => item.id === client.id
       ? {
           ...item,
@@ -1277,6 +1342,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const errorData = await response.clone().json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(errorData.error ?? "Project could not be saved.");
       const data = await response.json() as { id: string; projectNumber: string; sheetSync?: { status?: string; message?: string } };
+      invalidateDirectoryGets();
       await refreshDirectoryData();
       setProjectModal(false);
       setProjectModalClientId(null);
@@ -1308,6 +1374,9 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       throw new Error(data.error ?? "Project changes could not be saved.");
     }
     const saved = data.project;
+    invalidateCachedGet("/api/v1/projects");
+    invalidateCachedGet("/api/v1/dashboard");
+    invalidateCachedGet("/api/v1/assistant/today");
     const client = clients.find((item) => item.id === saved.clientId);
     const estimatedValue = optionalRecordNumber(saved.estimatedValue);
     const squareFeet = optionalRecordNumber(saved.squareFeet);
@@ -1356,6 +1425,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const data = await response.json() as { result?: { clients?: { total?: number }; projects?: { total?: number } }; mirror?: SheetMirrorStatus; error?: string };
       if (data.mirror) setSheetMirror(data.mirror);
       if (!response.ok) throw new Error(data.error ?? "Google Sheet sync could not be completed.");
+      invalidateDirectoryGets();
       await refreshDirectoryData();
       notify(`Google Sheet synced: ${data.result?.clients?.total ?? 0} clients and ${data.result?.projects?.total ?? 0} projects`, "success");
     } catch (error) {
@@ -1371,6 +1441,8 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const data = await response.json() as { driveFolderId?: string; driveUrl?: string; created?: boolean; environment?: string; error?: string };
       if (!response.ok || !data.driveFolderId || !data.driveUrl) throw new Error(data.error ?? "The project Drive workspace could not be created.");
       const updated = { ...project, driveFolderId: data.driveFolderId, driveUrl: data.driveUrl };
+      invalidateCachedGet("/api/v1/projects");
+      invalidateCachedGet(`/api/v1/projects/${encodeURIComponent(project.id)}/drive/files`);
       setProjectItems((current) => current.map((item) => item.id === project.id ? updated : item));
       setSelectedProject((current) => current?.id === project.id ? updated : current);
       notify(data.created ? `${project.name} now has a ${data.environment ?? "test"} Drive workspace` : `${project.name} already has a Drive workspace`, data.created ? "success" : "info");
@@ -1384,6 +1456,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const response = await fetch("/api/v1/filing-rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rule) });
       const data = await response.json().catch(() => ({})) as { id?: string; error?: string };
       if (!response.ok || !data.id) throw new Error(data.error ?? "Rule could not be saved.");
+      invalidateCachedGet("/api/v1/filing-rules");
       setFilingRules((current) => [...current, { ...rule, id: data.id }].sort((a, b) => a.priority - b.priority));
       setRuleModal(false);
       notify(`Email rule “${rule.name}” added`, "success");
@@ -1399,6 +1472,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         const response = await fetch("/api/v1/filing-rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(override) });
         const data = await response.json().catch(() => ({})) as { id?: string; error?: string };
         if (!response.ok || !data.id) throw new Error(data.error ?? "Rule could not be saved.");
+        invalidateCachedGet("/api/v1/filing-rules");
         setFilingRules((current) => current.map((item) => item.name === rule.name ? { ...override, id: data.id } : item).sort((left, right) => left.priority - right.priority));
         notify(`Email rule “${rule.name}” ${patch.enabled === false ? "paused" : "updated"}`, "success");
       } catch (error) {
@@ -1410,6 +1484,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const response = await fetch(`/api/v1/filing-rules/${encodeURIComponent(rule.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Rule could not be updated.");
+      invalidateCachedGet("/api/v1/filing-rules");
       setFilingRules((current) => current.map((item) => item.id === rule.id ? { ...item, ...patch } : item).sort((left, right) => left.priority - right.priority));
       notify(`Email rule “${rule.name}” ${patch.enabled === false ? "paused" : "updated"}`, "success");
     } catch (error) {
@@ -1426,6 +1501,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const response = await fetch(`/api/v1/filing-rules/${encodeURIComponent(rule.id)}`, { method: "DELETE" });
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Rule could not be deleted.");
+      invalidateCachedGet("/api/v1/filing-rules");
       const defaultRule = DEFAULT_FILING_RULES.find((item) => item.name === rule.name);
       setFilingRules((current) => defaultRule ? current.map((item) => item.id === rule.id ? defaultRule : item).sort((left, right) => left.priority - right.priority) : current.filter((item) => item.id !== rule.id));
       notify(defaultRule ? `Email rule “${rule.name}” reset to its built-in default` : `Email rule “${rule.name}” deleted`, "success");
@@ -1557,6 +1633,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const response = await fetch(`/api/v1/leads/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: nextStage }) });
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Lead stage could not be updated.");
+      invalidateDirectoryGets();
       await refreshDirectoryData();
       notify(`${currentLead.company} moved to ${nextStage}`, "success", { label: "Undo", run: () => {
         void (async () => {
@@ -1564,6 +1641,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
             const undoResponse = await fetch(`/api/v1/leads/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: currentLead.stage }) });
             const undoData = await undoResponse.json().catch(() => ({})) as { error?: string };
             if (!undoResponse.ok) throw new Error(undoData.error ?? "Lead stage could not be restored.");
+            invalidateDirectoryGets();
             await refreshDirectoryData();
             notify(`${currentLead.company} returned to ${currentLead.stage}`, "success");
           } catch (undoError) {
@@ -1587,9 +1665,10 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     setSearching(true);
     setActiveSearchIndex(-1);
     try {
-      const response = await fetch(`/api/v1/search?q=${encodeURIComponent(query)}`);
-      const data = await response.json().catch(() => ({})) as { results?: WorkspaceSearchResult[]; error?: string };
-      if (!response.ok) throw new Error(data.error ?? "Workspace search could not be completed.");
+      const data = await cachedGetJson<{ results?: WorkspaceSearchResult[] }>(
+        `/api/v1/search?q=${encodeURIComponent(query)}`,
+        { force: true },
+      );
       const results = data.results ?? [];
       setSearchResults(results);
       setActiveSearchIndex(results.length > 0 ? 0 : -1);
@@ -1617,7 +1696,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         notify(`Opened ${project.number}`, "info");
       } else {
         navigateToView("Projects");
-        notify("Project found. Refresh the directory if it is not listed yet.", "warning");
+        notify("Project found. The directory will update automatically if it is not listed yet.", "warning");
       }
       return;
     }
@@ -1627,7 +1706,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       notify(`Opened ${client.name}`, "info");
     } else {
       navigateToView("Clients");
-      notify("Client found. Refresh the directory if it is not listed yet.", "warning");
+      notify("Client found. The directory will update automatically if it is not listed yet.", "warning");
     }
   }
 
@@ -1638,6 +1717,8 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const data = await response.json().catch(() => ({})) as { projectManagerId?: string; error?: string };
       if (!response.ok || !data.projectManagerId) throw new Error(data.error ?? "The project manager could not be assigned.");
       const managerId = data.projectManagerId.toLowerCase();
+      invalidateCachedGet("/api/v1/projects");
+      invalidateCachedGet("/api/v1/dashboard");
       const updateManager = (item: Project) => item.id === project.id
         ? { ...item, managerId, lead: projectManagerLabel(managerId, userEmail, userName) }
         : item;
@@ -1659,6 +1740,9 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     if (!response.ok || !Number.isSafeInteger(data.installationStartedAt) || !Number.isSafeInteger(data.installationCompletedAt)) {
       throw new Error(data.error ?? "Installation dates could not be recorded.");
     }
+    invalidateCachedGet("/api/v1/projects");
+    invalidateCachedGet("/api/v1/dashboard");
+    invalidateCachedGet("/api/v1/assistant/today");
     const updateProject = (item: Project): Project => item.id === project.id
       ? { ...item, installationStartedAt: data.installationStartedAt as number, installationCompletedAt: data.installationCompletedAt as number, updatedAt: optionalProjectTimestamp(data.updatedAt) ?? item.updatedAt }
       : item;
@@ -1677,6 +1761,9 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     if (!response.ok || typeof data.hadCallback !== "boolean") {
       throw new Error(data.error ?? "The follow-up result could not be recorded.");
     }
+    invalidateCachedGet("/api/v1/projects");
+    invalidateCachedGet("/api/v1/dashboard");
+    invalidateCachedGet("/api/v1/assistant/today");
     const updateProject = (item: Project): Project => item.id === project.id
       ? { ...item, hadCallback: data.hadCallback as boolean, callbackNote: typeof data.callbackNote === "string" && data.callbackNote.trim() ? data.callbackNote.trim() : null, updatedAt: optionalProjectTimestamp(data.updatedAt) ?? item.updatedAt }
       : item;
@@ -1814,7 +1901,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
 
         <div className="page-wrap">
           {development && <section className="development-banner" role="status" aria-label="Development environment; test data only"><ShieldCheck size={17} /><div><strong>Development environment · Test data only</strong><span>Use approved test records while this working copy moves toward production readiness.</span></div></section>}
-          <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData()} />
+          <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData(false, true)} />
           {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.overview} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("overview", layout)} onView={navigateToView} onProject={openProject} onLead={openLead} />}
           {view === "Leads" && <LeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal({})} onAdvance={advanceLead} onLead={openLead} />}
           {view === "Clients" && <ClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
@@ -2251,7 +2338,7 @@ function LeadModal(props: LeadModalProps) {
 
     const version = conflictVersion ?? props.initialValues.version;
     if (!version) {
-      setError("Refresh live lead records before editing this lead.");
+      setError("This lead is no longer in the current live list. Close and reopen it after the automatic update.");
       return;
     }
     if (!ownerEmail && props.initialValues.ownerEmail) {
@@ -2395,7 +2482,7 @@ function ClientEditModal({ client, mapsRuntime, onClose, onSave }: { client: Cli
     setError("");
     const version = conflictVersion ?? client.version;
     if (!version) {
-      setError("Refresh live client records before editing this client.");
+      setError("This client is no longer in the current live list. Close and reopen it after the automatic update.");
       return;
     }
     const form = new FormData(event.currentTarget);
@@ -2464,7 +2551,7 @@ function ContactEditModal({ client, onClose, onSave }: { client: Client; onClose
     setError("");
     const version = conflictVersion ?? client.contactVersion;
     if (!client.contactId || !version) {
-      setError("Refresh live client records before editing this contact.");
+      setError("This contact is no longer in the current live list. Close and reopen it after the automatic update.");
       return;
     }
     const form = new FormData(event.currentTarget);
@@ -2572,7 +2659,7 @@ function LeadDrawer({ lead, isAdmin, mapsRuntime, onClose, onAdvance, onSaveLead
 
 function ProjectDrawer({ project, clients, jobSiteMaps, onClose, notify, onSaveProject, onProvisionDrive, onAssignToMe, onRecordInstallationDates, onRecordFollowUpResult, onMeetingRecorded, isAdmin, currentUserEmail, returnFocusRef }: { project: Project; clients: Client[]; jobSiteMaps: JobSiteMapsRuntimeConfig; onClose: () => void; notify: Notify; onSaveProject: (project: Project, patch: ProjectEditPatch, version: string) => Promise<void>; onProvisionDrive: (project: Project) => Promise<void>; onAssignToMe: (project: Project) => Promise<void>; onRecordInstallationDates: (project: Project, installationStartedAt: number, installationCompletedAt: number) => Promise<void>; onRecordFollowUpResult: (project: Project, hadCallback: boolean, callbackNote: string | null) => Promise<void>; onMeetingRecorded: () => void; isAdmin: boolean; currentUserEmail: string; returnFocusRef?: RefObject<HTMLElement | null> }) {
   const [tab, setTab] = useState<"Overview" | "Files" | "Meetings">("Overview");
-  const [editing, setEditing] = useState(false);
+  const [editingSnapshot, setEditingSnapshot] = useState<Project | null>(null);
   const [provisioning, setProvisioning] = useState(false);
   const [assigningManager, setAssigningManager] = useState(false);
   const [installationDatesOpen, setInstallationDatesOpen] = useState(false);
@@ -2616,11 +2703,11 @@ function ProjectDrawer({ project, clients, jobSiteMaps, onClose, notify, onSaveP
           : <ProjectMeetings project={project} notify={notify} onMeetingRecorded={onMeetingRecorded} />}
       </div>
       <footer>
-        <button className="soft-button" type="button" onClick={() => setEditing(true)} disabled={busy}><Settings size={16} /> Edit project</button>
+        <button className="soft-button" type="button" onClick={() => setEditingSnapshot(project)} disabled={busy}><Settings size={16} /> Edit project</button>
         <button className="soft-button" onClick={handleDrive} disabled={busy}><FolderOpen size={16} /> {provisioning ? "Creating folder…" : project.driveUrl ? "Open Drive folder" : "Create Drive folder"}</button>
       </footer>
   </AccessibleOverlay>
-    {editing && <ProjectEditModal project={project} clients={clients} isAdmin={isAdmin} mapsRuntime={jobSiteMaps} onClose={() => setEditing(false)} onSave={(patch, version) => onSaveProject(project, patch, version)} />}
+    {editingSnapshot && <ProjectEditModal project={editingSnapshot} clients={clients} isAdmin={isAdmin} mapsRuntime={jobSiteMaps} onClose={() => setEditingSnapshot(null)} onSave={(patch, version) => onSaveProject(editingSnapshot, patch, version)} />}
     {installationDatesOpen && <InstallationDatesModal project={project} onClose={() => setInstallationDatesOpen(false)} onSave={(installationStartedAt, installationCompletedAt) => onRecordInstallationDates(project, installationStartedAt, installationCompletedAt)} />}
     {followUpResultOpen && <FollowUpResultModal project={project} onClose={() => setFollowUpResultOpen(false)} onSave={(hadCallback, callbackNote) => onRecordFollowUpResult(project, hadCallback, callbackNote)} />}
     {projectFiles.modalOpen && projectFiles.catalogState.status === "ready" && projectFiles.catalogState.catalog.provisioned && <ProjectFileCreationModal catalog={projectFiles.catalogState.catalog} controller={projectFiles} projectId={project.id} projectNumber={project.number} returnFocusRef={projectFilesTriggerRef} />}
@@ -2670,7 +2757,7 @@ function ProjectEditModal({ project, clients, isAdmin, mapsRuntime, onClose, onS
     setError("");
     const version = conflictVersion ?? project.version;
     if (!version) {
-      setError("Refresh live project records before editing this project.");
+      setError("This project is no longer in the current live list. Close and reopen it after the automatic update.");
       return;
     }
     const form = new FormData(event.currentTarget);
@@ -2818,10 +2905,11 @@ function compareProjectMeetingsDescending(left: ProjectMeeting, right: ProjectMe
   return right.createdAt - left.createdAt;
 }
 
-async function fetchProjectMeetings(projectId: string) {
-  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/meetings`);
-  const data = await response.json().catch(() => ({})) as { meetings?: ProjectMeeting[]; error?: string };
-  if (!response.ok) throw new Error(data.error ?? "Meeting notes could not be loaded.");
+async function fetchProjectMeetings(projectId: string, force = false) {
+  const data = await cachedGetJson<{ meetings?: ProjectMeeting[] }>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/meetings`,
+    { force },
+  );
   return data.meetings ?? [];
 }
 
@@ -2831,17 +2919,23 @@ function ProjectMeetings({ project, notify, onMeetingRecorded }: { project: Proj
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
 
-  const loadMeetings = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const meetingsUrl = `/api/v1/projects/${encodeURIComponent(project.id)}/meetings`;
+  const loadMeetings = useCallback(async (silent = false, force = false) => {
+    if (!silent) setLoading(true);
+    if (!silent) setError("");
     try {
-      setMeetings(await fetchProjectMeetings(project.id));
+      setMeetings(await fetchProjectMeetings(project.id, force));
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Meeting notes could not be loaded.");
+      if (isTerminalCachedGetError(loadError)) setMeetings([]);
+      if (!silent || isTerminalCachedGetError(loadError)) {
+        setError(loadError instanceof Error ? loadError.message : "Meeting notes could not be loaded.");
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [project.id]);
+
+  useCachedGetSubscription([meetingsUrl], () => loadMeetings(true));
 
   useEffect(() => {
     let active = true;
@@ -2870,7 +2964,7 @@ function ProjectMeetings({ project, notify, onMeetingRecorded }: { project: Proj
   return <section className="project-meetings">
     <header className="meeting-section-header"><div><p className="eyebrow">Project knowledge</p><h3>Meeting notes</h3><span>Link Otter, paste its summary or transcript, and keep decisions with this independent project.</span></div><button className="primary-button" onClick={() => setAdding(true)}><Plus size={15} /> Add meeting</button></header>
     <div className="meeting-capture-guide"><MessageSquareText size={18} /><div><strong>Recommended Otter workflow</strong><span>Copy the private Otter conversation link, paste the Summary and Action Items, then add the exported transcript when the record needs full searchable detail.</span></div></div>
-    {loading ? <OperationsEmptyState variant="meeting"><RefreshCw size={21} /><strong>Loading project meetings…</strong></OperationsEmptyState> : error ? <OperationsEmptyState variant="meeting" tone="error"><CircleAlert size={21} /><strong>{error}</strong><button className="soft-button" onClick={() => void loadMeetings()}>Try again</button></OperationsEmptyState> : meetings.length === 0 ? <OperationsEmptyState variant="meeting"><MessageSquareText size={24} /><strong>No meeting notes yet</strong><span>Add a client meeting, site walk, internal huddle, pre-install meeting, or closeout review.</span><button className="soft-button" onClick={() => setAdding(true)}><Plus size={14} /> Capture the first meeting</button></OperationsEmptyState> : <div className="meeting-list">{meetings.map((meeting) => <article className="meeting-card" key={meeting.id}>
+    {loading ? <OperationsEmptyState variant="meeting"><RefreshCw size={21} /><strong>Loading project meetings…</strong></OperationsEmptyState> : error ? <OperationsEmptyState variant="meeting" tone="error"><CircleAlert size={21} /><strong>{error}</strong><button className="soft-button" onClick={() => void loadMeetings(false, true)}>Try again</button></OperationsEmptyState> : meetings.length === 0 ? <OperationsEmptyState variant="meeting"><MessageSquareText size={24} /><strong>No meeting notes yet</strong><span>Add a client meeting, site walk, internal huddle, pre-install meeting, or closeout review.</span><button className="soft-button" onClick={() => setAdding(true)}><Plus size={14} /> Capture the first meeting</button></OperationsEmptyState> : <div className="meeting-list">{meetings.map((meeting) => <article className="meeting-card" key={meeting.id}>
       <header><div className="meeting-icon"><MessageSquareText size={17} /></div><div><div className="meeting-badges"><span>{meeting.meetingType.replaceAll("-", " ")}</span><b className={meeting.sourceProvider}>{meeting.sourceProvider === "otter" ? "Otter" : meeting.sourceProvider === "link" ? "Linked" : "Manual"}</b></div><h4>{meeting.title}</h4><small>{formatMeetingDate(meeting.meetingAt)} · Saved by {meeting.createdBy}</small></div>{meeting.sourceUrl && <a className="meeting-source-link" href={meeting.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Open source</a>}</header>
       {meeting.attendees.length > 0 && <p className="meeting-attendees"><Users size={14} /><span>{meeting.attendees.join(" · ")}</span></p>}
       {meeting.summary && <div className="meeting-summary"><strong>Summary</strong><p>{meeting.summary}</p></div>}
@@ -2914,6 +3008,8 @@ function MeetingModal({ project, onClose, onSaved }: { project: Project; onClose
       const response = await fetch(`/api/v1/projects/${encodeURIComponent(project.id)}/meetings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json().catch(() => ({})) as { meeting?: ProjectMeeting; error?: string };
       if (!response.ok || !data.meeting) throw new Error(data.error ?? "Meeting notes could not be saved.");
+      invalidateCachedGet(`/api/v1/projects/${encodeURIComponent(project.id)}/meetings`);
+      invalidateCachedGet("/api/v1/assistant/today");
       onSaved(data.meeting);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Meeting notes could not be saved.");
@@ -2938,8 +3034,8 @@ function MeetingModal({ project, onClose, onSaved }: { project: Project; onClose
 }
 
 function ClientDrawer({ client, projects, jobSiteMaps, onClose, onSaveClient, onSaveContact, onNewProject, onProject, returnFocusRef }: { client: Client; projects: Project[]; jobSiteMaps: JobSiteMapsRuntimeConfig; onClose: () => void; onSaveClient: (client: Client, patch: ClientEditPatch, version: string) => Promise<void>; onSaveContact: (client: Client, patch: ContactEditPatch, version: string) => Promise<void>; onNewProject: () => void; onProject: (project: Project) => void; returnFocusRef?: RefObject<HTMLElement | null> }) {
-  const [editingClient, setEditingClient] = useState(false);
-  const [editingContact, setEditingContact] = useState(false);
+  const [editingClientSnapshot, setEditingClientSnapshot] = useState<Client | null>(null);
+  const [editingContactSnapshot, setEditingContactSnapshot] = useState<Client | null>(null);
   const contactEditable = Boolean(client.contactId && client.contactVersion);
   return <><AccessibleOverlay variant="drawer" ariaLabel={`${client.name} client account`} contentClassName="project-drawer client-drawer" onClose={onClose} returnFocusRef={returnFocusRef}>
     <header><button data-overlay-initial-focus onClick={onClose} aria-label="Close client"><X size={20} /></button><Status text={client.status} /><span>{client.code}</span></header>
@@ -2958,9 +3054,9 @@ function ClientDrawer({ client, projects, jobSiteMaps, onClose, onSaveClient, on
       <section className="client-project-section"><header><h3>Projects for this client</h3><button onClick={onNewProject}><Plus size={14} /> New project</button></header>{projects.map((project) => <button type="button" className="client-project-link" key={project.id} onClick={() => onProject(project)}><div><Status text={project.status} /><strong>{project.name}</strong><span>{project.number} · {project.site}</span></div><ChevronRight size={16} /></button>)}{!projects.length ? <OperationsEmptyState variant="client-projects">No projects yet. Create the first independent project for this client.</OperationsEmptyState> : null}</section>
       <section className="client-account-notes"><h3>Account-level documents</h3><p>Store reusable client documents here. Project-specific documents stay inside their own project folders.</p></section>
     </div>
-    <footer><button type="button" className="soft-button" onClick={() => setEditingClient(true)}><Settings size={16} /> Edit client</button><button type="button" className="soft-button" onClick={() => setEditingContact(true)} disabled={!contactEditable} title={contactEditable ? "Edit the saved primary contact" : "Refresh after adding a primary contact"}><ContactRound size={16} /> Edit primary contact</button></footer>
+    <footer><button type="button" className="soft-button" onClick={() => setEditingClientSnapshot(client)}><Settings size={16} /> Edit client</button><button type="button" className="soft-button" onClick={() => setEditingContactSnapshot(client)} disabled={!contactEditable} title={contactEditable ? "Edit the saved primary contact" : "Wait for the automatic update after adding a primary contact"}><ContactRound size={16} /> Edit primary contact</button></footer>
   </AccessibleOverlay>
-    {editingClient && <ClientEditModal client={client} mapsRuntime={jobSiteMaps} onClose={() => setEditingClient(false)} onSave={(patch, version) => onSaveClient(client, patch, version)} />}
-    {editingContact && contactEditable && <ContactEditModal client={client} onClose={() => setEditingContact(false)} onSave={(patch, version) => onSaveContact(client, patch, version)} />}
+    {editingClientSnapshot && <ClientEditModal client={editingClientSnapshot} mapsRuntime={jobSiteMaps} onClose={() => setEditingClientSnapshot(null)} onSave={(patch, version) => onSaveClient(editingClientSnapshot, patch, version)} />}
+    {editingContactSnapshot && <ContactEditModal client={editingContactSnapshot} onClose={() => setEditingContactSnapshot(null)} onSave={(patch, version) => onSaveContact(editingContactSnapshot, patch, version)} />}
   </>;
 }

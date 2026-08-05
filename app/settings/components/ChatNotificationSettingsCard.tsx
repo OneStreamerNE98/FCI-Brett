@@ -1,9 +1,13 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Check, MessageSquare, ShieldCheck } from "lucide-react";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
+import {
+  useCachedGetSubscription,
+  useClientLoadState,
+} from "../../lib/client-get-hooks";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 
 const CHAT_CONFIG_URL = "/api/v1/integrations/google/chat/config";
@@ -19,7 +23,6 @@ type ChatEventType = (typeof CHAT_EVENT_TYPES)[number];
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
 type Notify = (message: string, kind?: NotificationKind, action?: NotificationAction) => void;
-type LoadState = "loading" | "ready" | "error";
 type ChatMode = "disabled" | "simulation" | "webhook";
 type ChatEventConfig = {
   type: ChatEventType;
@@ -131,38 +134,50 @@ export function ChatNotificationSettingsCard({ notify, isAdmin }: { notify: Noti
   const [events, setEvents] = useState<ChatEventConfig[]>([]);
   const [featureEnabled, setFeatureEnabled] = useState(false);
   const [featureDirty, setFeatureDirty] = useState(false);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
-  const loadRequestRef = useRef(0);
+  const { state: loadState, error: loadError, run: runLoad } = useClientLoadState(
+    "Google Chat notification routing could not be loaded.",
+  );
 
-  const loadConfig = useCallback(async (force = false) => {
-    const requestId = ++loadRequestRef.current;
-    setLoadState("loading");
-    setLoadError("");
-    try {
-      const nextConfig = parseChatConfig(await cachedGetJson<unknown>(CHAT_CONFIG_URL, { force }));
-      if (requestId !== loadRequestRef.current) return;
-      setConfig(nextConfig);
-      setEvents(nextConfig.events.map((event) => ({ ...event })));
-      setFeatureEnabled(nextConfig.featureEnabled);
-      setFeatureDirty(false);
-      setLoadState("ready");
-    } catch (error) {
-      if (requestId !== loadRequestRef.current) return;
-      setConfig(null);
-      setEvents([]);
-      setFeatureEnabled(false);
-      setFeatureDirty(false);
-      setLoadError(error instanceof Error ? error.message : "Google Chat notification routing could not be loaded.");
-      setLoadState("error");
-    }
-  }, []);
+  const loadConfig = useCallback((
+    force = false,
+    silent = false,
+    preserveDraft = false,
+  ) => runLoad(
+    () => cachedGetJson<unknown>(CHAT_CONFIG_URL, { force }).then(parseChatConfig),
+    {
+      onSuccess: (nextConfig) => {
+        if (preserveDraft) return;
+        setConfig(nextConfig);
+        setEvents(nextConfig.events.map((event) => ({ ...event })));
+        setFeatureEnabled(nextConfig.featureEnabled);
+        setFeatureDirty(false);
+      },
+      onFailure: () => {
+        setConfig(null);
+        setEvents([]);
+        setFeatureEnabled(false);
+        setFeatureDirty(false);
+      },
+    },
+    { silent },
+  ), [runLoad]);
 
   useEffect(() => {
     void Promise.resolve().then(() => loadConfig());
-    return () => { loadRequestRef.current += 1; };
   }, [loadConfig]);
+
+  const draftDirty = featureDirty || Boolean(config && events.some((event, index) => {
+    const saved = config.events[index];
+    return !saved
+      || event.type !== saved.type
+      || event.enabled !== saved.enabled
+      || event.spaceKey !== saved.spaceKey;
+  }));
+  useCachedGetSubscription(
+    [CHAT_CONFIG_URL],
+    () => loadConfig(false, true, draftDirty || saving),
+  );
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

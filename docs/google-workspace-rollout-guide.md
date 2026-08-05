@@ -432,7 +432,7 @@ configuration, consent, data migration, or deployment now.
 
 1. Deploy the runtime values.
 2. Open FCI Operations.
-3. Go to **Settings → Google Workspace** and run **Check readiness**.
+3. Go to **Settings → Google Workspace**. Readiness loads on entry and revalidates automatically when the window regains focus or visibility.
 4. Resolve every row in **Hosted Workspace configuration** before selecting Connect. Configure each named value in the hosting environment, not in the application.
 5. Complete the five ordered setup steps shown in the application:
     1. **Connect Google Workspace** — select the intended Gmail intake mailbox in Stage 1,
@@ -446,7 +446,7 @@ configuration, consent, data migration, or deployment now.
     3. **Prepare Gmail** — prepare the three FCI labels, then verify message listing and the explicit review-first tools.
     4. **Verify Calendar** — list events and create a private test hold.
     5. **Sync the Sheets mirror** — ensure blueprint spreadsheets from Resources,
-       refresh status, and sync the Client Directory and Project Register.
+       review the automatically updated status, and sync the Client Directory and Project Register.
 6. Later steps remain visible but blocked until the prior step is confirmed by its endpoint. In simulation, all five steps are marked **Simulated** and their controls remain testable without Google access.
 7. Use only clearly marked test records.
 8. After Shared Drive verification, enable **Project-folder provisioning** in the Stage 1 app-managed configuration. `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED` remains an environment bootstrap fallback, not the normal ongoing control. Local simulation keeps provisioning fixed on for its safe sample-folder workflow and locks this control; it does not save a future live-mode preference.
@@ -524,7 +524,7 @@ available; do not respond by exposing the value or creating an untracked OAuth c
 
 #### `invalid_grant` or revoked refresh-token recovery
 
-1. Run **Check readiness** and capture the safe `workspace.connectionStatus` field from
+1. Open **Settings → Google Workspace**, let readiness update automatically, and capture the safe `workspace.connectionStatus` field from
    `GET /api/v1/google-workspace`; it must equal `reauthorization-required`. A definitive
    `invalid_grant` is not transient: stop automatic retries and do not log the provider
    response or token. The administrator-only **Connection health** expander in Stage 2

@@ -18,6 +18,7 @@ import {
   useState,
 } from "react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
+import { ClientDataNotice } from "../../components/ClientDataNotice";
 import {
   OperationsEmptyState,
 } from "../../components/operations/OperationsPrimitives";
@@ -25,6 +26,12 @@ import {
   OperationsActionableList,
   OperationsActionableListItem,
 } from "../../components/operations/OperationsActionableList";
+import {
+  cachedGetJson,
+  invalidateTaskReadCaches,
+  isTerminalCachedGetError,
+} from "../../lib/client-get-cache";
+import { useCachedGetSubscription } from "../../lib/client-get-hooks";
 import {
   EMPTY_TASK_FILTERS,
   isTaskManagementRecord,
@@ -123,10 +130,12 @@ export function TaskManagementPanel({
   const requestIdRef = useRef(0);
   const editorReturnFocusRef = useRef<HTMLButtonElement>(null);
   const stableFocusRef = useRef<HTMLButtonElement>(null);
+  const activeTasksUrl = `/api/v1/tasks?${taskManagementSearch(appliedFilters)}`;
 
   const loadTasks = useCallback(async (
     nextFilters: TaskManagementFilters,
     showLoading = true,
+    force = false,
   ) => {
     const requestId = ++requestIdRef.current;
     if (showLoading) {
@@ -134,23 +143,25 @@ export function TaskManagementPanel({
       setLoadError("");
     }
     try {
-      const response = await fetch(`/api/v1/tasks?${taskManagementSearch(nextFilters)}`);
-      const data = await response.json().catch(() => ({})) as {
+      const data = await cachedGetJson<{
         tasks?: unknown[];
-        error?: string;
-      };
+      }>(`/api/v1/tasks?${taskManagementSearch(nextFilters)}`, { force });
       if (
-        !response.ok
-        || !Array.isArray(data.tasks)
+        !Array.isArray(data.tasks)
         || !data.tasks.every(isTaskManagementRecord)
       ) {
-        throw new Error(data.error ?? "Tasks could not be loaded.");
+        throw new Error("Tasks could not be loaded.");
       }
       if (requestId !== requestIdRef.current) return;
       setTasks(data.tasks);
       setLoadState("ready");
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
+      if (isTerminalCachedGetError(error)) {
+        setTasks([]);
+        setEditor(null);
+        setConflict(null);
+      }
       setLoadError(error instanceof Error ? error.message : "Tasks could not be loaded.");
       setLoadState("error");
     }
@@ -159,6 +170,11 @@ export function TaskManagementPanel({
   useEffect(() => {
     void Promise.resolve().then(() => loadTasks(EMPTY_TASK_FILTERS, false));
   }, [loadTasks]);
+
+  useCachedGetSubscription(
+    [activeTasksUrl],
+    () => loadTasks(appliedFilters, false),
+  );
 
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
@@ -205,13 +221,12 @@ export function TaskManagementPanel({
   async function readCurrentTask(taskId: string, currentVersion: string) {
     const requestId = ++requestIdRef.current;
     try {
-      const response = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
-      const data = await response.json().catch(() => ({})) as {
+      const taskUrl = `/api/v1/tasks/${encodeURIComponent(taskId)}`;
+      const data = await cachedGetJson<{
         task?: unknown;
-      };
+      }>(taskUrl, { force: true });
       if (
-        !response.ok
-        || !isTaskManagementRecord(data.task)
+        !isTaskManagementRecord(data.task)
         || data.task.version !== currentVersion
         || requestId !== requestIdRef.current
       ) {
@@ -258,7 +273,7 @@ export function TaskManagementPanel({
         if (!current) {
           setConflict({ current: null });
           setEditorError(
-            "This task changed, but its latest saved version could not be loaded. Close this editor, refresh the list, then open the task again.",
+            "This task changed, but its latest saved version could not be loaded. Close this editor, wait for the automatic list update, then open the task again.",
           );
           return;
         }
@@ -280,6 +295,7 @@ export function TaskManagementPanel({
       }
       setAnnouncement(success);
       setConflict(null);
+      invalidateTaskReadCaches();
       await loadTasks(appliedFilters);
       setEditor(null);
     } catch (error) {
@@ -319,6 +335,7 @@ export function TaskManagementPanel({
       }
       setAnnouncement(`Task created: ${data.task.title}`);
       setEditor(null);
+      invalidateTaskReadCaches();
       await loadTasks(appliedFilters);
     } catch (error) {
       setEditorError(
@@ -461,16 +478,13 @@ export function TaskManagementPanel({
           Loading saved tasks…
         </OperationsEmptyState>
       : loadState === "error"
-        ? <OperationsEmptyState variant="source" tone="error">
-            <span>{loadError}</span>
-            <button
-              className="soft-button"
-              type="button"
-              onClick={() => void loadTasks(appliedFilters)}
-            >
-              Try again
-            </button>
-          </OperationsEmptyState>
+        ? <ClientDataNotice
+            state="error"
+            error={loadError}
+            errorTitle="Tasks are unavailable"
+            retryLabel="Try again"
+            onRetry={() => void loadTasks(appliedFilters, true, true)}
+          />
         : tasks.length === 0
           ? <OperationsEmptyState variant="source">
               No tasks match these filters.
@@ -648,7 +662,7 @@ export function TaskManagementPanel({
               {saving
                 ? <><span className="spinner" /> Saving…</>
                 : conflict && !conflict.current
-                  ? "Refresh list to continue"
+                  ? "Wait for the automatic list update to continue"
                 : conflict
                   ? <><RefreshCw size={16} aria-hidden="true" /> Re-apply changes</>
                   : editor.mode === "create"

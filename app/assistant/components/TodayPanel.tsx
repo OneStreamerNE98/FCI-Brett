@@ -6,7 +6,6 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
-  CircleAlert,
   Clock3,
   Inbox,
   ListTodo,
@@ -25,9 +24,15 @@ import {
   localDayRolloverDelay,
 } from "../../application/today-project-meetings";
 import { OperationsEmptyState } from "../../components/operations/OperationsPrimitives";
+import { ClientDataNotice } from "../../components/ClientDataNotice";
+import { cachedGetJson, invalidateTaskReadCaches } from "../../lib/client-get-cache";
+import {
+  useCachedGetSubscription,
+  useClientLoadState,
+} from "../../lib/client-get-hooks";
 import styles from "./TodayPanel.module.css";
 
-type LoadState = "loading" | "ready" | "error";
+const TODAY_URL = "/api/v1/assistant/today";
 
 type TaskFocusTarget = { taskId: string } | { heading: true };
 
@@ -195,13 +200,11 @@ function CloseoutFollowUpSection({
 }
 
 export function TodayPanel() {
-  const [state, setState] = useState<LoadState>("loading");
   const [today, setToday] = useState<TodayAssembly | null>(null);
-  const [error, setError] = useState("");
   const [completingTaskId, setCompletingTaskId] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const [taskError, setTaskError] = useState("");
-  const loadIdRef = useRef(0);
+  const { state, error, run: runLoad } = useClientLoadState("Today could not be loaded.");
   const headingRef = useRef<HTMLHeadingElement>(null);
   const taskControlRefs = useRef(new Map<string, HTMLInputElement>());
   const pendingFocusRef = useRef<TaskFocusTarget | null>(null);
@@ -223,42 +226,30 @@ export function TodayPanel() {
   });
 
   const load = useCallback(async (
-    options?: { signal?: AbortSignal; silent?: boolean },
+    options?: { force?: boolean; silent?: boolean },
   ): Promise<TodayAssembly | undefined> => {
-    const signal = options?.signal;
-    const loadId = ++loadIdRef.current;
-    // A silent reload (the completion path) keeps the current list mounted while
-    // fresh data loads instead of swapping in the loading empty state.
-    if (!options?.silent) setState("loading");
-    setError("");
-    try {
-      const response = await fetch("/api/v1/assistant/today", {
-        headers: { Accept: "application/json" },
-        signal,
-      });
-      const data = await response.json().catch(() => ({})) as TodayAssembly & { error?: string };
-      if (!response.ok || !data.overdueTasks || !data.dueTodayTasks) {
-        throw new Error(data.error ?? "Today could not be loaded.");
-      }
-      if (loadId !== loadIdRef.current) return;
-      setToday(data);
-      setState("ready");
-      return data;
-    } catch (loadError) {
-      if (signal?.aborted || loadId !== loadIdRef.current) return;
-      // Stale-while-revalidate: a failed background refresh keeps the stale list.
-      if (options?.silent) return;
-      setToday(null);
-      setState("error");
-      setError(loadError instanceof Error ? loadError.message : "Today could not be loaded.");
-    }
-  }, []);
+    return runLoad(
+      () => cachedGetJson<TodayAssembly & { error?: string }>(TODAY_URL, {
+        force: options?.force,
+      }).then((data) => {
+        if (!data.overdueTasks || !data.dueTodayTasks) {
+          throw new Error(data.error ?? "Today could not be loaded.");
+        }
+        return data;
+      }),
+      {
+        onSuccess: setToday,
+        onFailure: () => setToday(null),
+      },
+      { silent: options?.silent },
+    );
+  }, [runLoad]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void Promise.resolve().then(() => load({ signal: controller.signal }));
-    return () => controller.abort();
+    void Promise.resolve().then(() => load());
   }, [load]);
+
+  useCachedGetSubscription([TODAY_URL], () => load({ silent: true }));
 
   useEffect(() => {
     if (!today) return;
@@ -272,7 +263,10 @@ export function TodayPanel() {
       : 0;
     // Floor the corrective re-read at the same 1s minimum localDayRolloverDelay
     // enforces so clock skew can't cause back-to-back refetch hammering.
-    const timeoutId = window.setTimeout(() => void load(), Math.max(1_000, rolloverDelay));
+    const timeoutId = window.setTimeout(
+      () => void load({ force: true }),
+      Math.max(1_000, rolloverDelay),
+    );
     return () => window.clearTimeout(timeoutId);
   }, [load, today]);
 
@@ -291,7 +285,8 @@ export function TodayPanel() {
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "The task could not be completed.");
       setAnnouncement(`${task.title} completed.`);
-      const refreshed = await load({ silent: true });
+      invalidateTaskReadCaches({ notifyToday: false });
+      const refreshed = await load({ force: true, silent: true });
       if (refreshed && completedIndex >= 0) {
         const remainingIds = orderedTaskIds(refreshed);
         if (!remainingIds.includes(task.id)) {
@@ -318,7 +313,13 @@ export function TodayPanel() {
   if (state === "loading") {
     content = <OperationsEmptyState variant="page"><RefreshCw className={styles.spinner} size={24} aria-hidden="true" /><h2>Loading today&apos;s saved records…</h2><p>Checking tasks, meetings, leads, and closeout follow-ups.</p></OperationsEmptyState>;
   } else if (state === "error" || !today) {
-    content = <OperationsEmptyState variant="page" tone="error"><CircleAlert size={24} aria-hidden="true" /><h2>Today is unavailable</h2><p>{error || "Today could not be loaded."}</p><button className="soft-button" type="button" onClick={() => void load()}>Try again</button></OperationsEmptyState>;
+    content = <ClientDataNotice
+      state="error"
+      error={error || "Today could not be loaded."}
+      errorTitle="Today is unavailable"
+      retryLabel="Try again"
+      onRetry={() => void load({ force: true })}
+    />;
   } else {
     content = <>
       <section className={styles.summary} aria-labelledby="today-summary-title">
