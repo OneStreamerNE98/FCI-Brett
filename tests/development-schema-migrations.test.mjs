@@ -833,7 +833,7 @@ test("adds AI-11(c)'s seeded label catalog in additive migration 0025", async ()
   assert.equal(snapshot.prevId, previousSnapshot.id);
   assert.ok(!Object.hasOwn(previousSnapshot.tables, "assistant_label_definitions"));
   assert.ok(Object.hasOwn(snapshot.tables, "assistant_label_definitions"));
-  const journalEntry = journal.entries.at(-1);
+  const journalEntry = journal.entries.find((e) => e.tag === "0025_blushing_ultimo");
   assert.deepEqual(journalEntry, {
     idx: 25,
     version: "6",

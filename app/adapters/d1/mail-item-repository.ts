@@ -315,7 +315,7 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
         .prepare(
           "UPDATE mail_items SET status = ?, reviewed_by = ?, reviewed_at = ?, accepted_intent = ?, attempted_label_definition_version = NULL, failure_attempts = 0, error_code = NULL, updated_at = ? WHERE id = ? AND connection_key = ? AND status = 'needs-review'",
         )
-        .bind(outcome, reviewedBy, updatedAt, acceptedIntent, updatedAt, id, normalizedConnectionKey)
+        .bind(outcome, reviewedBy, updatedAt, acceptedIntent ?? null, updatedAt, id, normalizedConnectionKey)
         .run();
       return Number(result.meta.changes ?? 0) === 1;
     },

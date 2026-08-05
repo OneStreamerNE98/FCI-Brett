@@ -357,6 +357,9 @@ function mailItem(overrides = {}) {
     failureAttempts: 0,
     errorCode: null,
     coverageComplete: false,
+    reviewedBy: null,
+    reviewedAt: null,
+    acceptedIntent: null,
     createdAt: CREATED_AT,
     updatedAt: UPDATED_AT,
     ...overrides,
@@ -387,6 +390,9 @@ function postgresMailItemRow(item) {
     failure_attempts: item.failureAttempts,
     error_code: item.errorCode,
     coverage_complete: item.coverageComplete,
+    reviewed_by: item.reviewedBy,
+    reviewed_at: item.reviewedAt,
+    accepted_intent: item.acceptedIntent,
     created_at: new Date(item.createdAt),
     updated_at: new Date(item.updatedAt),
   };
@@ -477,7 +483,7 @@ test("PostgreSQL dismissal is one guarded status transition with no relationship
   // The retirement status leads the bound values; reviewed_by and reviewed_at follow.
   assert.deepEqual(
     dataQuery(pool, /^UPDATE mail_items/u).values,
-    ["dismissed", "test@example.com", new Date(UPDATED_AT), null, new Date(UPDATED_AT), "mail-1", "google-workspace"],
+    ["dismissed", "test@example.com", new Date(UPDATED_AT), undefined, new Date(UPDATED_AT), "mail-1", "google-workspace"],
   );
 });
 
