@@ -9,7 +9,6 @@ type CachedJsonEntry = {
   ttlMs: number;
   value?: unknown;
   inFlight?: Promise<unknown>;
-  inFlightForced?: boolean;
   terminalError?: CachedGetError;
 };
 
@@ -29,6 +28,13 @@ const jsonGetSubscribers = new Map<string, Set<() => void>>();
 const clientLifecycleSubscribers = new Set<() => void | Promise<void>>();
 let lifecycleRevalidationInFlight: Promise<void> | undefined;
 let lifecycleRevalidationQueued = false;
+/**
+ * Whether the running census round has already taken delivery of a response.
+ * Until it has, every read still open will answer with server state observed
+ * after any trigger arriving now, so that trigger is genuinely satisfied by the
+ * round already running. Once a response has landed, it is not.
+ */
+let lifecycleRoundReceivedResponse = false;
 
 function markLifecycleCensusChanged() {
   if (lifecycleRevalidationInFlight) lifecycleRevalidationQueued = true;
@@ -70,12 +76,7 @@ function responseError(url: string, status: number, body: unknown) {
   return new CachedGetError(status, body, `GET ${url} failed (${status})`);
 }
 
-function startJsonGet<T>(
-  url: string,
-  ttlMs: number,
-  existing?: CachedJsonEntry,
-  forced = false,
-): Promise<T> {
+function startJsonGet<T>(url: string, ttlMs: number, existing?: CachedJsonEntry): Promise<T> {
   const notifyOnSettlement = Boolean(existing?.hasValue || existing?.terminalError);
   const deadline = AbortSignal.timeout(REQUEST_DEADLINE_MS);
   const request = fetch(url, {
@@ -119,7 +120,7 @@ function startJsonGet<T>(
           });
           if (notifyOnSettlement) notifySubscribers(url);
         } else if (current.hasValue) {
-          jsonGetCache.set(url, { ...current, inFlight: undefined, inFlightForced: undefined });
+          jsonGetCache.set(url, { ...current, inFlight: undefined });
         } else {
           jsonGetCache.delete(url);
         }
@@ -128,8 +129,8 @@ function startJsonGet<T>(
     });
 
   jsonGetCache.set(url, existing?.hasValue
-    ? { ...existing, ttlMs, inFlight: request, inFlightForced: forced }
-    : { expiresAt: 0, hasValue: false, ttlMs, inFlight: request, inFlightForced: forced });
+    ? { ...existing, ttlMs, inFlight: request }
+    : { expiresAt: 0, hasValue: false, ttlMs, inFlight: request });
   return request;
 }
 
@@ -146,14 +147,9 @@ export function cachedGetJson<T>(url: string, options: CachedJsonOptions = {}): 
   }
   if (existing?.inFlight) {
     if (!options.force && existing.hasValue) return Promise.resolve(existing.value as T);
-    // An explicit forced read must re-contact the server. Adopting a background
-    // (non-forced) revalidation replays that older request's outcome — including
-    // its failure — without a new round trip, which contradicts the doctrine
-    // that a direct retry surfaces the current truth rather than a cached one.
-    // Joining another FORCED request stays correct: that is what collapses a
-    // lifecycle census and its lifecycle readers into one GET per URL per pass.
-    if (!options.force || existing.inFlightForced) return existing.inFlight as Promise<T>;
-  } else if (!options.force && existing?.hasValue) {
+    return existing.inFlight as Promise<T>;
+  }
+  if (!options.force && existing?.hasValue) {
     if (existing.expiresAt <= Date.now()) {
       void startJsonGet<T>(url, ttlMs, existing).catch(() => {
         // Background revalidation never replaces an honest stale value with an
@@ -162,10 +158,7 @@ export function cachedGetJson<T>(url: string, options: CachedJsonOptions = {}): 
     }
     return Promise.resolve(existing.value as T);
   }
-  // The superseded request loses the `jsonGetCache.get(url)?.inFlight === request`
-  // identity check when it settles, so it can neither clobber this newer result
-  // nor resurrect a stale value.
-  return startJsonGet<T>(url, ttlMs, existing, Boolean(options.force));
+  return startJsonGet<T>(url, ttlMs, existing);
 }
 
 export function subscribeCachedGet(url: string, subscriber: () => void) {
@@ -193,21 +186,26 @@ export function subscribeClientGetLifecycle(subscriber: () => void | Promise<voi
 /** Revalidates only resources with a mounted reader; no polling is used. */
 export function revalidateSubscribedCachedGets() {
   if (lifecycleRevalidationInFlight) {
-    // A focus, visibility change, or navigation that lands while a census is
-    // already running is a NEW freshness demand, not a duplicate of the one in
-    // flight: the running pass may already have read every subscribed URL
-    // before this trigger existed. Returning the in-flight promise without
-    // queueing dropped the trigger outright, so an administrator who tabbed
-    // back mid-pass got no revalidation at all. Queue exactly one more round —
-    // the same single generation markLifecycleCensusChanged() already uses for
-    // subscriber churn — so a trigger is always eventually served while a burst
-    // of triggers still coalesces into one extra round rather than stacking.
-    lifecycleRevalidationQueued = true;
+    // A trigger that lands once the running round has already taken delivery of
+    // a response is a NEW freshness demand, not a duplicate: that round can no
+    // longer speak for state which changed after it read. Returning the
+    // in-flight promise without queueing dropped such a trigger outright — an
+    // administrator who tabbed back mid-pass got no revalidation at all, and
+    // since SET-42 deleted the manual refresh buttons that trigger is the only
+    // refresh path left. Queue exactly one more round, the same single
+    // generation markLifecycleCensusChanged() already uses for subscriber
+    // churn, so a burst coalesces instead of stacking rounds.
+    //
+    // Before any response has landed, every read still open will answer with
+    // server state observed after this trigger, so the running round already
+    // satisfies it and joining stays both correct and single-flight.
+    if (lifecycleRoundReceivedResponse) lifecycleRevalidationQueued = true;
     return lifecycleRevalidationInFlight;
   }
   lifecycleRevalidationInFlight = (async () => {
     do {
       lifecycleRevalidationQueued = false;
+      lifecycleRoundReceivedResponse = false;
       const urls = [...jsonGetSubscribers.keys()];
       const lifecycleReaders = [...clientLifecycleSubscribers];
       await Promise.allSettled([
@@ -218,12 +216,16 @@ export function revalidateSubscribedCachedGets() {
               force: true,
               ttlMs: existing?.ttlMs ?? DEFAULT_TTL_MS,
             });
+            lifecycleRoundReceivedResponse = true;
             // A mutation may deliberately discard a stale transport value
             // without notifying because its authoritative response has already
             // updated the mounted UI. The next lifecycle read still has to
             // deliver its fresh network value on the first focus/navigation.
             if (!existing) notifySubscribers(url);
           } catch (error) {
+            // A failure is delivery too: the round has observed this URL's
+            // current state and can no longer speak for a later trigger.
+            lifecycleRoundReceivedResponse = true;
             // Terminal authorization failures always clear privileged mounted
             // state, including after a quiet mutation invalidation.
             if (!existing && isTerminalCachedGetError(error)) notifySubscribers(url);
