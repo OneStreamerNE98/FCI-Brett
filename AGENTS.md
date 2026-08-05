@@ -149,7 +149,10 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
     reasoning about the laws rather than mere compliance with them. It runs dry-run first (findings delivered to the orchestrator privately and scored for
     precision before any PR comment is posted; the reviewer receives that scorecard —
     real findings, noise, and what the orchestrator's fleet caught that it missed — and
-    the channel goes live on PRs when precision holds across two consecutive reviews).
+    the channel goes live on PRs after ONE scored dry-run unless precision is poor —
+    shortened from two by owner decision, August 5, 2026, because Kimi is now the only
+    non-Claude model in the pipeline and every orchestrator review fleet shares a single
+    model family, so the cross-model second opinion outweighs a longer probation).
     Every agent joining the review layer reads
     [`docs/agent-reviewer-briefing.md`](docs/agent-reviewer-briefing.md) first. When live: findings post as PR comments
     prefixed with the literal token `KIMI-ADVISORY:`; such comments are EXCLUDED from
