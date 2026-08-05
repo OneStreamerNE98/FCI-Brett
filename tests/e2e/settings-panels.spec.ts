@@ -1,4 +1,36 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function mockSettingsFeatureState(page: Page, ready: boolean) {
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Cache-Control": "no-store" },
+      body: JSON.stringify({
+        workspace: {
+          calendars: {
+            clientAppointments: { configured: ready, source: ready ? "app" : "none", externalId: ready ? "appointments@example.test" : null },
+            fieldSchedule: { configured: ready, source: ready ? "app" : "none", externalId: ready ? "schedule@example.test" : null },
+          },
+        },
+      }),
+    });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Cache-Control": "no-store" },
+      body: JSON.stringify({
+        mirror: {
+          configured: ready,
+          enabled: ready,
+          connected: ready,
+        },
+      }),
+    });
+  });
+}
 
 const settingsSections = [
   { path: "/settings", navigation: "My settings", heading: "My settings" },
@@ -82,3 +114,46 @@ for (const section of settingsSections) {
     expect(browserIssues, browserIssues.join("\n\n")).toEqual([]);
   });
 }
+
+test("SET-07 renders the section badge census and computes only endpoint-backed states", async ({ page }) => {
+  await mockSettingsFeatureState(page, false);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/settings");
+
+  const expectedStates = new Map([
+    ["My settings", ["Working", "Working"]],
+    ["Google Workspace", ["In development", "Dev"]],
+    ["Calendar & appointments", ["Setup required", "Setup"]],
+    ["Inbox & file rules", ["In development", "Dev"]],
+    ["Client Directory", ["Setup required", "Setup"]],
+    ["Workflow & notifications", ["In development", "Dev"]],
+    ["AI assistant", ["In development", "Dev"]],
+    ["Data & security", ["Planned", "Planned"]],
+    ["Testing & launch", ["In development", "Dev"]],
+  ] as const);
+  const navigation = page.locator(".settings-nav");
+  await expect(navigation.getByRole("button")).toHaveCount(expectedStates.size);
+  for (const [label, [state, compactLabel]] of expectedStates) {
+    const button = navigation.getByRole("button", { name: label, exact: true });
+    await expect(button).toHaveAttribute("data-settings-feature-state", state);
+    await expect(button.locator(".feature-state")).toHaveText(compactLabel);
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(navigation).toBeVisible();
+  await expect(navigation.locator(".feature-state")).toHaveCount(expectedStates.size);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  const readyPage = await page.context().newPage();
+  await mockSettingsFeatureState(readyPage, true);
+  await readyPage.setViewportSize({ width: 1280, height: 720 });
+  await readyPage.goto("/settings");
+  const readyNavigation = readyPage.locator(".settings-nav");
+  await expect(readyNavigation.getByRole("button", { name: "Calendar & appointments", exact: true }))
+    .toHaveAttribute("data-settings-feature-state", "Working");
+  await expect(readyNavigation.getByRole("button", { name: "Client Directory", exact: true }))
+    .toHaveAttribute("data-settings-feature-state", "Working");
+  await expect(readyNavigation.getByRole("button", { name: "Data & security", exact: true }))
+    .toHaveAttribute("data-settings-feature-state", "Planned");
+  await readyPage.close();
+});
