@@ -3766,8 +3766,8 @@ surface; per-field validation messages named in tests; golden hashes — Overvie
 the Schedule card, so this packet REGENERATES the Overview hash via the A1
 screenshot-sign-off path (owner before/after screenshots in the PR, three pinning suites
 updated in the same commit); `npm test`, `npm run test:e2e`, `npm run lint` named.
-**Effort:** small-medium. **Cost:** $0. **Takes the FloorOpsApp slot** (claim-tail head
-position — see the tail).
+**Effort:** small-medium. **Cost:** $0. **Took and released the FloorOpsApp slot in
+PR #306** (see the reconciled tail).
 
 ### DES-17 · The failure surface: error boundary, toast queue with next steps, empty-state actions (medium)
 
