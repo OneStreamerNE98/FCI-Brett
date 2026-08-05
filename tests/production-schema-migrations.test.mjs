@@ -27,6 +27,7 @@ import { SETTINGS_PERSISTENCE_STATEMENTS } from "../app/platform/postgres/settin
 import { TASK_SCHEMA_STATEMENTS } from "../app/platform/postgres/task-schema.ts";
 import { CORE_RECORD_CONCURRENCY_STATEMENTS } from "../app/platform/postgres/core-record-concurrency-schema.ts";
 import { MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS } from "../app/platform/postgres/mail-item-analysis-schema.ts";
+import { MAIL_ITEM_REVIEW_ATTRIBUTION_SCHEMA_STATEMENTS } from "../app/platform/postgres/mail-item-review-attribution-schema.ts";
 import { GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS } from "../app/platform/postgres/google-form-lead-intake-schema.ts";
 import { ADDRESS_VALIDATION_SCHEMA_STATEMENTS } from "../app/platform/postgres/address-validation-schema.ts";
 import { ASSISTANT_LABEL_SCHEMA_STATEMENTS } from "../app/platform/postgres/assistant-label-schema.ts";
@@ -405,7 +406,7 @@ test("registers the non-structural core-record concurrency law as contiguous mig
     "sha256:03c2f1db12a9d09566877b99d11f7b53c756e1847e3cca93a29eb97db064bd10",
   );
   assert.deepEqual(PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version), [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
   ]);
   assert.deepEqual(
     migration.statements.map((statement) => {
@@ -600,6 +601,31 @@ test("registers AI-11(c)'s label catalog as immutable migration fifteen", () => 
   assert.doesNotMatch(
     structuralSql,
     /\b(?:DROP|TRUNCATE|DELETE|UPDATE|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/iu,
+  );
+});
+
+test("registers AI-11(d)'s review attribution as additive immutable migration sixteen", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 16);
+  assert.ok(migration);
+  assert.equal(migration.name, "mail_item_review_attribution");
+  assert.equal(migration.statements, MAIL_ITEM_REVIEW_ATTRIBUTION_SCHEMA_STATEMENTS);
+  assert.equal(
+    migration.checksum,
+    "sha256:0c6b26c3d062766b6a4cb80dc9b38cedd708fee8ec77fc871fdc5673168495ad",
+  );
+  const sql = migration.statements.join("\n");
+  assert.match(sql, /ALTER TABLE mail_items ADD COLUMN reviewed_by text/u);
+  assert.match(sql, /ALTER TABLE mail_items ADD COLUMN reviewed_at timestamptz/u);
+  assert.match(sql, /ALTER TABLE mail_items ADD COLUMN accepted_intent text/u);
+  assert.match(sql, /mail_items_reviewed_by_check/u);
+  assert.match(sql, /char_length\(reviewed_by\) <= 320/u);
+  assert.match(sql, /mail_items_reviewed_at_check/u);
+  assert.match(sql, /mail_items_accepted_intent_check/u);
+  assert.match(sql, /char_length\(accepted_intent\) <= 60/u);
+  assert.match(sql, /mail_items_review_attribution_check/u);
+  assert.doesNotMatch(
+    sql,
+    /\b(?:DROP|TRUNCATE|DELETE|UPDATE|INSERT|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/iu,
   );
 });
 

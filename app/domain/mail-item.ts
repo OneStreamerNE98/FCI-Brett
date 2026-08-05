@@ -70,6 +70,9 @@ export type MailItem = Readonly<{
   failureAttempts: number;
   errorCode: string | null;
   coverageComplete: boolean;
+  reviewedBy: string | null;
+  reviewedAt: number | null;
+  acceptedIntent: string | null;
   createdAt: number;
   updatedAt: number;
 }>;
@@ -434,6 +437,20 @@ export function normalizeStoredMailItem(row: Record<string, unknown>): MailItem 
     coverageComplete: storedBoolean(
       valueFrom(row, "coverageComplete", "coverage_complete"),
       "Mail item coverage_complete",
+    ),
+    reviewedBy: nullableText(
+      valueFrom(row, "reviewedBy", "reviewed_by"),
+      "Mail item reviewed_by",
+      320,
+    ),
+    reviewedAt: nullableTimestamp(
+      valueFrom(row, "reviewedAt", "reviewed_at"),
+      "Mail item reviewed_at",
+    ),
+    acceptedIntent: nullableText(
+      valueFrom(row, "acceptedIntent", "accepted_intent"),
+      "Mail item accepted_intent",
+      60,
     ),
     createdAt,
     updatedAt,

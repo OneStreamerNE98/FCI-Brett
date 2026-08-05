@@ -421,7 +421,7 @@ test("mail-item adapter maps nullable relationships, bounds list size, and upser
   assert.equal(database.runs.length, 2);
 
   assert.equal(
-    await repository.dismissNeedsReview("mail-1", "google-workspace", 33),
+    await repository.dismissNeedsReview("mail-1", "google-workspace", 33, "test@example.com"),
     true,
   );
   const dismissal = database.statements.at(-1);
@@ -431,7 +431,7 @@ test("mail-item adapter maps nullable relationships, bounds list size, and upser
     // was accepted or dismissed rather than collapsing every exit to "dismissed".
     /^UPDATE mail_items SET status = \?/u,
   );
-  assert.deepEqual(dismissal.values, ["dismissed", 33, "mail-1", "google-workspace"]);
+  assert.deepEqual(dismissal.values, ["dismissed", "test@example.com", 33, null, 33, "mail-1", "google-workspace"]);
   assert.equal(database.runs.length, 3);
 });
 

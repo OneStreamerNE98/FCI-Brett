@@ -9,6 +9,7 @@ import { FLOORING_KPI_SCHEMA_STATEMENTS } from "./flooring-kpi-schema.ts";
 import { GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS } from "./google-form-lead-intake-schema.ts";
 import { LEAD_PROJECT_MEETING_STATEMENTS } from "./lead-project-meeting-schema.ts";
 import { MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS } from "./mail-item-analysis-schema.ts";
+import { MAIL_ITEM_REVIEW_ATTRIBUTION_SCHEMA_STATEMENTS } from "./mail-item-review-attribution-schema.ts";
 import { PROJECT_SEGMENT_SCHEMA_STATEMENTS } from "./project-segment-schema.ts";
 import { PRODUCTION_PERSISTENCE_STATEMENTS } from "./production-persistence-schema.ts";
 import { SETTINGS_PERSISTENCE_STATEMENTS } from "./settings-persistence-schema.ts";
@@ -487,6 +488,12 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "assistant_label_catalog",
     checksum: "sha256:ff56691723e3d4c9121ff156a54f5a229844cbbb82512a16ae9cd02cb4ea14cb",
     statements: ASSISTANT_LABEL_SCHEMA_STATEMENTS,
+  },
+  {
+    version: 16,
+    name: "mail_item_review_attribution",
+    checksum: "sha256:0c6b26c3d062766b6a4cb80dc9b38cedd708fee8ec77fc871fdc5673168495ad",
+    statements: MAIL_ITEM_REVIEW_ATTRIBUTION_SCHEMA_STATEMENTS,
   },
 ];
 

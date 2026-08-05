@@ -157,6 +157,8 @@ export async function createTask(
             gmailMessageId: values.sourceRef!,
             approvedProjectId: task.project_id,
             acceptedAt: createdAt,
+            reviewedBy: authorization.actorId,
+            acceptedIntent: dependencies.inboxReview.intent,
           },
         }
       : {}),

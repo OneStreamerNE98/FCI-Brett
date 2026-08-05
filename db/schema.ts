@@ -269,7 +269,9 @@ export const mailItems = sqliteTable("mail_items", {
   receivedAt: integer("received_at", { mode: "timestamp_ms" }),
   failureAttempts: integer("failure_attempts").notNull().default(0),
   errorCode: text("error_code"),
-  coverageComplete: integer("coverage_complete", { mode: "boolean" }).notNull().default(false),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: integer("reviewed_at", { mode: "timestamp_ms" }),
+  acceptedIntent: text("accepted_intent"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 }, (table) => [

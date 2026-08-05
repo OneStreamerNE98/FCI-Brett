@@ -357,6 +357,9 @@ function mailItem(overrides = {}) {
     failureAttempts: 0,
     errorCode: null,
     coverageComplete: false,
+    reviewedBy: null,
+    reviewedAt: null,
+    acceptedIntent: null,
     createdAt: CREATED_AT,
     updatedAt: UPDATED_AT,
     ...overrides,
@@ -387,6 +390,9 @@ function postgresMailItemRow(item) {
     failure_attempts: item.failureAttempts,
     error_code: item.errorCode,
     coverage_complete: item.coverageComplete,
+    reviewed_by: item.reviewedBy,
+    reviewed_at: item.reviewedAt,
+    accepted_intent: item.acceptedIntent,
     created_at: new Date(item.createdAt),
     updated_at: new Date(item.updatedAt),
   };
@@ -453,9 +459,9 @@ test("PostgreSQL dismissal is one guarded status transition with no relationship
     assert.match(sql, /^UPDATE mail_items/u);
     assert.match(
       sql,
-      // Positions shifted by one: the retirement status is now $1 (bound, not a
+      // Positions shifted: the retirement status is now $1 (bound, not a
       // literal) so the row records accepted vs dismissed. Mirrors the D1 adapter.
-      /WHERE id = \$3\s+AND connection_key = \$4\s+AND status = 'needs-review'/u,
+      /WHERE id = \$6\s+AND connection_key = \$7\s+AND status = 'needs-review'/u,
     );
     assert.match(sql, /^UPDATE mail_items\s+SET status = \$1/u);
     assert.doesNotMatch(sql, /clients|projects/u);
@@ -470,14 +476,14 @@ test("PostgreSQL dismissal is one guarded status transition with no relationship
       "mail-1",
       "google-workspace",
       UPDATED_AT,
+      "test@example.com",
     ),
     true,
   );
-  // The retirement status leads the bound values now, matching D1. Defaulting the
-  // fourth argument keeps a hand dismissal recording "dismissed".
+  // The retirement status leads the bound values; reviewed_by and reviewed_at follow.
   assert.deepEqual(
     dataQuery(pool, /^UPDATE mail_items/u).values,
-    ["dismissed", new Date(UPDATED_AT), "mail-1", "google-workspace"],
+    ["dismissed", "test@example.com", new Date(UPDATED_AT), undefined, new Date(UPDATED_AT), "mail-1", "google-workspace"],
   );
 });
 

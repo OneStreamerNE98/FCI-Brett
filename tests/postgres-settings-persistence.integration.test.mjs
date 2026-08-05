@@ -304,6 +304,9 @@ test(
         failureAttempts: 0,
         errorCode: null,
         coverageComplete: false,
+        acceptedIntent: null,
+        reviewedAt: null,
+        reviewedBy: null,
         createdAt: NOW + 6_000,
         updatedAt: NOW + 7_000,
       };
