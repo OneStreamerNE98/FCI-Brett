@@ -71,21 +71,20 @@ test("maps every sheet-mirror state to the exact polished label catalog", () => 
 });
 
 test("routes all three sheet-mirror UI surfaces through the shared mapper", async () => {
-  const [app, directory, workspace] = await Promise.all([
-    read("app/FloorOpsApp.tsx"),
+  const [clientsView, directory, workspace] = await Promise.all([
+    read("app/clients/components/ClientsView.tsx"),
     read("app/settings/components/DirectorySyncPanel.tsx"),
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
   ]);
 
   for (const [path, source] of [
-    ["FloorOpsApp.tsx", app],
+    ["ClientsView.tsx", clientsView],
     ["DirectorySyncPanel.tsx", directory],
     ["GoogleWorkspacePanel.tsx", workspace],
   ]) {
     assert.match(source, /from "(?:\.\.\/)*\.\.\/lib\/sheet-mirror-status"|from "\.\/lib\/sheet-mirror-status"/, `${path} must import the shared contract`);
   }
 
-  const clientsView = section(app, "function ClientsView", "function ProjectsView", "Clients view");
   assert.match(clientsView, /const syncLabel = sheetMirrorStatusLabel\(sheetMirror\)/);
   assert.equal(clientsView.match(/sheetMirrorStatusLabel\(/g)?.length, 1);
   assert.match(clientsView, /<span className=\{`directory-status \$\{syncStateClass\}`\}>[\s\S]*?\{syncLabel\}<\/span>/);
@@ -115,7 +114,7 @@ test("routes all three sheet-mirror UI surfaces through the shared mapper", asyn
 test("declares one exported SheetMirrorStatus type for every consumer", async () => {
   const sources = await readTypeScriptSources(new URL("app/", root));
   const declarations = sources.flatMap(({ path, source }) => (
-    [...source.matchAll(/^\s*(?:export\s+)?(?:type|interface)\s+SheetMirrorStatus\b/gm)]
+    [...source.matchAll(/^\s*(?:export\s+)?(?:type|interface)\s+SheetMirrorStatus(?=\s*(?:=|\{))/gm)]
       .map((match) => ({ path, declaration: match[0] }))
   ));
 
@@ -125,6 +124,7 @@ test("declares one exported SheetMirrorStatus type for every consumer", async ()
 
   for (const path of [
     "app/FloorOpsApp.tsx",
+    "app/clients/components/ClientsView.tsx",
     "app/lib/google-sheets.ts",
     "app/settings/components/DirectorySyncPanel.tsx",
     "app/settings/components/GoogleWorkspacePanel.tsx",

@@ -424,8 +424,9 @@ test("authorization denials evict stale privileged data and notify without retry
 });
 
 test("keeps the bounded initial-load and rendering optimizations in place", async () => {
-  const [app, css, dataSecurity, myAccount, googleWorkspace] = await Promise.all([
+  const [app, recordDisplay, css, dataSecurity, myAccount, googleWorkspace] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
+    read("app/lib/record-display.ts"),
     read("app/globals.css"),
     read("app/settings/components/DataSecurityPanel.tsx"),
     read("app/settings/components/MySettingsPanel.tsx"),
@@ -441,13 +442,13 @@ test("keeps the bounded initial-load and rendering optimizations in place", asyn
   const overviewComponent = sourceSection(
     app,
     "function Overview",
-    "function LeadsView",
+    "function ReportBarRow",
     "Overview component",
   );
 
-  assert.match(app, /import \{ formatUsd \} from "\.\/lib\/format-usd"/);
-  assert.match(app, /return formatUsd\(value\)/);
-  assert.doesNotMatch(app, /const currencyFormatter = new Intl\.NumberFormat/);
+  assert.match(recordDisplay, /import \{ formatUsd \} from "\.\/format-usd"/);
+  assert.match(recordDisplay, /return formatUsd\(value\)/);
+  assert.doesNotMatch(`${app}\n${recordDisplay}`, /const currencyFormatter = new Intl\.NumberFormat/);
   assert.match(dataSecurity, /const PhoneInstallPanel = dynamic\(/);
   assert.match(dataSecurity, /import\("\.\.\/\.\.\/PhoneInstallPanel"\)/);
   assert.doesNotMatch(dataSecurity, /import \{ PhoneInstallPanel \} from/);
