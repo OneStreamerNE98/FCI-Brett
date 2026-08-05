@@ -9,6 +9,7 @@ type CachedJsonEntry = {
   ttlMs: number;
   value?: unknown;
   inFlight?: Promise<unknown>;
+  inFlightForced?: boolean;
   terminalError?: CachedGetError;
 };
 
@@ -69,7 +70,12 @@ function responseError(url: string, status: number, body: unknown) {
   return new CachedGetError(status, body, `GET ${url} failed (${status})`);
 }
 
-function startJsonGet<T>(url: string, ttlMs: number, existing?: CachedJsonEntry): Promise<T> {
+function startJsonGet<T>(
+  url: string,
+  ttlMs: number,
+  existing?: CachedJsonEntry,
+  forced = false,
+): Promise<T> {
   const notifyOnSettlement = Boolean(existing?.hasValue || existing?.terminalError);
   const deadline = AbortSignal.timeout(REQUEST_DEADLINE_MS);
   const request = fetch(url, {
@@ -113,7 +119,7 @@ function startJsonGet<T>(url: string, ttlMs: number, existing?: CachedJsonEntry)
           });
           if (notifyOnSettlement) notifySubscribers(url);
         } else if (current.hasValue) {
-          jsonGetCache.set(url, { ...current, inFlight: undefined });
+          jsonGetCache.set(url, { ...current, inFlight: undefined, inFlightForced: undefined });
         } else {
           jsonGetCache.delete(url);
         }
@@ -122,8 +128,8 @@ function startJsonGet<T>(url: string, ttlMs: number, existing?: CachedJsonEntry)
     });
 
   jsonGetCache.set(url, existing?.hasValue
-    ? { ...existing, ttlMs, inFlight: request }
-    : { expiresAt: 0, hasValue: false, ttlMs, inFlight: request });
+    ? { ...existing, ttlMs, inFlight: request, inFlightForced: forced }
+    : { expiresAt: 0, hasValue: false, ttlMs, inFlight: request, inFlightForced: forced });
   return request;
 }
 
@@ -140,9 +146,14 @@ export function cachedGetJson<T>(url: string, options: CachedJsonOptions = {}): 
   }
   if (existing?.inFlight) {
     if (!options.force && existing.hasValue) return Promise.resolve(existing.value as T);
-    return existing.inFlight as Promise<T>;
-  }
-  if (!options.force && existing?.hasValue) {
+    // An explicit forced read must re-contact the server. Adopting a background
+    // (non-forced) revalidation replays that older request's outcome — including
+    // its failure — without a new round trip, which contradicts the doctrine
+    // that a direct retry surfaces the current truth rather than a cached one.
+    // Joining another FORCED request stays correct: that is what collapses a
+    // lifecycle census and its lifecycle readers into one GET per URL per pass.
+    if (!options.force || existing.inFlightForced) return existing.inFlight as Promise<T>;
+  } else if (!options.force && existing?.hasValue) {
     if (existing.expiresAt <= Date.now()) {
       void startJsonGet<T>(url, ttlMs, existing).catch(() => {
         // Background revalidation never replaces an honest stale value with an
@@ -151,7 +162,10 @@ export function cachedGetJson<T>(url: string, options: CachedJsonOptions = {}): 
     }
     return Promise.resolve(existing.value as T);
   }
-  return startJsonGet<T>(url, ttlMs, existing);
+  // The superseded request loses the `jsonGetCache.get(url)?.inFlight === request`
+  // identity check when it settles, so it can neither clobber this newer result
+  // nor resurrect a stale value.
+  return startJsonGet<T>(url, ttlMs, existing, Boolean(options.force));
 }
 
 export function subscribeCachedGet(url: string, subscriber: () => void) {
@@ -178,7 +192,19 @@ export function subscribeClientGetLifecycle(subscriber: () => void | Promise<voi
 
 /** Revalidates only resources with a mounted reader; no polling is used. */
 export function revalidateSubscribedCachedGets() {
-  if (lifecycleRevalidationInFlight) return lifecycleRevalidationInFlight;
+  if (lifecycleRevalidationInFlight) {
+    // A focus, visibility change, or navigation that lands while a census is
+    // already running is a NEW freshness demand, not a duplicate of the one in
+    // flight: the running pass may already have read every subscribed URL
+    // before this trigger existed. Returning the in-flight promise without
+    // queueing dropped the trigger outright, so an administrator who tabbed
+    // back mid-pass got no revalidation at all. Queue exactly one more round —
+    // the same single generation markLifecycleCensusChanged() already uses for
+    // subscriber churn — so a trigger is always eventually served while a burst
+    // of triggers still coalesces into one extra round rather than stacking.
+    lifecycleRevalidationQueued = true;
+    return lifecycleRevalidationInFlight;
+  }
   lifecycleRevalidationInFlight = (async () => {
     do {
       lifecycleRevalidationQueued = false;
