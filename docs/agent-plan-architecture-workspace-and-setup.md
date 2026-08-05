@@ -1813,6 +1813,7 @@ reminder-hours fields round-trip independently (regression test); a custom rule'
 row visibly communicates it is not driving suggestions (pinned copy).
 
 ### SET-07 · Settings IA consistency: per-section badges, one deep-link label, nav/heading alignment (small, after SET-01)
+**Status:** In progress — `codex/set07-settings-ia`
 **Do:** Add `featureState` to SETTINGS_SECTIONS entries and render per-section badges
 (My account=Working; Google Workspace=In development; Calendar=Setup required, computed
 from SET-05's payload once landed; Inbox rules=In development; Client Directory=computed
