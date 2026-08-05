@@ -229,6 +229,48 @@ test("an initial fill settles through its initiating reader and only revalidatio
   }
 });
 
+test("a quiet mutation invalidation delivers the first lifecycle revalidation", async () => {
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  let notifications = 0;
+  let observed = null;
+
+  try {
+    clearCachedGets();
+    globalThis.fetch = async () => {
+      requests += 1;
+      return new Response(JSON.stringify({ request: requests }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    await cachedGetJson("/api/test-quiet-invalidation");
+    const refreshed = new Promise((resolve) => {
+      const unsubscribe = subscribeCachedGet("/api/test-quiet-invalidation", () => {
+        notifications += 1;
+        void cachedGetJson("/api/test-quiet-invalidation").then((value) => {
+          observed = value;
+          unsubscribe();
+          resolve();
+        });
+      });
+    });
+
+    invalidateCachedGet("/api/test-quiet-invalidation", { notify: false });
+    assert.equal(notifications, 0, "the local mutation response remains authoritative until lifecycle revalidation");
+    await revalidateSubscribedCachedGets();
+    await refreshed;
+
+    assert.equal(requests, 2);
+    assert.equal(notifications, 1, "the first lifecycle read must reach the mounted subscriber");
+    assert.deepEqual(observed, { request: 2 });
+  } finally {
+    clearCachedGets();
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("a subscriber mounted during a slow lifecycle sweep receives one trailing census", async () => {
   const originalFetch = globalThis.fetch;
   const requests = new Map();

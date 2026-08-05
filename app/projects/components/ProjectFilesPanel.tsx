@@ -326,7 +326,7 @@ export function ProjectFileCreationModal({
         throw new Error(await responseError(response, "The project file could not be created."));
       }
       const data = await response.json() as { file?: unknown; simulated?: unknown; environment?: unknown };
-      invalidateCachedGet(`/api/v1/projects/${encodeURIComponent(projectId)}/drive/files`);
+      invalidateCachedGet(`/api/v1/projects/${encodeURIComponent(projectId)}/drive/files`, { notify: false });
       const file = normalizeCreatedFile(data.file, data.simulated, data.environment);
       controller.recordCreatedFile(file);
       setCreated(file);

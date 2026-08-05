@@ -263,19 +263,22 @@ test("period and all-history empty states remain accurate", async ({ page }) => 
 });
 
 test("initial errors retry independently and expired sessions clear the whole screen", async ({ page }) => {
-  expectedBrowserIssues.get(page)?.push(
-    "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
-  );
   let attempts = 0;
+  let unavailable = true;
   await installAdminApis(page, async (route) => {
     attempts += 1;
-    if (attempts === 1) await fulfillAudit(route, auditPage([]), 500);
+    if (unavailable) await fulfillAudit(route, auditPage([]), 500);
     else await fulfillAudit(route, auditPage([firstEvent]));
   });
   const response = await page.goto("/management/access");
   expect(response?.ok()).toBe(true);
   await page.getByRole("tab", { name: "Activity" }).click();
   await expect(page.getByRole("heading", { name: "Activity is unavailable" })).toBeVisible();
+  expectedBrowserIssues.get(page)?.push(...Array.from(
+    { length: attempts },
+    () => "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  ));
+  unavailable = false;
   await page.getByRole("button", { name: "Retry" }).click();
   await expect(page.getByRole("table", { name: "Security activity" })).toContainText("Invitation created");
   await page.getByRole("tab", { name: "People" }).click();

@@ -337,6 +337,22 @@ async function setStageExpanded(page: Page, number: WorkspaceStageNumber, expand
   else await expect(body).toBeHidden();
 }
 
+async function triggerAutomaticWorkspaceRefresh(
+  page: Page,
+  expectedPath = "/api/v1/integrations/google/setup/resources",
+) {
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  const response = page.waitForResponse((candidate) => (
+    candidate.request().method() === "GET"
+    && new URL(candidate.url()).pathname === expectedPath
+  ));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await response;
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+}
+
 async function setStageThreeSubsectionExpanded(page: Page, key: StageThreeSubsectionKey, expanded: boolean) {
   await setStageExpanded(page, 3, true);
   const toggle = stageThreeSubsectionToggle(page, key);
@@ -633,13 +649,13 @@ test("stages derive one open step from endpoint state and keep completed stages 
       mode: "workspace",
     },
   });
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(setupStage(page, 1).locator(".workspace-stage-chip")).toHaveText("IN PROGRESS · 4 of 6");
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "true");
   await expect(stageToggle(page, 2)).toHaveAttribute("aria-expanded", "false");
 
   currentResources = { ...currentResources, connectReady: true };
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(setupStage(page, 1).locator(".workspace-stage-chip")).toHaveText("DONE");
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "false");
   await expect(stageToggle(page, 2)).toHaveAttribute("aria-expanded", "true");
@@ -647,7 +663,7 @@ test("stages derive one open step from endpoint state and keep completed stages 
 
   currentReadiness = readiness();
   currentHealth = connectedHealth();
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("DONE");
   await expect(stageToggle(page, 2)).toHaveAttribute("aria-expanded", "false");
   await expect(stageToggle(page, 3)).toHaveAttribute("aria-expanded", "true");
@@ -663,7 +679,7 @@ test("stages derive one open step from endpoint state and keep completed stages 
       externalId: resource.externalId ?? `${resource.key}-id`,
     }),
   });
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page, "/api/v1/integrations/google/setup/resources");
   await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("DONE");
   await expect(stageToggle(page, 3)).toHaveAttribute("aria-expanded", "false");
   await expect(stageToggle(page, 4)).toHaveAttribute("aria-expanded", "true");
@@ -935,7 +951,7 @@ test("Stage 4 disabled verification actions are described by their actual depend
   }
 
   currentReadiness = readiness();
-  await page.getByRole("button", { name: "Check readiness", exact: true }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(gmail.getByText("Ready for explicit actions", { exact: true })).not.toHaveAttribute("id");
   for (const name of ["Prepare FCI labels", "View inbox", "Send Workspace test"]) {
     const control = gmail.getByRole("button", { name, exact: true });
@@ -1022,9 +1038,11 @@ test("Operations health enumerates recorded simulation failures and activity wit
   await expect(row.getByText("mode=simulation;code=gmail_copy_failed", { exact: true })).toBeVisible();
   await expect(row.getByText("wait out the five-minute lease", { exact: false })).toBeVisible();
   await expect(row.getByText("retry only through the original app action", { exact: false })).toBeVisible();
-  await expect(row.getByRole("button", { name: "Refresh operations", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Refresh operations", exact: true })).toHaveCount(0);
   await expect(row.getByRole("button", { name: /delete|repair|clear lease/i })).toHaveCount(0);
   expect(operationsReads).toBe(1);
+  await triggerAutomaticWorkspaceRefresh(page);
+  await expect.poll(() => operationsReads).toBe(2);
 });
 
 test("InfoHint opens on keyboard focus and hover and Escape dismisses it", async ({ page }) => {
@@ -1364,8 +1382,7 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
     connectReady: false,
     identity: { connectionAccount: null, intakeMailboxMatches: null, allowedDomains: ["cherryhillfci.com"], mode: "workspace" },
   });
-  await page.getByRole("button", { name: "Check readiness" }).click();
-  await expect(page.getByText("Workspace readiness refreshed. Current status is shown above.", { exact: true })).toBeVisible();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(page.getByText("Workspace configuration is present.", { exact: false })).toHaveCount(0);
   await expect(tenantChecklistRow(page, "Company domain").getByText("DONE", { exact: true })).toBeVisible();
   await expect(page.locator(`#${domainDescriptionId}`)).toHaveText(domainInstruction);
@@ -1406,7 +1423,7 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
       mode: "workspace",
     },
   });
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "false");
   await setStageExpanded(page, 1, true);
   await expect(tenantChecklistRow(page, "Operations account").getByText("DONE", { exact: true })).toBeVisible();
@@ -1416,7 +1433,7 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
   await expect(card.getByText("Restricted", { exact: true })).toBeVisible();
 
   resourcesShouldFail = true;
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(card.getByText("Not verified", { exact: true })).toBeVisible();
   await expect(card.getByText("Restricted", { exact: true })).toHaveCount(0);
   resourcesShouldFail = false;
@@ -1424,7 +1441,7 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
   currentReadiness = readiness();
   currentResources = workspaceResources({ resources: appManagedResources });
   currentHealth = connectedHealth();
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "true");
   await expect(tenantChecklistRow(page, "Operations account").getByText("DONE", { exact: true })).toBeVisible();
   await expect(tenantChecklistRow(page, "OAuth web client").getByText("DONE", { exact: true })).toBeVisible();
@@ -1548,7 +1565,7 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   await expect(creationRow(page, "shared-drive").getByRole("button", { name: "Verify and adopt" })).toBeDisabled();
 
   currentReadiness = readiness();
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(stageToggle(page, 2)).toHaveAttribute("aria-expanded", "false");
   await setStageExpanded(page, 2, true);
   await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("DONE");
@@ -1591,7 +1608,7 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
     clients: { status: "syncing", lastSyncedAt: mirror.clients.lastSyncedAt, lastError: null },
     projects: { status: "failed", lastSyncedAt: mirror.projects.lastSyncedAt, lastError: "Synthetic drift after a successful verification" },
   };
-  await page.getByRole("button", { name: "Refresh mirror status" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(verificationRow(page, "sheets")).toHaveAttribute("data-stage-four-state", "VERIFIED");
   await expect(verificationRow(page, "sheets").getByText("Syncing", { exact: true })).toBeVisible();
   await expect(verificationRow(page, "sheets").getByText("Needs attention", { exact: true })).toBeVisible();
@@ -1599,7 +1616,7 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   await expect(verificationRow(page, "sheets").getByText("failed", { exact: true })).toHaveCount(0);
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("READY");
   resourcesShouldFail = true;
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("READY");
 });
 
@@ -1770,11 +1787,12 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
     const gmail = verificationRow(page, "gmail");
     await expect(gmail).toHaveAttribute("data-stage-four-state", "TEST EMAIL NEEDED");
     await expect(gmail).not.toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
-    await expect(gmail.getByRole("button", { name: "Refresh FCI labels" })).toBeVisible();
+    await expect(gmail.getByRole("button", { name: "Prepare FCI labels" })).toBeVisible();
+    await expect(gmail.getByRole("button", { name: "Refresh FCI labels" })).toHaveCount(0);
     await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("0 OF 3 VERIFIED");
   });
 
-  test("renders failed status hydration honestly and reconciles exact recovered booleans", async ({ page }) => {
+  test("retains stale verification on transient failures and reconciles exact recovered booleans", async ({ page }) => {
     const durable = await mockDurableStageFourState(page, {
       labelReady: true,
       testEmailPassed: true,
@@ -1785,13 +1803,14 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
     await expectStageFourReady(page);
 
     durable.setStatusFailures({ gmail: true, calendar: true });
-    await page.getByRole("button", { name: "Check readiness", exact: true }).click();
+    await triggerAutomaticWorkspaceRefresh(page);
     await setStageExpanded(page, 4, true);
-    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("UNAVAILABLE");
-    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveClass(/\bneutral\b/);
-    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "UNAVAILABLE");
-    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "UNAVAILABLE");
-    await expect(verificationRow(page, "gmail").getByRole("button", { name: "Refresh FCI labels" })).toBeVisible();
+    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("READY");
+    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveClass(/\bready\b/);
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    await expect(verificationRow(page, "gmail").getByRole("button", { name: "Prepare FCI labels" })).toBeVisible();
+    await expect(verificationRow(page, "gmail").getByRole("button", { name: "Refresh FCI labels" })).toHaveCount(0);
 
     durable.setStatusFailures({ gmail: false, calendar: false });
     durable.setDurableState({
@@ -1799,7 +1818,7 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
       testEmailPassed: false,
       calendarChecked: false,
     });
-    await page.getByRole("button", { name: "Check readiness", exact: true }).click();
+    await triggerAutomaticWorkspaceRefresh(page);
     await setStageExpanded(page, 4, true);
     await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("1 OF 3 VERIFIED");
     await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
@@ -2134,7 +2153,7 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
   const completeRequiredResources = structuredClone(resources);
   for (const missingType of ["drive.shared-drive", "drive.folder", "sheets.spreadsheet"] as const) {
     resources = completeRequiredResources.filter((resource) => resource.resourceType !== missingType);
-    await page.getByRole("button", { name: "Check readiness" }).click();
+    await triggerAutomaticWorkspaceRefresh(page);
     const expectedReadyCount = missingType === "drive.shared-drive"
       ? 0
       : missingType === "drive.folder"
@@ -2161,12 +2180,12 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
       await expect(creationRow(page, "calendars").getByRole("button", { name: "Verify calendar access" })).toBeEnabled();
     }
     resources = structuredClone(completeRequiredResources);
-    await page.getByRole("button", { name: "Check readiness" }).click();
+    await triggerAutomaticWorkspaceRefresh(page);
     await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("DONE");
   }
 
   resources = completeRequiredResources.filter((resource) => resource.resourceType !== "drive.file");
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("DONE");
   await expect(stageToggle(page, 4)).toHaveAttribute("aria-expanded", "true");
   await setStageExpanded(page, 3, true);
@@ -2174,7 +2193,7 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
   await expect(creationRow(page, "templates")).toContainText("No templates are defined in this blueprint.");
   await expect(creationRow(page, "calendars").getByRole("button", { name: "Verify calendar access" })).toBeEnabled();
   resources = structuredClone(completeRequiredResources);
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await setStageExpanded(page, 3, true);
   await expect(creationRow(page, "calendars")).toHaveAttribute("data-workspace-creation-state", "VERIFY ONLY");
   await expect(creationRow(page, "calendars")).toContainText("No calendars are defined in this blueprint.");
@@ -2492,7 +2511,7 @@ test.describe("SET-38 Stage 3 subsection disclosures", () => {
 
     await page.keyboard.press("Space");
     await expect(blueprintToggle).toHaveAttribute("aria-expanded", "true");
-    await page.getByRole("button", { name: "Check readiness" }).click();
+    await triggerAutomaticWorkspaceRefresh(page);
     await expect(stageThreeSubsection(page, "creation").getByText("0 of 4 ready", { exact: true })).toBeVisible();
     await expect(creationToggle).toHaveAttribute("aria-expanded", "false");
     await expect(blueprintToggle).toHaveAttribute("aria-expanded", "true");
@@ -2749,7 +2768,7 @@ test("stale Shared Drive registry data keeps adopt locked while direct verificat
   await expect(creationRow(page, "shared-drive")).toHaveAttribute("data-workspace-creation-state", "FOUND — ADOPT");
   await expect(creationRow(page, "shared-drive").getByRole("button", { name: "Verify and adopt" })).toBeEnabled();
   resourcesShouldFail = true;
-  await page.getByRole("button", { name: "Check readiness" }).click();
+  await triggerAutomaticWorkspaceRefresh(page);
   await setStageExpanded(page, 3, true);
   await expect(creationCard(page).getByText("Workspace resource status could not be loaded. Retry before using this setup summary.", { exact: true })).toBeVisible();
   await expect(creationCard(page).getByText("Unavailable", { exact: true })).toBeVisible();

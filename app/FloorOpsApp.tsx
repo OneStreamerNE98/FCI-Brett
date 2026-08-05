@@ -1456,7 +1456,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const response = await fetch("/api/v1/filing-rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rule) });
       const data = await response.json().catch(() => ({})) as { id?: string; error?: string };
       if (!response.ok || !data.id) throw new Error(data.error ?? "Rule could not be saved.");
-      invalidateCachedGet("/api/v1/filing-rules");
+      invalidateCachedGet("/api/v1/filing-rules", { notify: false });
       setFilingRules((current) => [...current, { ...rule, id: data.id }].sort((a, b) => a.priority - b.priority));
       setRuleModal(false);
       notify(`Email rule “${rule.name}” added`, "success");
@@ -1472,7 +1472,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         const response = await fetch("/api/v1/filing-rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(override) });
         const data = await response.json().catch(() => ({})) as { id?: string; error?: string };
         if (!response.ok || !data.id) throw new Error(data.error ?? "Rule could not be saved.");
-        invalidateCachedGet("/api/v1/filing-rules");
+        invalidateCachedGet("/api/v1/filing-rules", { notify: false });
         setFilingRules((current) => current.map((item) => item.name === rule.name ? { ...override, id: data.id } : item).sort((left, right) => left.priority - right.priority));
         notify(`Email rule “${rule.name}” ${patch.enabled === false ? "paused" : "updated"}`, "success");
       } catch (error) {
@@ -1484,7 +1484,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const response = await fetch(`/api/v1/filing-rules/${encodeURIComponent(rule.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Rule could not be updated.");
-      invalidateCachedGet("/api/v1/filing-rules");
+      invalidateCachedGet("/api/v1/filing-rules", { notify: false });
       setFilingRules((current) => current.map((item) => item.id === rule.id ? { ...item, ...patch } : item).sort((left, right) => left.priority - right.priority));
       notify(`Email rule “${rule.name}” ${patch.enabled === false ? "paused" : "updated"}`, "success");
     } catch (error) {
@@ -1501,7 +1501,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const response = await fetch(`/api/v1/filing-rules/${encodeURIComponent(rule.id)}`, { method: "DELETE" });
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Rule could not be deleted.");
-      invalidateCachedGet("/api/v1/filing-rules");
+      invalidateCachedGet("/api/v1/filing-rules", { notify: false });
       const defaultRule = DEFAULT_FILING_RULES.find((item) => item.name === rule.name);
       setFilingRules((current) => defaultRule ? current.map((item) => item.id === rule.id ? defaultRule : item).sort((left, right) => left.priority - right.priority) : current.filter((item) => item.id !== rule.id));
       notify(defaultRule ? `Email rule “${rule.name}” reset to its built-in default` : `Email rule “${rule.name}” deleted`, "success");
@@ -3008,7 +3008,7 @@ function MeetingModal({ project, onClose, onSaved }: { project: Project; onClose
       const response = await fetch(`/api/v1/projects/${encodeURIComponent(project.id)}/meetings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json().catch(() => ({})) as { meeting?: ProjectMeeting; error?: string };
       if (!response.ok || !data.meeting) throw new Error(data.error ?? "Meeting notes could not be saved.");
-      invalidateCachedGet(`/api/v1/projects/${encodeURIComponent(project.id)}/meetings`);
+      invalidateCachedGet(`/api/v1/projects/${encodeURIComponent(project.id)}/meetings`, { notify: false });
       invalidateCachedGet("/api/v1/assistant/today");
       onSaved(data.meeting);
     } catch (saveError) {

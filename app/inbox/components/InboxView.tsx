@@ -841,7 +841,7 @@ export function InboxView({
           // flag an empty stored queue would render "No messages need review" —
           // a coverage conclusion this sweep never earned.
           setAnalysisFailed(true);
-          notify("Inbox analysis could not finish. Use Retry failed analyses to try again.", "warning");
+          notify("Inbox analysis could not finish. Use Load messages to try again.", "warning");
         }
         return null;
       } finally {
@@ -1699,7 +1699,7 @@ export function InboxView({
                         : "No messages need review"}
                     </h2>
                     <p>{analysisFailed
-                      ? "Inbox analysis did not finish, so Gmail was not swept. Use Retry failed analyses to try again."
+                      ? "Inbox analysis did not finish, so Gmail was not swept. Use Load messages to try again."
                       : analysisCoverage?.message ?? "The newest bounded inbox analysis status updates automatically."}</p>
                   </OperationsEmptyState>
                 : visibleReviewRows.map((row, index) => <article className="message-row live-message-row" key={row.id}>

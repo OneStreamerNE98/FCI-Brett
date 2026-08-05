@@ -167,10 +167,25 @@ export function revalidateSubscribedCachedGets() {
       const urls = [...jsonGetSubscribers.keys()];
       const lifecycleReaders = [...clientLifecycleSubscribers];
       await Promise.allSettled([
-        ...urls.map((url) => cachedGetJson(url, {
-          force: true,
-          ttlMs: jsonGetCache.get(url)?.ttlMs ?? DEFAULT_TTL_MS,
-        })),
+        ...urls.map(async (url) => {
+          const existing = jsonGetCache.get(url);
+          try {
+            await cachedGetJson(url, {
+              force: true,
+              ttlMs: existing?.ttlMs ?? DEFAULT_TTL_MS,
+            });
+            // A mutation may deliberately discard a stale transport value
+            // without notifying because its authoritative response has already
+            // updated the mounted UI. The next lifecycle read still has to
+            // deliver its fresh network value on the first focus/navigation.
+            if (!existing) notifySubscribers(url);
+          } catch (error) {
+            // Terminal authorization failures always clear privileged mounted
+            // state, including after a quiet mutation invalidation.
+            if (!existing && isTerminalCachedGetError(error)) notifySubscribers(url);
+            throw error;
+          }
+        }),
         ...lifecycleReaders.map((subscriber) => Promise.resolve().then(subscriber)),
       ]);
     } while (lifecycleRevalidationQueued);

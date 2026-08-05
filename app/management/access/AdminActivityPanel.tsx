@@ -236,6 +236,7 @@ export function AdminActivityPanel({
         state="error"
         error={loadError || "The activity projection could not be loaded."}
         errorTitle="Activity is unavailable"
+        titleLevel={2}
         onRetry={() => {
           invalidateCachedGetPrefix("/api/v1/admin/audit?", { notify: false });
           const request = appliedRequest ?? requestFor(appliedFilters);

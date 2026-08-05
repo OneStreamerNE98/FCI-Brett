@@ -153,7 +153,9 @@ test("Office identity is redirected to My settings and receives read-only AI sta
 
   const card = assistantCard(page);
   await expect(card).toBeVisible();
-  await expect.poll(() => getRequests).toBe(1);
+  // Redirecting the forbidden Administrator-only URL is an in-app navigation,
+  // so SET-42 revalidates the mounted read-only mirror after its initial GET.
+  await expect.poll(() => getRequests).toBe(2);
   await expect(card.getByRole("checkbox")).toHaveCount(0);
   await expect(card.getByRole("button", { name: "Save AI settings" })).toHaveCount(0);
   const states = card.getByLabel("AI feature states").locator("strong");

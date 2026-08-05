@@ -167,12 +167,12 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
     ? "access-development-state"
     : "access-development-boundary";
 
-  const loadOverview = useCallback(async (quiet = false) => {
+  const loadOverview = useCallback(async (quiet = false, force = false) => {
     if (!quiet) setLoading(true);
     setLoadError("");
     setDevelopmentBoundary(false);
     try {
-      const next = await readAdminAccessOverview(mutationsReady);
+      const next = await readAdminAccessOverview(mutationsReady, force);
       setOverview(next);
       setSessionEnded(false);
       return true;
@@ -248,7 +248,7 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
         error instanceof AdminAccessClientError
         && error.code === "access_state_stale"
       ) {
-        await loadOverview(true);
+        await loadOverview(true, true);
         setDialog(null);
         setNotice("Someone else changed this access record. The list was refreshed; review it before trying again.");
       } else {

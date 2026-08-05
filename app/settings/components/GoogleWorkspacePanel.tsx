@@ -16,7 +16,7 @@ import {
   invalidateWorkspaceTenantResetReadCaches,
   isTerminalCachedGetError,
 } from "../../lib/client-get-cache";
-import { useCachedGetSubscription } from "../../lib/client-get-hooks";
+import { useCachedGetSubscription, useClientLifecycleRefresh } from "../../lib/client-get-hooks";
 import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "../../lib/sheet-mirror-status";
 import panelStyles from "./GoogleWorkspacePanel.module.css";
 import { WorkspaceBlueprintEditor } from "./WorkspaceBlueprintEditor";
@@ -523,6 +523,8 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [stageThreeSubsectionsInitialized, setStageThreeSubsectionsInitialized] = useState(false);
   const workspaceResourcesLoadIdRef = useRef(0);
   const workspaceResourcesVisibleLoadsInFlightRef = useRef(0);
+  const workspaceResourcesForcedLoadsInFlightRef = useRef(0);
+  const workspaceResourcesFailureRef = useRef(false);
 
   const updateStageThreeCreationStatus = useCallback((next: StageThreeSubsectionStatus) => {
     setStageThreeCreationStatus((current) => (
@@ -760,7 +762,20 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   ) => {
     if (!isAdmin) return;
     if (silent && workspaceResourcesVisibleLoadsInFlightRef.current > 0) return;
+    // A successful revalidation of an unrelated Workspace URL notifies the
+    // shared subscription too. Do not let that non-forced callback consume the
+    // retained stale registry and supersede a forced registry failure. Mailbox
+    // settings remain independent and may still refresh while registry controls
+    // stay failed closed until their own forced read succeeds.
+    if (silent && !force && (
+      workspaceResourcesForcedLoadsInFlightRef.current > 0
+      || workspaceResourcesFailureRef.current
+    )) {
+      void loadIntakeMailboxSettings(false, () => true, preserveRuntimeDraft);
+      return;
+    }
     if (!silent) workspaceResourcesVisibleLoadsInFlightRef.current += 1;
+    if (force) workspaceResourcesForcedLoadsInFlightRef.current += 1;
     // Gate on the latest invocation: with a ?google=... OAuth callback the admin
     // mount effect and the callback's forced refresh both hit this endpoint, and
     // whichever completed first used to settle the status that seeds the one-shot
@@ -781,18 +796,20 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     try {
       const resources = await cachedGetJson<WorkspaceSetupResourcesPayload>("/api/v1/integrations/google/setup/resources", { force });
       if (!isCurrent()) return;
+      workspaceResourcesFailureRef.current = false;
       setWorkspaceResources(resources);
+      setWorkspaceResourcesError(null);
       setWorkspaceResourcesState("ready");
       return;
     } catch (error) {
       if (!isCurrent()) return;
-      if (!silent || isTerminalCachedGetError(error)) {
-        if (isTerminalCachedGetError(error)) setWorkspaceResources(null);
-        setWorkspaceResourcesError("Workspace resource status could not be loaded. Retry before using this setup summary.");
-        setWorkspaceResourcesState("error");
-      }
+      workspaceResourcesFailureRef.current = true;
+      if (isTerminalCachedGetError(error)) setWorkspaceResources(null);
+      setWorkspaceResourcesError("Workspace resource status could not be loaded. Retry before using this setup summary.");
+      setWorkspaceResourcesState("error");
     } finally {
       if (!silent) workspaceResourcesVisibleLoadsInFlightRef.current -= 1;
+      if (force) workspaceResourcesForcedLoadsInFlightRef.current -= 1;
     }
   }, [isAdmin, loadIntakeMailboxSettings]);
 
@@ -832,6 +849,14 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const runtimeConfigurationDraftDirty = clientDirectorySheetId !== savedClientDirectorySheetId
     || leadFormResponseSheetId !== savedLeadFormResponseSheetId
     || intakeMailbox !== savedIntakeMailbox;
+  useClientLifecycleRefresh(
+    () => loadWorkspaceResources(
+      true,
+      true,
+      runtimeConfigurationDraftDirty || runtimeConfigurationWorking !== null,
+    ),
+    isAdmin,
+  );
   useCachedGetSubscription(
     [
       "/api/v1/google-workspace",
@@ -863,11 +888,17 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     void Promise.resolve().then(() => setOauthResult(result));
     current.searchParams.delete("google");
     window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
-    invalidateCachedGet("/api/v1/google-workspace");
-    invalidateCachedGet("/api/v1/integrations/google/connection");
-    invalidateCachedGet("/api/v1/integrations/google/setup/resources");
-    invalidateCachedGet("/api/v1/integrations/google/sheets/status");
-    void Promise.resolve().then(() => refreshWorkspaceSetup(true));
+    void Promise.resolve().then(() => {
+      // The initial mount read is queued by the earlier effect. Quietly discard
+      // those cache entries only after that read starts, then issue the forced
+      // callback refresh as the authoritative latest request. Notifying here
+      // would schedule a third competing subscription refresh.
+      invalidateCachedGet("/api/v1/google-workspace", { notify: false });
+      invalidateCachedGet("/api/v1/integrations/google/connection", { notify: false });
+      invalidateCachedGet("/api/v1/integrations/google/setup/resources", { notify: false });
+      invalidateCachedGet("/api/v1/integrations/google/sheets/status", { notify: false });
+      return refreshWorkspaceSetup(true);
+    });
   }, [refreshWorkspaceSetup]);
 
   async function connectGoogleDrive() {
@@ -968,6 +999,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     setGmailWorking(true);
     try {
       await runWorkspaceMutation<{ prepared: boolean }>("/api/v1/integrations/google/gmail/labels/prepare", { method: "POST" });
+      invalidateCachedGet("/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status", { notify: false });
       setGmailLabelsReady(true);
       notify("FCI Gmail labels are ready. No messages were moved or archived.", "success");
     } catch (error) {
@@ -998,6 +1030,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
+      invalidateCachedGet("/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status", { notify: false });
       setGmailTestEmailPassed(true);
       notify(workspace?.simulation ? "A sample email was added to the simulated Workspace inbox." : "A test email was sent only to the configured Workspace mailbox.", "success");
     } catch (error) {
@@ -1066,6 +1099,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       const data = await cachedGetJson<{ events?: Array<{ id: string; title: string; start: string; end: string; url?: string }> }>("/api/v1/integrations/google/calendar/events", { force: true });
       setCalendarEvents(data.events ?? []);
       setCalendarChecked(true);
+      invalidateCachedGet("/api/v1/integrations/google/calendar/events?verification=status", { notify: false });
       notify(`Loaded ${data.events?.length ?? 0} upcoming Workspace Calendar event(s).`, "info");
     } catch (error) {
       notify(error instanceof Error ? error.message : "The Workspace Calendar could not be loaded.", "error");

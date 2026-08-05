@@ -318,6 +318,7 @@ export function TodayPanel() {
       error={error || "Today could not be loaded."}
       errorTitle="Today is unavailable"
       retryLabel="Try again"
+      titleLevel={2}
       onRetry={() => void load({ force: true })}
     />;
   } else {

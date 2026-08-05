@@ -97,10 +97,11 @@ async function postAdminMutation(
 
 export async function readAdminAccessOverview(
   secureSessionReady: boolean,
+  force = false,
 ): Promise<AdminAccessOverview> {
   requireAdminApi(secureSessionReady);
   try {
-    const envelope = await cachedGetJson<unknown>(ADMIN_ACCESS_PATH);
+    const envelope = await cachedGetJson<unknown>(ADMIN_ACCESS_PATH, { force });
     return dataObject(envelope) as AdminAccessOverview;
   } catch (error) {
     if (error instanceof CachedGetError) {
