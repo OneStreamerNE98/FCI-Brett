@@ -579,6 +579,7 @@ packets cover other cards; DES-06/08d own the Overview layout editor). New.
 ---
 
 ### FIX-20 · Wrap-insensitive documentation pins (small; from the July 27 devils-advocate review)
+**Status:** In progress — `kimi/fix20-wrap-insensitive-pins`
 **Why:** several CI suites pin documentation prose at line-wrap granularity, so an innocent
 reflow of a guide sentence turns CI red with an error naming an unrelated feature:
 `tests/set11-directory-sync.test.mjs:59-62` and
