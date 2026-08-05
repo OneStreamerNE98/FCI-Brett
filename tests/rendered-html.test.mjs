@@ -1110,9 +1110,10 @@ test("captures durable project meetings and bounded Otter evidence", async () =>
 });
 
 test("SET-22 provides an office-safe Project Files tab with honest catalog states and focused success", async () => {
-  const [app, projectFiles, projectFilesCss, editor, resourcesRoute, workspaceStepper] = await Promise.all([
+  const [app, projectFiles, projectFilesRoute, projectFilesCss, editor, resourcesRoute, workspaceStepper] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
     read("app/projects/components/ProjectFilesPanel.tsx"),
+    read("app/api/v1/projects/[projectId]/drive/files/route.ts"),
     read("app/projects/components/ProjectFilesPanel.module.css"),
     read("app/settings/components/WorkspaceBlueprintEditor.tsx"),
     read("app/api/v1/integrations/google/setup/resources/route.ts"),
@@ -1126,7 +1127,18 @@ test("SET-22 provides an office-safe Project Files tab with honest catalog state
   assert.doesNotMatch(app, /onCreateDocument=\{createProjectDocument\}/);
 
   assert.match(projectFiles, /method: "POST"/);
-  assert.match(projectFiles, /cache: "no-store"/);
+  // SET-42 keeps the route no-store contract while the component reads through
+  // the shared SWR cache and explicitly invalidates that catalog after writes.
+  assert.match(projectFiles, /cachedGetJson<unknown>\(catalogUrl\)/);
+  assert.match(projectFiles, /useCachedGetSubscription\(\[catalogUrl\]/);
+  assert.match(projectFiles, /invalidateCachedGet\(catalogUrl\)/);
+  const projectFilesGetStart = projectFilesRoute.indexOf("export async function GET");
+  const projectFilesPostStart = projectFilesRoute.indexOf("export async function POST");
+  assert.notEqual(projectFilesGetStart, -1);
+  assert.ok(projectFilesPostStart > projectFilesGetStart);
+  const projectFilesGet = projectFilesRoute.slice(projectFilesGetStart, projectFilesPostStart);
+  assert.match(projectFilesGet, /return noStoreResponse\(auth\.response\)/);
+  assert.match(projectFilesGet, /return noStoreJson\(\{/);
   assert.match(projectFiles, /`\/api\/v1\/projects\/\$\{encodeURIComponent\(projectId\)\}\/drive\/files`/);
   assert.doesNotMatch(projectFiles, /\/api\/v1\/integrations\/google\/setup\/blueprint/);
   assert.match(projectFiles, /Loading project files…/);

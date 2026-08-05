@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
+import { ClientDataNotice } from "../../components/ClientDataNotice";
 import {
   type AdminAccessInvitationSummary,
   type AdminAccessOverview,
@@ -28,6 +29,8 @@ import {
   revokeAdminAccessInvitation,
   signOutAdminAccessPerson,
 } from "../../lib/admin-access-client";
+import { invalidateCachedGet } from "../../lib/client-get-cache";
+import { useCachedGetSubscription } from "../../lib/client-get-hooks";
 import { AdminActivityPanel } from "./AdminActivityPanel";
 
 type AccessDialog =
@@ -164,12 +167,12 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
     ? "access-development-state"
     : "access-development-boundary";
 
-  const loadOverview = useCallback(async (quiet = false) => {
+  const loadOverview = useCallback(async (quiet = false, force = false) => {
     if (!quiet) setLoading(true);
     setLoadError("");
     setDevelopmentBoundary(false);
     try {
-      const next = await readAdminAccessOverview(mutationsReady);
+      const next = await readAdminAccessOverview(mutationsReady, force);
       setOverview(next);
       setSessionEnded(false);
       return true;
@@ -191,6 +194,12 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
       if (!quiet) setLoading(false);
     }
   }, [mutationsReady]);
+
+  useCachedGetSubscription(
+    ["/api/v1/admin/access"],
+    () => void loadOverview(true),
+    mutationsReady,
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -239,7 +248,7 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
         error instanceof AdminAccessClientError
         && error.code === "access_state_stale"
       ) {
-        await loadOverview(true);
+        await loadOverview(true, true);
         setDialog(null);
         setNotice("Someone else changed this access record. The list was refreshed; review it before trying again.");
       } else {
@@ -355,10 +364,16 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
       {loading ? <section className="panel access-management-state" role="status">
         <h2>Loading People &amp; Access…</h2>
         <p>Checking the current Administrator session and access records.</p>
-      </section> : loadError || !overview ? <section className="panel access-management-state" role="alert">
-        <h2>People &amp; Access is unavailable</h2>
-        <p>{loadError || "The access projection could not be loaded."}</p>
-        <button type="button" className="soft-button" onClick={() => void loadOverview()}>Retry</button>
+      </section> : loadError || !overview ? <section className="panel access-management-state">
+        <ClientDataNotice
+          state="error"
+          error={loadError || "The access projection could not be loaded."}
+          errorTitle="People & Access is unavailable"
+          onRetry={() => {
+            invalidateCachedGet("/api/v1/admin/access", { notify: false });
+            void loadOverview();
+          }}
+        />
       </section> : <>
       {overview.summary.activeAdministratorCount < 2 && <section className="access-management-warning" role="status">
         <strong>Administrator coverage needs attention</strong>

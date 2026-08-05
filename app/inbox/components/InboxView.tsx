@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
+import { ClientDataNotice } from "../../components/ClientDataNotice";
 import { OperationsEmptyState, PageTitle } from "../../components/operations/OperationsPrimitives";
 import {
   DEFAULT_ASSISTANT_LABEL_DEFINITIONS,
@@ -31,7 +32,15 @@ import {
   normalizeAssistantLabelDescription,
   normalizeAssistantLabelSlug,
 } from "../../domain/assistant-label-definition";
-import { cachedGetJson } from "../../lib/client-get-cache";
+import {
+  cachedGetJson,
+  invalidateCachedGet,
+  invalidateGmailFilingReadCaches,
+  invalidateTaskReadCaches,
+  invalidateWorkspaceOperationsReadCache,
+  isTerminalCachedGetError,
+} from "../../lib/client-get-cache";
+import { useCachedGetSubscription } from "../../lib/client-get-hooks";
 import {
   evaluateInboxFilingRules,
   type FilingRuleDraft,
@@ -686,36 +695,58 @@ export function InboxView({
     setTriageLoading(false);
   }
 
-  function checkGmailConnection(force = false) {
+  const checkGmailConnection = useCallback((force = false, silent = false) => {
     const request = cachedGetJson<{ workspace?: GmailWorkspaceStatus }>("/api/v1/google-workspace", { force });
-    void Promise.resolve().then(() => setChecking(true));
+    if (!silent) void Promise.resolve().then(() => setChecking(true));
     return request.then((data) => {
       setWorkspace(data.workspace ?? null);
       setError(null);
     }).catch((connectionError) => {
-      setWorkspace(null);
-      setError(connectionError instanceof Error ? connectionError.message : "Google Workspace status could not be checked.");
+      if (!silent || isTerminalCachedGetError(connectionError)) {
+        setWorkspace(null);
+        if (isTerminalCachedGetError(connectionError)) {
+          setMessages([]);
+          setLoadedBucket(null);
+          setFilingMessage(null);
+          setFilingProjectId("");
+          setFilingPreview(null);
+          setReplyMessage(null);
+          setReplyBody("");
+          triageRequestIdRef.current += 1;
+          setTriageSuggestions({});
+          setTriageLoading(false);
+          setTaskProposal(null);
+          setTaskError("");
+        }
+        setError(connectionError instanceof Error ? connectionError.message : "Google Workspace status could not be checked.");
+      }
     }).finally(() => {
-      setChecking(false);
+      if (!silent) setChecking(false);
       setWorkspaceSettled(true);
     });
-  }
-
-  useEffect(() => {
-    void checkGmailConnection();
   }, []);
 
   useEffect(() => {
-    let active = true;
-    void Promise.allSettled([
+    void checkGmailConnection();
+  }, [checkGmailConnection]);
+
+  useCachedGetSubscription(
+    ["/api/v1/google-workspace"],
+    () => void checkGmailConnection(false, true),
+  );
+
+  const loadAccountConfiguration = useCallback(() => {
+    return Promise.allSettled([
       cachedGetJson<{ preferences?: { replySignature?: unknown }; isAdmin?: unknown }>("/api/v1/settings/me"),
       cachedGetJson<AssistantTriageConfiguration>("/api/v1/assistant/config"),
     ]).then(([accountResult, configurationResult]) => {
-      if (!active) return;
       if (accountResult.status === "fulfilled") {
         const data = accountResult.value;
         setReplySignature(typeof data?.preferences?.replySignature === "string" ? data.preferences.replySignature.slice(0, 2_000) : "");
         setIsAdmin(data.isAdmin === true);
+      } else if (isTerminalCachedGetError(accountResult.reason)) {
+        setReplySignature("");
+        setIsAdmin(false);
       }
       if (
         configurationResult.status === "fulfilled"
@@ -733,14 +764,28 @@ export function InboxView({
             inboxAnalysis: configurationResult.value.features?.inboxAnalysis === true,
           },
         });
+      } else if (
+        configurationResult.status === "rejected"
+        && isTerminalCachedGetError(configurationResult.reason)
+      ) {
+        clearTriageSuggestions();
+        setTriageConfiguration(null);
       }
       setAccountSettled(true);
     });
+  }, []);
+
+  useEffect(() => {
+    void loadAccountConfiguration();
     return () => {
-      active = false;
       triageRequestIdRef.current += 1;
     };
-  }, []);
+  }, [loadAccountConfiguration]);
+
+  useCachedGetSubscription(
+    ["/api/v1/settings/me", "/api/v1/assistant/config"],
+    () => void loadAccountConfiguration(),
+  );
 
   useEffect(() => {
     analysisMountedRef.current = true;
@@ -788,6 +833,7 @@ export function InboxView({
           setAnalysisCoverage(coverage);
           setAnalysisFailed(false);
         }
+        invalidateCachedGet("/api/v1/inbox-analysis", { notify: false });
         return coverage;
       } catch {
         if (analysisMountedRef.current) {
@@ -796,7 +842,7 @@ export function InboxView({
           // flag an empty stored queue would render "No messages need review" —
           // a coverage conclusion this sweep never earned.
           setAnalysisFailed(true);
-          notify("Inbox analysis could not finish. Refresh to retry.", "warning");
+          notify("Inbox analysis could not finish. Use Load messages to try again.", "warning");
         }
         return null;
       } finally {
@@ -812,16 +858,14 @@ export function InboxView({
     return request;
   }, [inboxAnalysisReady, notify]);
 
-  const loadReviewQueue = useCallback(async () => {
+  const loadReviewQueue = useCallback(async (force = false, silent = false) => {
     const requestId = ++reviewQueueRequestIdRef.current;
-    setReviewQueueState("loading");
-    setError(null);
+    if (!silent) {
+      setReviewQueueState("loading");
+      setError(null);
+    }
     try {
-      const response = await fetch("/api/v1/inbox-analysis");
-      const body = await response.json().catch(() => null) as unknown;
-      if (!response.ok) {
-        throw new Error("The inbox review queue could not be loaded.");
-      }
+      const body = await cachedGetJson<unknown>("/api/v1/inbox-analysis", { force });
       const queue = inboxReviewQueue(body);
       if (!queue) {
         throw new Error("The inbox review queue returned an invalid result.");
@@ -844,6 +888,13 @@ export function InboxView({
       return queue;
     } catch (queueError) {
       if (requestId !== reviewQueueRequestIdRef.current) return null;
+      if (silent && !isTerminalCachedGetError(queueError)) return null;
+      if (isTerminalCachedGetError(queueError)) {
+        setReviewLabels([]);
+        setReviewRows([]);
+        setReviewTotalCount(0);
+        setFailedAnalysisSummary(null);
+      }
       setLoadedBucket("needs-review");
       setReviewQueueState("unavailable");
       setError(
@@ -854,6 +905,12 @@ export function InboxView({
       return null;
     }
   }, []);
+
+  useCachedGetSubscription(
+    ["/api/v1/inbox-analysis"],
+    () => void loadReviewQueue(false, true),
+    bucket === "needs-review",
+  );
 
   const refreshReviewQueue = useCallback((pageToken?: string) => {
     if (reviewQueueRefreshInFlightRef.current) {
@@ -938,6 +995,8 @@ export function InboxView({
       }
       const parameters = new URLSearchParams({ label: bucket });
       if (search.trim()) parameters.set("q", search.trim());
+      // SET42_ACTION_GATED_GMAIL_GET: mailbox contents load only after the user
+      // presses Load messages. Focus, visibility, and navigation never subscribe.
       const response = await fetch(`/api/v1/integrations/google/gmail/messages?${parameters.toString()}`);
       const data = await response.json().catch(() => ({})) as { messages?: WorkspaceMessage[]; labelReady?: boolean; error?: string };
       if (!response.ok) throw new Error(data.error ?? "Your Gmail messages could not be loaded.");
@@ -991,6 +1050,7 @@ export function InboxView({
         );
       }
       const retriedCount = Number(body.retriedCount);
+      invalidateCachedGet("/api/v1/inbox-analysis", { notify: false });
       if (retriedCount === 0) {
         await loadReviewQueue();
         notify(
@@ -1009,7 +1069,7 @@ export function InboxView({
       notify(
         queue
           ? `Retried ${retriedCount} failed inbox ${retriedCount === 1 ? "analysis" : "analyses"}. Review any recovered messages before acting.`
-          : `Reset ${retriedCount} failed inbox ${retriedCount === 1 ? "analysis" : "analyses"} for retry. Refresh the queue to check recovery.`,
+          : `Reset ${retriedCount} failed inbox ${retriedCount === 1 ? "analysis" : "analyses"} for retry. The queue will update automatically as recovery finishes.`,
         queue ? "success" : "warning",
       );
     } catch (retryError) {
@@ -1073,6 +1133,7 @@ export function InboxView({
       if (!response.ok) {
         throw new Error(body.error ?? "The message could not be marked reviewed.");
       }
+      invalidateCachedGet("/api/v1/inbox-analysis", { notify: false });
       if (requestId !== reviewQueueRequestIdRef.current) return false;
       removeReviewRow(row);
       setLeadRetirementErrorIds((current) => {
@@ -1252,6 +1313,8 @@ export function InboxView({
       ) {
         throw new Error(data.error ?? "The task could not be created.");
       }
+      invalidateCachedGet("/api/v1/inbox-analysis", { notify: false });
+      invalidateTaskReadCaches();
       setTaskProposal(null);
       removeReviewRow(proposal.row);
       notify(
@@ -1355,6 +1418,8 @@ export function InboxView({
     }
     setFilingLoading(true);
     try {
+      // SET42_ACTION_GATED_GMAIL_GET: filing preview is a direct review action,
+      // not a subscribed data read.
       const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?projectId=${encodeURIComponent(filingProjectId)}`);
       const data = await response.json().catch(() => ({})) as GmailFilingPreview & { error?: string };
       if (!response.ok) throw new Error(data.error ?? "The Gmail filing preview could not be loaded.");
@@ -1379,10 +1444,13 @@ export function InboxView({
       setFilingMessage(null);
       setFilingProjectId("");
       setFilingPreview(null);
+      invalidateGmailFilingReadCaches({ includeOperations: false });
       await loadMessages();
     } catch (filingError) {
       notify(filingError instanceof Error ? filingError.message : "The Gmail filing could not be completed.", "error");
     } finally {
+      // The route can persist an operations failure even when filing returns non-2xx.
+      invalidateWorkspaceOperationsReadCache();
       setFilingSubmitting(false);
     }
   }
@@ -1426,7 +1494,7 @@ export function InboxView({
       : workspace?.requiresReauthorization
         ? "Google Workspace needs to be reconnected to approve Gmail access."
         : "Connect the company Google Workspace account to load messages.";
-  const canRefresh = reviewQueueSelected ? isAdmin : gmailReady;
+  const canLoadMessages = gmailReady;
   const queueReadInFlight =
     reviewQueueSelected && reviewQueueState === "loading";
 
@@ -1442,14 +1510,7 @@ export function InboxView({
         <button className="soft-button" onClick={onRules}>
           <ListFilter size={15} /> Inbox & file rules
         </button>
-        {canRefresh && <button
-          className="soft-button"
-          onClick={() => void loadMessages()}
-          disabled={loading || queueReadInFlight}
-        >
-          {loading || queueReadInFlight ? "Loading…" : <><RefreshCw size={15} /> Refresh</>}
-        </button>}
-        {!reviewQueueSelected && !canRefresh && <button className="primary-button" onClick={onGoogleSetup}>
+        {!reviewQueueSelected && !canLoadMessages && <button className="primary-button" onClick={onGoogleSetup}>
           <Building2 size={15} /> Google setup
         </button>}
       </>}
@@ -1477,13 +1538,19 @@ export function InboxView({
         </span>
       </div>
       <div className="inbox-state-actions">
-        <button className="soft-button" onClick={() => void checkGmailConnection(true)} disabled={checking}>
-          {checking ? "Checking…" : "Check connection"}
-        </button>
         <button className="soft-button" onClick={onRules}>Manage rules</button>
       </div>
     </section>
-    {error && <p className="workspace-missing">{error}</p>}
+    {error && <ClientDataNotice
+      state={checking ? "loading" : "error"}
+      error={error}
+      errorTitle="Gmail connection is unavailable"
+      retryLabel="Retry connection"
+      loadingTitle="Checking Gmail connection…"
+      loadingDetail="Reading the saved Workspace connection without loading Gmail messages."
+      titleLevel={2}
+      onRetry={() => void checkGmailConnection(true)}
+    />}
     <div className="inbox-layout">
       <section className="panel message-list">
         <header className="live-inbox-toolbar">
@@ -1582,12 +1649,12 @@ export function InboxView({
             >
               <Sparkles size={15} /> {triageLoading ? "Suggesting…" : "Suggest with AI"}
             </button>}
-            {(!reviewQueueSelected || isAdmin) && <button
+            {!reviewQueueSelected && <button
               className="primary-button"
               onClick={() => void loadMessages()}
-              disabled={!canRefresh || loading || queueReadInFlight}
+              disabled={!canLoadMessages || loading}
             >
-              {loading || queueReadInFlight ? "Loading…" : reviewQueueSelected ? "Refresh queue" : "Load messages"}
+              {loading ? "Loading…" : "Load messages"}
             </button>}
           </div>
         </header>
@@ -1615,7 +1682,10 @@ export function InboxView({
                   ? <OperationsEmptyState variant="inbox">
                       <Inbox size={25} />
                       <h2>Review queue unavailable</h2>
-                      <p>Stored review rows could not be read. Refresh to try again.</p>
+                      <p>Stored review rows could not be read.</p>
+                      <button className="soft-button" type="button" onClick={() => void loadReviewQueue(true)}>
+                        Try queue again
+                      </button>
                     </OperationsEmptyState>
                   : visibleReviewRows.length === 0
                 ? <OperationsEmptyState variant="inbox">
@@ -1636,8 +1706,8 @@ export function InboxView({
                         : "No messages need review"}
                     </h2>
                     <p>{analysisFailed
-                      ? "Inbox analysis did not finish, so Gmail was not swept. Refresh to retry."
-                      : analysisCoverage?.message ?? "Refresh to check the newest bounded inbox analysis sweep."}</p>
+                      ? "Inbox analysis did not finish, so Gmail was not swept. Use Load messages to try again."
+                      : analysisCoverage?.message ?? "The newest bounded inbox analysis status updates automatically."}</p>
                   </OperationsEmptyState>
                 : visibleReviewRows.map((row, index) => <article className="message-row live-message-row" key={row.id}>
                     <div className={`sender-dot s${index % 4}`}>

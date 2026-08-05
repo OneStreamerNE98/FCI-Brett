@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   CircleAlert,
@@ -14,6 +14,12 @@ import {
   type LaunchChecklist,
   type LaunchChecklistItemId,
 } from "../../domain/launch-checklist";
+import {
+  cachedGetJson,
+  invalidateCachedGet,
+  isTerminalCachedGetError,
+} from "../../lib/client-get-cache";
+import { useCachedGetSubscription } from "../../lib/client-get-hooks";
 import styles from "./LaunchChecklistCard.module.css";
 
 const LAUNCH_CHECKLIST_PATH = "/api/v1/settings/launch-checklist";
@@ -117,16 +123,6 @@ function parseMirrorVerification(value: unknown): boolean | null {
     && mirror.projects.status === "synced";
 }
 
-async function getJson(path: string, signal: AbortSignal) {
-  const response = await fetch(path, {
-    cache: "no-store",
-    headers: { Accept: "application/json" },
-    signal,
-  });
-  if (!response.ok) throw new Error("launch_checklist_read_failed");
-  return response.json() as Promise<unknown>;
-}
-
 function stateLabel(state: VerificationState) {
   if (state === "verified") return "Verified";
   if (state === "simulated") return "Simulated";
@@ -207,40 +203,47 @@ export function LaunchChecklistCard() {
   const [checklistError, setChecklistError] = useState("");
   const [savingItemId, setSavingItemId] = useState<LaunchChecklistItemId | null>(null);
   const [verifications, setVerifications] = useState<VerificationSnapshot>(CHECKING_VERIFICATIONS);
+  const snapshotRequestRef = useRef(0);
 
-  useEffect(() => {
-    let current = true;
-    const controller = new AbortController();
-    const checklistRequest = getJson(LAUNCH_CHECKLIST_PATH, controller.signal)
+  const loadSnapshot = useCallback((silent = false) => {
+    const requestId = ++snapshotRequestRef.current;
+    const checklistRequest = cachedGetJson<unknown>(LAUNCH_CHECKLIST_PATH)
       .then((value) => {
         const parsed = parseLaunchChecklistResponse(value);
         if (!parsed) throw new Error("launch_checklist_invalid");
         return parsed;
       });
-    const workspaceRequest = getJson(WORKSPACE_STATUS_PATH, controller.signal)
+    const workspaceRequest = cachedGetJson<unknown>(WORKSPACE_STATUS_PATH)
       .then((value) => {
         const parsed = parseWorkspaceVerification(value);
         if (!parsed) throw new Error("workspace_status_invalid");
         return parsed;
       });
-    const mirrorRequest = getJson(SHEET_STATUS_PATH, controller.signal)
+    const mirrorRequest = cachedGetJson<unknown>(SHEET_STATUS_PATH)
       .then((value) => {
         const parsed = parseMirrorVerification(value);
         if (parsed === null) throw new Error("mirror_status_invalid");
         return parsed;
       });
 
-    void Promise.allSettled([
+    return Promise.allSettled([
       checklistRequest,
       workspaceRequest,
       mirrorRequest,
     ]).then(([checklistResult, workspaceResult, mirrorResult]) => {
-      if (!current) return;
+      if (requestId !== snapshotRequestRef.current) return;
       if (checklistResult.status === "fulfilled") {
         setLaunchChecklist(checklistResult.value.launchChecklist);
         setCanAttest(checklistResult.value.canAttest);
+        setChecklistError("");
       } else {
-        setChecklistError("Saved attestations are unavailable. Nothing was changed.");
+        if (isTerminalCachedGetError(checklistResult.reason)) {
+          setLaunchChecklist(null);
+          setCanAttest(false);
+        }
+        if (!silent || isTerminalCachedGetError(checklistResult.reason)) {
+          setChecklistError("Saved attestations are unavailable. Nothing was changed.");
+        }
       }
       if (workspaceResult.status === "fulfilled" && workspaceResult.value.simulation) {
         setVerifications(SIMULATED_VERIFICATIONS);
@@ -258,12 +261,19 @@ export function LaunchChecklistCard() {
           : "unavailable",
       });
     });
-
-    return () => {
-      current = false;
-      controller.abort();
-    };
   }, []);
+
+  useEffect(() => {
+    void loadSnapshot();
+    return () => {
+      snapshotRequestRef.current += 1;
+    };
+  }, [loadSnapshot]);
+
+  useCachedGetSubscription(
+    [LAUNCH_CHECKLIST_PATH, WORKSPACE_STATUS_PATH, SHEET_STATUS_PATH],
+    () => void loadSnapshot(true),
+  );
 
   async function saveAttestation(itemId: LaunchChecklistItemId, checked: boolean) {
     setSavingItemId(itemId);
@@ -280,6 +290,7 @@ export function LaunchChecklistCard() {
       const body = await response.json().catch(() => null) as unknown;
       const parsed = parseLaunchChecklistResponse(body);
       if (!response.ok || !parsed) throw new Error("launch_checklist_save_failed");
+      invalidateCachedGet(LAUNCH_CHECKLIST_PATH);
       setLaunchChecklist(parsed.launchChecklist);
       setCanAttest(parsed.canAttest);
     } catch {
