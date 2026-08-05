@@ -3679,7 +3679,7 @@ introduces one raw hex (negative test); every re-pointed pin enumerated in the P
 **before** DES-12, grid views, and the button de-bulking — all three consume these scales
 instead of inventing their own.
 
-### DES-14 · FloorOpsApp decomposition: extract the four record views (large, after GI-04)
+### DES-14 · FloorOpsApp decomposition: extract the four record views and their shared record contracts (large, after GI-04)
 
 **Why:** `app/FloorOpsApp.tsx` (~200KB) is the reason the single-file queue-slot law
 exists, and that law serialized four separate owner requests in one day (grid views,
@@ -3687,27 +3687,64 @@ layout editor, presentation mode, rearrangeable nav). The extraction pattern is 
 this repo twice: AI-02 extracted the Assistant and Inbox surfaces; SET-01 extracted the
 eight Settings panels. **Owner decision August 3, 2026 (standing law-lift rule): dissolve
 the lock's cause rather than lift the law.**
-**Do:** extract LeadsView, ClientsView, ProjectsView, ScheduleView and the modals they
-own (LeadModal, the client/project create+edit modals, the meeting modal) into
-per-surface directories (`app/leads/components/`, `app/clients/components/`,
-`app/projects/components/` merging with the existing directory,
-`app/schedule/components/`), passing state and handlers via props exactly as the shipped
-extractions did. Move-only discipline: no logic changes, no markup changes, no renamed
+**Do:** extract LeadsView, ClientsView, ProjectsView and ScheduleView into per-surface
+directories (`app/leads/components/`, `app/clients/components/`, `app/projects/components/`
+— the only one that already exists — and `app/schedule/components/`). **The modals are NOT in
+this packet: the four views own none of them.** Every modal is mounted by the shell; DES-14b
+owns that cluster. **Extract the shared record contracts first**, because the views cannot
+compile without them: the `Lead`/`Client`/`Project` shapes, their `*EditPatch`,
+`*ConflictValues` and `*UpdatePayload` types and the four `*ConflictError` classes are
+declared inside `FloorOpsApp.tsx`, and re-exporting from there creates an import cycle. The
+prior extractions (AssistantView, InboxView) are NOT the pattern — they declared their own
+narrow types, which `tests/assistant-inbox-component-boundaries.test.mjs` actively pins;
+the record views need the full shapes. Helpers called from BOTH the departing views and the
+retained shell/Overview/ReportsView (`money`, `displayStatus`, `recordInitials`,
+`isActiveProject`, `terminalProjectStatuses`, `leadStages`) go to a second shared module —
+`tests/client-performance.test.mjs` pins the one-line body of `money()` to
+`FloorOpsApp.tsx`, so that pin moves deliberately. `PIPELINE_ACTIONABLE_COLUMNS` is consumed
+only by Overview and stays. Move-only discipline: no logic changes, no markup changes, no renamed
 props beyond what the move forces. Add per-directory boundary tests mirroring
 `tests/assistant-inbox-component-boundaries.test.mjs`, and re-point
 `tests/settings-component-boundaries.test.mjs`-style pins consciously if any listing they
 assert changes. **Amend the AGENTS.md queue-slot law text in the same PR:** the slot
-scopes what remains in `FloorOpsApp.tsx` (Overview, Reports, the app shell/nav);
-extracted surfaces exit the queue permanently.
+scopes what remains in `FloorOpsApp.tsx` (Overview, Reports, the app shell/nav, and the
+modal/drawer cluster until DES-14b lands); extracted **record views** exit the queue
+permanently. A views-only PR may not claim the modals left.
 **Constraints:** rendering must be byte-identical — the existing e2e suite including both
 golden hashes passes unmodified (extraction may not alter markup); large diff, so commits
 split per view; zero behavior change is the accept bar, not a hope.
-**Accept:** the four views and their modals live outside `FloorOpsApp.tsx`; the file
-shrinks by the moved line count; every existing e2e passes unmodified except the added
-boundary tests and the amended queue-law text; both golden constants byte-identical;
+**Accept:** the four views and the shared record contracts live outside `FloorOpsApp.tsx`;
+the file shrinks by the moved line count; **every Playwright e2e passes unmodified**, and each
+Node-suite re-point is enumerated individually in the PR body with the reason it moved (a
+views-only move breaks at least six — several assert by source-slicing `FloorOpsApp.tsx`, so
+moving markup out breaks them by construction); both golden constants byte-identical — they
+are pinned byte-for-byte by **four** suites, not three;
 `npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
 **Effort:** large. **Cost:** $0. **Takes the FloorOpsApp slot** (claimed in the tail by
 this filing — see the FloorOpsApp claim-list tail).
+
+### DES-14b · FloorOpsApp decomposition: the modal and drawer cluster (large, after DES-14)
+
+**Why:** filed August 5, 2026 after measuring the file rather than assuming it. DES-14 as 
+originally written claimed the four record views owned the modals and would therefore dissolve 
+the single-file bottleneck. Measured on main at `4b2c468`: the four views are 13,845 bytes — 
+**6.7%** of a 207,403-byte file. The `FloorOpsApp` shell function is 72,141 bytes and the 
+modal/drawer cluster is 71,928 bytes; together **70%**. DES-14 alone therefore cannot retire the 
+queue-slot law, and this packet is the half that actually can.
+**Do:** extract the modal and drawer cluster — LeadModal, the client and project create/edit 
+modals, `ProjectDrawer` and the `ProjectMeetings`/`MeetingModal` pair it owns (note 
+`MeetingModal` is a PROJECT meeting modal reached through `ProjectDrawer`; it has no 
+relationship to ScheduleView) — into their per-surface directories, consuming the shared record 
+contracts DES-14 established rather than re-declaring them. Move-only discipline: no logic or 
+markup changes. **Amend the AGENTS.md queue-slot law again in the same PR:** with the cluster 
+out, the slot scopes only the shell, Overview and Reports.
+**Constraints:** rendering byte-identical; both golden constants unchanged; the shell keeps 
+mounting the modals, so the props it passes are the extraction boundary — enumerate them.
+**Accept:** the cluster lives outside `FloorOpsApp.tsx`; the file is under ~65KB; every 
+Playwright e2e passes unmodified with each Node-suite re-point enumerated individually and its 
+reason given; both golden constants byte-identical; `npm test`, `npm run test:e2e`, 
+`npm run lint` named with outcomes.
+**Effort:** large. **Cost:** $0. **Takes the FloorOpsApp slot after DES-14 releases it.**
 
 ### DES-15 · Record-page list views with sorting and search (medium-large, after DES-14)
 
@@ -3949,7 +3986,7 @@ golden-hash change unless separately authorized).
 **Effort:** medium. **Cost:** $0.
 
 ### DES-25 · Retire the dead webfont loading and migrate the last inline-style island (small; after DES-13)
-**Status:** In progress — `codex/des25-font-retirement`
+**Status:** Complete — PR #318, August 5, 2026. Source-only and undeployed. `next/font` is gone, so no visitor downloads DM Sans or Manrope for stylesheets that stopped referencing them; `PhoneInstallPanel`'s inline `<style>` island is a module CSS file on the DES-13 tokens, and its drift-guard allowlist entry is removed with a mutation test proving the guard goes red on a raw hex there. Review found no blocking defects; `.action` also gained a 44px minimum touch target. Guide impact: none.
 
 **Why:** DES-13 moved the application to a system font stack (owner decision, August 4,
 2026 — see the correction banner in DES-13). Two residues could not be cleaned there
@@ -4623,6 +4660,8 @@ user, and the activity view shows it** — a review row whose outcome changed wi
 view cannot ship with;
 `npm test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
 **Effort:** large. **Cost:** provider spend within the existing budget.
+
+**AMENDED August 5, 2026, before (d) dispatch — the Resolution above undercounts the write surface, and two owner decisions are recorded here.** Verified against main at `6e46bbd`: a review outcome is written at **five** sites across **three** paths, not two. `dismissNeedsReview` (both adapters) carries only the manual dismiss and the lead accept. The schedule and warranty typed accepts retire the row atomically inside the task-creation batch (`app/adapters/d1/task-repository.ts`, `app/adapters/postgres/task-repository.ts`), reached from `app/application/task-operations.ts` where `authorization.actorId` is already in scope. The project-update accept retires the row inside the Gmail filing batch (`app/api/v1/integrations/google/gmail/messages/[messageId]/file/route.ts`), which is **D1-only, has no PostgreSQL twin, and also transitions from `failed`**. Threading only `dismissNeedsReview` satisfies this Resolution's literal words and still ships an activity view where every schedule accept, every warranty accept, and every project-update filing is anonymous — the exact condition the Accept clause forbids, and it would pass CI, because nothing on main pins those two paths against attribution. Additionally `mail_items` exists on both engines, so this is **two** additive migrations (PostgreSQL v16 and drizzle 0026), not one; D1 is the engine the live route uses, so a PostgreSQL-only migration ships columns the production path cannot write. The machine sweep at `app/api/v1/inbox-analysis/route.ts` has no human actor and must be left unattributed. **Owner decision, August 5, 2026:** (1) record which intent was accepted — the accepted intent is already known at all three accept paths and currently discarded, so one further nullable column makes the per-label counts exact rather than double-counting a multi-intent row; (2) `mail_items` holds **test data only**, so no date-fencing is required — but rows retired before PR #256 carry `dismissed` even where the outcome was a lead accept, and that is unrecoverable, so the view must not present pre-#256 rows as authoritative. The Mount clause's `app/FloorOpsApp.tsx:2119` is stale; the card mounts at `:2254`.
 
 ### AI-12 · A failed inbox analysis is invisible, and a provider outage reads as "You're caught up" (medium)
 **Status:** Complete — PR #287, August 4, 2026. Source-only and undeployed. Review record: 3-lens fleet, 1 confirmed P3 fixed on-branch (retry toast racing a stale in-flight refresh).
