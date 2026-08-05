@@ -3680,6 +3680,7 @@ introduces one raw hex (negative test); every re-pointed pin enumerated in the P
 instead of inventing their own.
 
 ### DES-14 · FloorOpsApp decomposition: extract the four record views and their shared record contracts (large, after GI-04)
+**Status:** In progress — `codex/des14-floorops-decomposition`
 
 **Why:** `app/FloorOpsApp.tsx` (~200KB) is the reason the single-file queue-slot law
 exists, and that law serialized four separate owner requests in one day (grid views,
