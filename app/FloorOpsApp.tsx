@@ -14,6 +14,7 @@ import { AssistantView } from "./assistant/components/AssistantView";
 import { ClientsView } from "./clients/components/ClientsView";
 import { LeadsView } from "./leads/components/LeadsView";
 import { ProjectsView } from "./projects/components/ProjectsView";
+import { ScheduleView } from "./schedule/components/ScheduleView";
 import { localDayRolloverDelay } from "./application/today-project-meetings";
 import { InboxView } from "./inbox/components/InboxView";
 import type { InboxLeadProposal } from "./inbox/components/InboxView";
@@ -1860,12 +1861,6 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
       {!editing && isDefaultPageLayout(activeLayout, "overview", isAdmin) ? defaultSections : arrangedSections}
     </>;
   }}</PageLayoutEditor>;
-}
-
-function ScheduleView({ dashboard, onSettings }: { dashboard: DashboardSummary | null; onSettings: () => void }) {
-  return <><PageTitle eyebrow="Field operations" title="Schedule & crews" text="Scheduling is planned for a later milestone." state="Planned" action={<button className="soft-button" onClick={onSettings}><Settings size={16} /> Workflow & notification settings</button>} />
-    <OperationsEmptyState variant="page"><div><CalendarDays size={27} /></div><h2>What the scheduling workspace will include</h2><p>{dashboard?.readiness.scheduleReason ?? "Workers, crews, shifts, conflicts, and assignment acknowledgements will appear here after the scheduling foundation is approved."}</p></OperationsEmptyState>
-  </>;
 }
 
 function ReportBarRow({ label, measure, width, href, accessibleName, focusId, destinationFocusKey }: { label: string; measure: string; width: number; href?: string; accessibleName?: string; focusId?: string; destinationFocusKey?: string }) {
