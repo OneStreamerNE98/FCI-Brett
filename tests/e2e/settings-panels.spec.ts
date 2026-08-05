@@ -165,3 +165,40 @@ test("SET-07 computes only endpoint-backed states and keeps build badges out of 
     .toHaveAttribute("data-settings-feature-state", "Planned");
   await readyPage.close();
 });
+
+test("SET-07 reads the Sheet mirror once per admin Settings load", async ({ page }) => {
+  // Regression pin: the nav derives Client Directory readiness from the mirror the app shell
+  // already loaded. When it fetched sheets/status itself, admin Settings issued two reads —
+  // the shell's raw fetch cannot dedupe against client-get-cache — which desynchronised every
+  // spec that mocks this endpoint as an ordered sequence (fix15 N7-7, SET-11).
+  let mirrorReads = 0;
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    mirrorReads += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Cache-Control": "no-store" },
+      body: JSON.stringify({
+        mirror: {
+          configured: true,
+          enabled: true,
+          connected: true,
+          spreadsheetUrl: null,
+          spreadsheetName: "FCI TEST — DO NOT USE",
+          clients: { status: "synced", lastSyncedAt: 1, lastError: null },
+          projects: { status: "synced", lastSyncedAt: 1, lastError: null },
+          lastSyncedAt: 1,
+          reason: null,
+          source: "app",
+        },
+      }),
+    });
+  });
+
+  await page.goto("/settings?section=client-directory");
+  // Wait for the read to have been consumed by both the panel and the nav row before counting.
+  await expect(page.getByRole("region", { name: "Client Directory & Project Register" })).toBeVisible();
+  await expect(page.locator(".settings-nav").getByRole("button", { name: "Client Directory & Project Register", exact: true }))
+    .toHaveAttribute("data-settings-feature-state", "Working");
+  expect(mirrorReads).toBe(1);
+});

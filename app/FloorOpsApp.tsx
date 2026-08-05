@@ -2149,7 +2149,7 @@ function SettingsView({ notify, section, onSection, onTimezoneChange, onCurrentU
     ? "Manage shared Workspace, company defaults, security, and launch-readiness settings."
     : "Manage the preferences tied to your signed-in FCI account.";
   return <><PageTitle eyebrow="Control center" title="Settings" text={headingText} state="In development" />
-    <div className="settings-layout"><SettingsAudienceNavigation section={visibleSection} isAdmin={isAdmin} onSection={onSection} />
+    <div className="settings-layout"><SettingsAudienceNavigation section={visibleSection} isAdmin={isAdmin} sheetMirror={sheetMirror} onSection={onSection} />
       {visibleSection === "My settings" && <MySettingsPanel notify={notify} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onTimezoneChange={onTimezoneChange} onSettingsLoaded={onCurrentUserSettingsLoaded} />}
       {isAdmin && visibleSection === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} isAdmin={isAdmin} />}
       {isAdmin && visibleSection === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} isAdmin={isAdmin} />}

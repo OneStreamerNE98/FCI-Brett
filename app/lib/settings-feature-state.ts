@@ -1,7 +1,10 @@
 import type { FeatureState } from "../components/FeatureStateBadge";
 
 export const SETTINGS_CALENDAR_STATUS_PATH = "/api/v1/google-workspace";
-export const SETTINGS_DIRECTORY_STATUS_PATH = "/api/v1/integrations/google/sheets/status";
+// There is deliberately no directory-status path here. The Sheet mirror is loaded once by
+// FloorOpsApp's bootstrap (a raw fetch that cannot dedupe against client-get-cache) and handed
+// down as a prop; giving the nav its own constant to fetch reintroduces a second request per
+// Settings load, which the fix15 N7-7 and SET-11 sequence mocks both catch.
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
