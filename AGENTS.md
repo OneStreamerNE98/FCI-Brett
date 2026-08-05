@@ -143,9 +143,15 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
     surface, judged on PROCESS FACTS: zero pushes after the recorded approval head, zero
     edits to graded criteria, zero pushes into another agent's active fix window. Until
     the gate passes, packet size is the orchestrator's discretion.
-  - **Advisory-reviewer track** — NOT active; activates only after the senior gate, and
-    then dry-run first (findings delivered to the orchestrator privately and scored for
-    precision before any PR comment is posted). When live: findings post as PR comments
+  - **Advisory-reviewer track** — **ACTIVATED EARLY by owner decision, August 5, 2026**
+    ("more reviewing, not the orchestrator yet") — the senior-implementer gate is NOT a
+    prerequisite for it, because reviewing is itself the training: every finding forces
+    reasoning about the laws rather than mere compliance with them. It runs dry-run first (findings delivered to the orchestrator privately and scored for
+    precision before any PR comment is posted; the reviewer receives that scorecard —
+    real findings, noise, and what the orchestrator's fleet caught that it missed — and
+    the channel goes live on PRs when precision holds across two consecutive reviews).
+    Every agent joining the review layer reads
+    [`docs/agent-reviewer-briefing.md`](docs/agent-reviewer-briefing.md) first. When live: findings post as PR comments
     prefixed with the literal token `KIMI-ADVISORY:`; such comments are EXCLUDED from
     the address-every-automated-comment rule; findings count only if posted before the
     orchestrator's verdict comment — later findings become new packets, never PR
