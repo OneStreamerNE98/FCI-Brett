@@ -1813,7 +1813,7 @@ reminder-hours fields round-trip independently (regression test); a custom rule'
 row visibly communicates it is not driving suggestions (pinned copy).
 
 ### SET-07 · Settings IA consistency: per-section badges, one deep-link label, nav/heading alignment (small, after SET-01)
-**Status:** In progress — `codex/set07-settings-ia`
+**Status:** Complete — PR #313, August 5, 2026. Source-only and undeployed. Settings navigation, deep-link slugs, and panel headings now derive from one typed catalog. Review found eight items (seven distinct): build badges had been reintroduced into the production Settings nav — including the single row a non-admin sees — one day after DES-16 retired them, so they were removed and the conflict disclosed rather than the stale packet text implemented; a pinned suite restored from red to 12/12; a mutation-blind assertion re-pointed; dead e2e route mocks restored; and a duplicated `/sheets/status` read per admin Settings load eliminated. Guide impact: `docs/settings-guide.md` updated for the renamed nav row.
 **Do:** Add `featureState` to SETTINGS_SECTIONS entries and render per-section badges
 (My account=Working; Google Workspace=In development; Calendar=Setup required, computed
 from SET-05's payload once landed; Inbox rules=In development; Client Directory=computed
@@ -1843,7 +1843,7 @@ reset does NOT clear it (lives in workspace_settings, not connection-scoped tabl
 assert in test).
 
 ### SET-09 · Integration audit viewer (small, after SET-01+02)
-**Status:** In progress — `kimi/set09-integration-audit-viewer`
+**Status:** Complete — PR #308, August 5, 2026. Source-only and undeployed. The integration audit viewer paginates by opaque cursor. Ten review findings were fixed on-branch. Two off-scale spacing values it added were caught later by DES-13's drift guard once both had merged, and repaired in PR #315. Guide impact: `docs/settings-guide.md` updated for the Load more capability.
 
 **NARROWED July 30, 2026 — WS-10 shipped the events reader, so most of this packet is
 already built.** The original text said `google_integration_events` "has no reader anywhere
@@ -2689,7 +2689,7 @@ equality entry per connection — build this packet's re-check as a helper WS-20
 per mailbox.
 
 ### SET-42 · Stale-while-revalidate everywhere: one data-freshness doctrine, zero refresh buttons (medium, after SET-40; InboxView portions after AI-12)
-**Status:** In progress — `codex/set42-swr-doctrine`
+**Status:** Complete — PR #311, August 5, 2026. Source-only and undeployed. Client reads share one cached-GET transport that revalidates on focus, visibility change, and navigation; eight refresh affordances are gone and seven loading mechanisms collapsed to one. Review found seven defects, six of which survived a branch rebuild that had discarded the first fix commit: a live Gmail API call firing on every focus (OAuth grant plus a mailbox round trip per trigger, per administrator) is un-enrolled and pinned by a repo-wide source census; paginated admin rows survive lifecycle revalidation; two deleted pins were restored and mutation-verified; a stalled GET can no longer wedge the doctrine. The day-rollover `setTimeout` was adjudicated compliant and allowlisted. Follow-up #320 fixed two further defects this packet introduced. Guide impact: none.
 
 **Why:** owner request, August 3, 2026 — stop pressing refresh/sync buttons, "one
 consistent way of doing things for everything," across all pages. A pattern census counted
@@ -3571,7 +3571,7 @@ outcomes.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-13 · Design-language consolidation: color, type, and spacing scales with a drift guard (medium)
-**Status:** In progress — `codex/des13-design-tokens`
+**Status:** Complete — PR #309, August 5, 2026. Source-only and undeployed. 431 raw hexes consolidated to ~28 semantic tokens with an Apple-tuned type scale, a weight diet, and a 4-point spacing scale, enforced by `tests/des13-design-token-drift.test.mjs`. Review caught inverted semantic colours (errors rendered neutral, a danger tint on 23 hover surfaces) before merge. The drift guard immediately proved itself, catching a real breakage on main introduced by an un-rebased merge. Guide impact: none.
 
 **Why:** owner request, August 3, 2026 — a more elegant UI "in line with UIs from nice
 companies." The gap was measured, not assumed, across `app/globals.css` plus every
