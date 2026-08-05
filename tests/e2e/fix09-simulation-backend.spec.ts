@@ -96,9 +96,17 @@ test("FIX-09 gmail filing drives real simulation messages and file endpoint", as
   await page.goto("/inbox");
   await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible();
 
-  // The real simulation backend returns three seeded messages.
-  // Message rows are <article> elements; the subject is plain text, not a button.
+  // Wait for inbox analysis to complete and messages to load.
+  // In simulation mode, the inbox auto-starts analysis on mount.
   const messageRow = page.locator(".message-row").filter({ hasText: /revised phasing plan/ });
+  await expect.poll(async () => {
+    const count = await messageRow.count();
+    return count > 0;
+  }, {
+    timeout: 30_000,
+    intervals: [500, 500, 1_000, 1_000, 2_000],
+    message: "Expected inbox message rows to appear after simulation reset",
+  }).toBe(true);
   await expect(messageRow).toBeVisible();
 
   // Open the filing modal via the "Review & copy" button inside the row.
@@ -140,7 +148,7 @@ test("FIX-09 calendar test-hold creates a real simulation event", async ({ page 
   // The real simulation backend returns verification status.
   // In a fresh simulation, calendar may show "READY TO VERIFY" or "VERIFIED"
   // depending on whether the calendar events endpoint has been hit.
-  const stateText = await calendarRow.locator("[data-stage-four-state]").textContent();
+  const stateText = await calendarRow.getAttribute("data-stage-four-state");
   expect(stateText).toMatch(/READY TO VERIFY|VERIFIED/);
 
   expect(browserIssues, browserIssues.map((issue) => `${issue.kind}: ${issue.detail}`).join("\n\n")).toEqual([]);
