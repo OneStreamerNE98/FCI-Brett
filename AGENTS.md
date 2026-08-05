@@ -151,7 +151,11 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   do not take it, and do not edit the files its branch touches. The
   `app/FloorOpsApp.tsx` single-file queue rule is the canonical example, and its queue
   order appendix is the claim list — a packet that adds a `FloorOpsApp.tsx` change must
-  add itself there in the same PR.
+  add itself there in the same PR. That slot scopes only what remains in the file: the
+  app shell and navigation, Overview, Reports, Settings dispatch, and the modal/drawer
+  cluster until DES-14b lands. Extracted record views (`LeadsView`, `ClientsView`,
+  `ProjectsView`, and `ScheduleView`) exit the queue permanently; work confined to those
+  modules does not claim the `FloorOpsApp.tsx` slot.
 - **A packet is available if and only if it has no status line.** Prose lists of
   "unclaimed packets" are historical narrative and have gone stale repeatedly; the status
   lines are the only dispatch authority. (The ledger guard also enforces heading grammar
@@ -273,7 +277,48 @@ Packet Acceptance lines frequently require e2e evidence ("simulation e2e", "prov
 
 If a command cannot run, record the exact blocker rather than treating unverified work as complete. Known environment blocker: `npm test` requires Node ≥ 22.13.0 (`vinext` uses `node:fs/promises.glob`); on Node 20 it fails during the build, which is a toolchain problem, not a code failure.
 
-**Golden hashes.** The definition lives in the plan ledger's Global guardrail 7b — read that, not a summary. Short form: two SHA-256 digests in `tests/e2e/page-layouts.spec.ts` freeze the Overview and Reports markup; `npm run test:e2e` evaluates them against the live DOM, **and three Node suites additionally pin the digest constants byte-for-byte** (`ai04-today-view`, `fix15-toast-and-folds`, `nfix04-phone-polish`), so editing a digest also fails `npm test`. A mismatch is a signal, not a chore. Regeneration is a sanctioned event available to ANY packet whose PR includes owner-approved before/after screenshots of both pinned pages at 1280 (with the change rationale) and updates the three additional pinning suites in the same commit. The named-packet restriction was lifted August 3, 2026 by owner decision under the standing law-lift rule (checklist 06); scope of the lift: the authority model only — the hashes, the pinned selectors, and the three-suite requirement are unchanged. Never paste a new digest in to make a suite pass.
+**Golden hashes.** The definition lives in the plan ledger's Global guardrail 7b — read that, not a summary. Short form: two SHA-256 digests in `tests/e2e/page-layouts.spec.ts` freeze the Overview and Reports markup; `npm run test:e2e` evaluates them against the live DOM, **and four Node suites additionally pin the digest constants byte-for-byte** (`ai04-today-view`, `fix15-toast-and-folds`, `nfix04-phone-polish`, `nfix06-tablet-band`), so editing a digest also fails `npm test`. A mismatch is a signal, not a chore. Regeneration is a sanctioned event available to ANY packet whose PR includes owner-approved before/after screenshots of both pinned pages at 1280 (with the change rationale) and updates the four additional pinning suites in the same commit. The named-packet restriction was lifted August 3, 2026 by owner decision under the standing law-lift rule (checklist 06); scope of the lift: the authority model only — the hashes, the pinned selectors, and the four-suite requirement are unchanged. Never paste a new digest in to make a suite pass.
+
+## Environment traps that have each cost real work
+
+These are not style notes. Each one has produced a wrong conclusion or destroyed work in this
+repo, and each is invisible until it bites.
+
+- **A failure you did not reproduce in a healthy environment is not a failure.** Before believing
+  any test result, confirm the environment: `ls node_modules | wc -l` in the tree you are running
+  from (a near-empty result invalidates the run). A degraded environment produces a cluster of
+  unrelated-looking failures — `Cannot find module .../node_modules/@playwright/test/cli.js`,
+  Playwright `webServer` timeouts, `ENOENT dist/.openai/drizzle` — and, worst of all, it
+  reproduces the SAME wrong answer when you run it against `main`, so the check agrees with
+  itself and is still wrong. That is why the verification block above requires a CI run id and
+  why no local test count is load-bearing.
+- **Never `npm ci` in a worktree, and never delete or follow a `node_modules` junction.** Scratch
+  worktrees junction `node_modules` to the root clone; `npm ci` deletes the directory and
+  `git worktree remove --force` (or `rm -rf`) follows the junction. This has emptied the root
+  clone's `node_modules` four separate times, including during a READ-ONLY review. Use
+  `npm install`. To remove a worktree: `cmd //c rmdir <worktree>
+ode_modules` first (rmdir
+  unlinks a junction without recursing), then `git worktree remove`. No `rm -rf` fallback, ever.
+- **Exit-code masking — bitten three times.** `npm test | tail` and `&&`-chained greps return the
+  LAST command's status, so a failing suite reads as exit 0. The dangerous shape is
+  `node --test ... | grep -E "pass|fail" && git commit && git push` — the grep SUCCEEDS on a
+  failing run because it matched the word "fail", and the push proceeds with a red suite. Never
+  chain a commit or push behind a test command. Run tests, capture the status, check it, then
+  commit as a separate step.
+- **A PostgreSQL migration checksum lives in THREE places and they move together:** the registry
+  entry in `app/platform/postgres/production-schema-migrations.ts`, the literal pin in
+  `tests/production-schema-migrations.test.mjs`, and the reviewed duplicate in
+  `app/platform/google-cloud/database-readiness.ts`. The third is caught only by a CI-only
+  PostgreSQL-service test — **no deps-free local suite catches it**. After any checksum change,
+  `grep -rn <old digest>` must return zero. Related: `mail_items` and other shared tables exist
+  on BOTH PostgreSQL and Cloudflare D1, so a column addition is usually TWO migrations; D1 is the
+  engine most live routes use, and a PostgreSQL-only migration ships columns production cannot
+  write.
+- **The e2e suite shares ONE simulation server** (`workers: 1`). `workspace_resources` is seeded
+  once at db-prepare and the simulation reset deletes it without re-provisioning, so a spec that
+  runs a real reset permanently wipes state later specs read. A spec exercising the real reset
+  must restore the registry afterwards through the real simulation endpoints, with a
+  self-checking verify.
 
 ## Security and data rules
 

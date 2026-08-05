@@ -14,8 +14,11 @@ function sourceSection(source, start, end, label) {
 }
 
 test("lead editor retains all 13 canonical fields, version, and changed-key conflict behavior", async () => {
-  const app = await read("app/FloorOpsApp.tsx");
-  const leadType = sourceSection(app, "type Lead = {", "type Client =", "Lead types");
+  const [app, recordTypes] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
+    read("app/lib/record-types.ts"),
+  ]);
+  const leadType = sourceSection(recordTypes, "export type Lead = {", "export type Client =", "Lead types");
   const leadModal = sourceSection(app, "function LeadModal", "function ClientModal", "LeadModal");
   const saveLead = sourceSection(app, "async function saveLeadEdits", "async function addClient", "saveLeadEdits");
 
