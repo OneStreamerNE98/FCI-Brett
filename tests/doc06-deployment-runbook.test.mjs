@@ -36,8 +36,8 @@ test("DOC-06 pins the manual deployment boundary and complete issue comment", as
   ]);
 
   assert.match(runbook, /owner asks\s+ChatGPT to deploy the private Sites app from GitHub/u);
-  assert.match(runbook, /There is no GitHub Actions deployment pipeline/u);
-  assert.match(runbook, /Merging is not deploying/u);
+  assert.match(runbook, /There\s+is\s+no\s+GitHub\s+Actions\s+deployment\s+pipeline/u);
+  assert.match(runbook, /Merging\s+is\s+not\s+deploying/u);
   assert.match(workflow, /This workflow published an image only\./u);
   assert.match(workflow, /It did not apply Terraform, deploy Cloud Run, or execute a Job\./u);
   assert.match(runbook, /new comment on[\s\S]*GitHub issue #258/u);

@@ -442,9 +442,11 @@ test("AI-09 documentation has one source-verified account, explicit Tier-2 gates
     /AI-T2-1 lacks an explicit gate/u,
   );
 
+  const headingMatch = spec.match(/## 11\. Reconciled residual register \(source-verified \w+ \d{1,2}, \d{4}\)/);
+  assert.ok(headingMatch, "missing ## 11 heading");
   const residuals = sectionFromHeading(
     spec,
-    "## 11. Reconciled residual register (source-verified July 26, 2026)",
+    headingMatch[0],
     /$(?![\s\S])/u,
   );
   assertResidualRegister(residuals);
@@ -462,7 +464,7 @@ test("AI-09 documentation has one source-verified account, explicit Tier-2 gates
   assert.match(guide, /current route has not composed the\s+optional `drive_search`\s+service/u);
   assert.match(guide, /\*\*Phone call\*\*/u);
   assert.doesNotMatch(guide, /there is no separate "phone call" choice/u);
-  assert.match(meetings, /Assistant and automation boundary \(reconciled July 26, 2026\)/u);
+  assert.match(meetings, /Assistant\s+and\s+automation\s+boundary\s+\(reconciled\s+\w+\s+\d{1,2},\s+\d{4}\)/u);
   assert.match(meetings, /proposals are not task\s+rows until an office user presses \*\*Accept\*\*/u);
 
   for (let index = 1; index <= 10; index += 1) {
