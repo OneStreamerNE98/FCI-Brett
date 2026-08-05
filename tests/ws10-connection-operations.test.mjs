@@ -453,7 +453,7 @@ test("card source contains per-category load-more buttons gated on hasMore", asy
   assert.match(card, /Load more events/u, "card must offer Load more for events");
   assert.match(card, /moreEvents/u, "card must track events hasMore state");
   assert.match(card, /nextCursor/u, "card must read nextCursor from response");
-  assert.match(card, /"category", category/u, "card must pass category param dynamically");
+  assert.match(card, /new URLSearchParams\(\{ category \}\)/u, "card must pass category param dynamically");
 });
 
 test("card source surfaces per-category paging errors with retry affordance", async () => {
@@ -461,15 +461,15 @@ test("card source surfaces per-category paging errors with retry affordance", as
   assert.match(card, /drive\.error/u, "card must expose drive paging error");
   assert.match(card, /archive\.error/u, "card must expose archive paging error");
   assert.match(card, /events\.error/u, "card must expose events paging error");
-  assert.match(card, /load\("drive", drive\.nextCursor\)/u, "card must retry drive from its cursor");
-  assert.match(card, /load\("archive", archive\.nextCursor\)/u, "card must retry archive from its cursor");
-  assert.match(card, /load\("events", events\.nextCursor\)/u, "card must retry events from its cursor");
+  assert.match(card, /retryCategory\("drive", drive\.nextCursor, drive\.retryMode\)/u, "card must retry drive through its recorded failure mode");
+  assert.match(card, /retryCategory\("archive", archive\.nextCursor, archive\.retryMode\)/u, "card must retry archive through its recorded failure mode");
+  assert.match(card, /retryCategory\("events", events\.nextCursor, events\.retryMode\)/u, "card must retry events through its recorded failure mode");
 });
 
-test("card source tracks per-category in-flight state independently", async () => {
+test("card source fences per-category reads through the operations request coordinator", async () => {
   const card = await read("app/settings/components/workspace-operations/WorkspaceOperationsHealthCard.tsx");
-  assert.match(card, /inFlight\.current\.has\(flightKey\)/u, "card must gate duplicate in-flight requests by key");
-  assert.match(card, /inFlight\.current\.add\(flightKey\)/u, "card must register in-flight key");
-  assert.match(card, /inFlight\.current\.delete\(flightKey\)/u, "card must deregister in-flight key");
+  assert.match(card, /beginCategory\(category, url\)/u, "card must gate duplicate in-flight requests by category");
+  assert.match(card, /isCurrentCategory\(ticket\)/u, "card must fence stale category responses");
+  assert.match(card, /settleCategory\(ticket, appended\)/u, "card must deregister only the matching request ticket");
   assert.doesNotMatch(card, /requestSequence\.current/u, "card must not use a shared sequence counter");
 });

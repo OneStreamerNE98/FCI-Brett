@@ -4,6 +4,7 @@ import {
   type AdminAuditCategory,
   type AdminAuditResult,
 } from "../ports/admin-audit-reader";
+import { CachedGetError, cachedGetJson } from "./client-get-cache";
 
 export const ADMIN_AUDIT_PERIODS = ["7d", "30d", "90d", "all"] as const;
 export type AdminAuditPeriod = (typeof ADMIN_AUDIT_PERIODS)[number];
@@ -110,28 +111,9 @@ function activity(value: unknown): AdminAuditActivity {
   });
 }
 
-async function responseEnvelope(response: Response) {
-  let value: unknown;
-  try {
-    value = await response.json();
-  } catch {
-    throw new AdminAuditClientError(response.status, "invalid_server_response");
-  }
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new AdminAuditClientError(response.status, "invalid_server_response");
-  }
-  if (!response.ok) {
-    const error = (value as ErrorEnvelope).error;
-    throw new AdminAuditClientError(
-      response.status,
-      typeof error === "string" && error ? error : "request_failed",
-    );
-  }
-  return value as Readonly<Record<string, unknown>>;
-}
-
-function page(envelope: Readonly<Record<string, unknown>>): AdminAuditPage {
-  const value = envelope.data;
+function page(envelope: unknown): AdminAuditPage {
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) invalidResponse();
+  const value = (envelope as Readonly<Record<string, unknown>>).data;
   if (!value || typeof value !== "object" || Array.isArray(value)) invalidResponse();
   const data = value as Readonly<Record<string, unknown>>;
   if (
@@ -153,7 +135,7 @@ function page(envelope: Readonly<Record<string, unknown>>): AdminAuditPage {
   });
 }
 
-function readUrl(input: AdminAuditReadInput) {
+export function adminAuditReadUrl(input: AdminAuditReadInput) {
   if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 50) {
     throw new AdminAuditClientError(0, "invalid_audit_request");
   }
@@ -178,11 +160,20 @@ export async function readAdminAuditActivity(
   secureSessionReady: boolean,
 ): Promise<AdminAuditPage> {
   requireAdminApi(secureSessionReady);
-  const response = await fetch(readUrl(input), {
-    method: "GET",
-    cache: "no-store",
-    credentials: "same-origin",
-    headers: { Accept: "application/json" },
-  });
-  return page(await responseEnvelope(response));
+  try {
+    const envelope = await cachedGetJson<unknown>(adminAuditReadUrl(input));
+    return page(envelope);
+  } catch (error) {
+    if (error instanceof CachedGetError) {
+      const body = error.body;
+      const code = body && typeof body === "object" && !Array.isArray(body)
+        ? (body as ErrorEnvelope).error
+        : "invalid_server_response";
+      throw new AdminAuditClientError(
+        error.status,
+        typeof code === "string" && code ? code : "request_failed",
+      );
+    }
+    throw error;
+  }
 }

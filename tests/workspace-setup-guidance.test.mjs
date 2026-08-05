@@ -414,7 +414,9 @@ test("Workspace resources stay endpoint-owned in one dependency-ordered Stage 3 
   ]);
 
   assert.match(panel, /if \(!isAdmin\) return;[\s\S]+cachedGetJson<WorkspaceSetupResourcesPayload>\("\/api\/v1\/integrations\/google\/setup\/resources"/);
-  assert.match(panel, /isAdmin \? loadWorkspaceResources\(force\) : Promise\.resolve\(\)/);
+  // SET-42 keeps admin gating while threading silent/preserve-draft semantics
+  // through the shared lifecycle refresh.
+  assert.match(panel, /isAdmin \? loadWorkspaceResources\(force, silent, preserveRuntimeDraft\) : Promise\.resolve\(\)/);
   assert.match(panel, /No administrator setup request is made for this Office view\./);
   assert.match(panel, /const configured = simulation \|\| workspaceResources\?\.connectReady === true/);
   assert.match(panel, /disabled=\{!configured \|\| working\}/);
@@ -663,7 +665,10 @@ test("Workspace blueprint is a structured admin editor and the legacy static car
   assert.doesNotMatch(panel, /DRIVE_BLUEPRINT|className="drive-blueprint"|project-folder-list/);
   assert.doesNotMatch(css, /\.drive-blueprint|\.project-folder-list/);
 
-  assert.match(editor, /fetch\("\/api\/v1\/integrations\/google\/setup\/blueprint", \{ cache: "no-store" \}\)/);
+  // SET-42 replaces the one-shot fetch with the shared cached transport while
+  // preserving an unsaved blueprint draft during background revalidation.
+  assert.match(editor, /cachedGetJson<BlueprintResponse>\(\s*"\/api\/v1\/integrations\/google\/setup\/blueprint",\s*\{ force \},\s*\)/);
+  assert.match(editor, /useCachedGetSubscription\([\s\S]*loadBlueprint\(false, true, dirty \|\| saving\)/);
   assert.match(editor, /method: "PUT"[\s\S]+expectedVersion: version/);
   assert.match(editor, /response\.status === 409[\s\S]+setConflictVersion/);
   assert.match(editor, /Load latest/);
@@ -691,7 +696,7 @@ test("Office viewers make no resource request and receive an access-owned connec
   const panel = await read("app/settings/components/GoogleWorkspacePanel.tsx");
 
   assert.match(panel, /if \(!isAdmin\) return;[\s\S]+\/api\/v1\/integrations\/google\/setup\/resources/);
-  assert.match(panel, /isAdmin \? loadWorkspaceResources\(force\) : Promise\.resolve\(\)/);
+  assert.match(panel, /isAdmin \? loadWorkspaceResources\(force, silent, preserveRuntimeDraft\) : Promise\.resolve\(\)/);
   assert.match(panel, /isAdmin && <details className=\{`workspace-connection-health/);
   assert.match(panel, /AdministratorActionButton className="primary-button" isAdmin=\{isAdmin\}/);
   assert.doesNotMatch(panel, /isAdmin \|\| connectionHealth|isAdmin \|\| workspaceResources/);

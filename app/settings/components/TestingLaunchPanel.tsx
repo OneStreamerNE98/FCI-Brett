@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   CheckCircle2,
   CircleDashed,
@@ -11,7 +11,9 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { readAdminAccessOverview } from "../../lib/admin-access-client";
+import { AdminAccessClientError, readAdminAccessOverview } from "../../lib/admin-access-client";
+import { cachedGetJson, isTerminalCachedGetError } from "../../lib/client-get-cache";
+import { useCachedGetSubscription } from "../../lib/client-get-hooks";
 import { LaunchChecklistCard } from "./LaunchChecklistCard";
 
 const EMPLOYEE_LOGIN_REQUIREMENT_NAMES = [
@@ -107,16 +109,9 @@ export function TestingLaunchPanel({ onGoogleSetup }: { onGoogleSetup: () => voi
   const [pendingInvitationCount, setPendingInvitationCount] = useState<number | null>(null);
   const [pendingInvitationState, setPendingInvitationState] = useState<PendingInvitationState>("loading");
 
-  useEffect(() => {
-    let current = true;
-    const controller = new AbortController();
-    const readinessRequest = fetch("/api/v1/settings/employee-login-readiness", {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok) throw new Error("employee_login_readiness_unavailable");
-      const parsed = parseEmployeeLoginReadiness(await response.json());
+  const loadReadiness = useCallback((silent = false) => {
+    const readinessRequest = cachedGetJson<unknown>("/api/v1/settings/employee-login-readiness").then((value) => {
+      const parsed = parseEmployeeLoginReadiness(value);
       if (!parsed) throw new Error("employee_login_readiness_invalid");
       return parsed;
     });
@@ -128,26 +123,38 @@ export function TestingLaunchPanel({ onGoogleSetup }: { onGoogleSetup: () => voi
       return count;
     });
 
-    void Promise.allSettled([readinessRequest, invitationRequest]).then(([readinessResult, invitationResult]) => {
-      if (!current) return;
+    return Promise.allSettled([readinessRequest, invitationRequest]).then(([readinessResult, invitationResult]) => {
       if (readinessResult.status === "fulfilled") {
         setReadiness(readinessResult.value);
+        setReadinessFailed(false);
       } else {
-        setReadinessFailed(true);
+        if (!silent || isTerminalCachedGetError(readinessResult.reason)) {
+          setReadiness(null);
+          setReadinessFailed(true);
+        }
       }
       if (invitationResult.status === "fulfilled") {
         setPendingInvitationCount(invitationResult.value);
         setPendingInvitationState("ready");
       } else {
-        setPendingInvitationState("unavailable");
+        const terminalAccessFailure = invitationResult.reason instanceof AdminAccessClientError
+          && (invitationResult.reason.status === 401 || invitationResult.reason.status === 403);
+        if (!silent || terminalAccessFailure) {
+          setPendingInvitationCount(null);
+          setPendingInvitationState("unavailable");
+        }
       }
     });
-
-    return () => {
-      current = false;
-      controller.abort();
-    };
   }, []);
+
+  useEffect(() => {
+    void loadReadiness();
+  }, [loadReadiness]);
+
+  useCachedGetSubscription(
+    ["/api/v1/settings/employee-login-readiness", "/api/v1/admin/access"],
+    () => void loadReadiness(true),
+  );
 
   const configurationReady = readiness?.configuration.state === "ready";
   const configurationChip = readinessFailed

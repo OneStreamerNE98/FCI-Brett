@@ -51,7 +51,9 @@ test("exposes the authenticated user's Administrator flag through the shared acc
   assert.match(app, /pageLayouts\?: unknown/);
   assert.match(myAccount, /cachedGetJson[^\n]+\("\/api\/v1\/settings\/me"/);
   assert.match(myAccount, /fetch\("\/api\/v1\/settings\/me", \{[\s\S]+method: "PATCH"/);
-  assert.match(cache, /if \(!options\.force && existing\?\.inFlight\) return existing\.inFlight/);
+  // SET-42 serves a mounted stale value immediately while sharing the same
+  // in-flight revalidation; a cold/forced caller awaits that one request.
+  assert.match(cache, /if \(existing\?\.inFlight\) \{\s*if \(!options\.force && existing\.hasValue\) return Promise\.resolve\(existing\.value as T\);\s*return existing\.inFlight as Promise<T>;\s*\}/);
 });
 
 test("uses one reconciled Administrator flag for shell and Settings content gates", async () => {
@@ -66,7 +68,8 @@ test("uses one reconciled Administrator flag for shell and Settings content gate
   assert.match(shell, /useState<PageLayouts>\(\(\) => defaultPageLayouts\(isAdmin\)\)/);
   assert.match(shell, /const nextIsAdmin = data\?\.isAdmin === true/);
   assert.match(shell, /const failClosedCurrentUserSettings = useCallback\(\(\) => \{[\s\S]+setIsAdmin\(false\)/);
-  assert.equal([...shell.matchAll(/failClosedCurrentUserSettings\(\);/g)].length, 2);
+  assert.equal([...shell.matchAll(/failClosedCurrentUserSettings\(\);/g)].length, 3);
+  assert.match(shell, /isTerminalCachedGetError\(error\)[\s\S]{0,120}failClosedCurrentUserSettings\(\)/);
   assert.match(shell, /onCurrentUserSettingsLoaded=\{reconcileCurrentUserSettings\}/);
   assert.deepEqual(
     [...workspaceNavigationItems.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]),

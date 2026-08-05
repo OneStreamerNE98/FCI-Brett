@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Mail, Reply, ShieldCheck, Sparkles, X } from "lucide-react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
+import { cachedGetJson, isTerminalCachedGetError } from "../../lib/client-get-cache";
+import { useCachedGetSubscription } from "../../lib/client-get-hooks";
 import type { WorkspaceMessage } from "../../settings/components/GoogleWorkspacePanel";
 
 type AssistantReplyConfiguration = {
   keyState: "Configured" | "Missing";
   features: { replyDrafts: boolean };
 };
+
+const ASSISTANT_CONFIG_URL = "/api/v1/assistant/config";
 
 export function GmailReplyModal({ message, body, saving, onBody, onSave, onClose }: { message: WorkspaceMessage; body: string; saving: boolean; onBody: (value: string) => void; onSave: () => void; onClose: () => void }) {
   const [configuration, setConfiguration] = useState<AssistantReplyConfiguration | null>(null);
@@ -64,24 +68,32 @@ export function GmailReplyModal({ message, body, saving, onBody, onSave, onClose
     confirmRef.current?.focus();
   }, [confirmingReplace]);
 
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        const response = await fetch("/api/v1/assistant/config", { headers: { Accept: "application/json" } });
-        const data = await response.json().catch(() => null) as { keyState?: unknown; features?: { replyDrafts?: unknown } } | null;
-        if (active && response.ok && data && (data.keyState === "Configured" || data.keyState === "Missing")) {
-          setConfiguration({ keyState: data.keyState, features: { replyDrafts: data.features?.replyDrafts === true } });
-        }
-      } catch {
-        // Availability is a non-blocking enhancement; a failure leaves the AI
-        // action honestly disabled rather than breaking the human reply flow.
-      } finally {
-        if (active) setConfigurationLoaded(true);
+  const loadConfiguration = useCallback(async () => {
+    try {
+      const data = await cachedGetJson<{
+        keyState?: unknown;
+        features?: { replyDrafts?: unknown };
+      }>(ASSISTANT_CONFIG_URL);
+      if (data.keyState === "Configured" || data.keyState === "Missing") {
+        setConfiguration({
+          keyState: data.keyState,
+          features: { replyDrafts: data.features?.replyDrafts === true },
+        });
       }
-    })();
-    return () => { active = false; };
+    } catch (error) {
+      // Availability is a non-blocking enhancement; a failure leaves the AI
+      // action honestly disabled rather than breaking the human reply flow.
+      if (isTerminalCachedGetError(error)) setConfiguration(null);
+    } finally {
+      setConfigurationLoaded(true);
+    }
   }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(loadConfiguration);
+  }, [loadConfiguration]);
+
+  useCachedGetSubscription([ASSISTANT_CONFIG_URL], loadConfiguration);
 
   const replyDraftsReady = configuration?.keyState === "Configured" && configuration.features.replyDrafts;
   const gateNote = !configurationLoaded

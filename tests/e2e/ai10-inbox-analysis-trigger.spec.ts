@@ -251,7 +251,7 @@ for (const denied of [
   });
 }
 
-test("a failed refresh clears an earlier caught-up result instead of leaving stale success copy", async ({ page }) => {
+test("a failed action-triggered sweep clears an earlier caught-up result instead of leaving stale success copy", async ({ page }) => {
   await mockInbox(page, true);
   let analysisRequests = 0;
   await page.route("**/api/v1/inbox-analysis", async (route) => {
@@ -270,7 +270,7 @@ test("a failed refresh clears an earlier caught-up result instead of leaving sta
   await expect(page.getByText("You're caught up", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Load messages", exact: true }).click();
   await expect(page.getByText(
-    "Inbox analysis could not finish. Refresh to retry.",
+    "Inbox analysis could not finish. Use Load messages to try again.",
     { exact: true },
   )).toBeVisible();
   await expect(page.getByText("You're caught up", { exact: true })).toHaveCount(0);

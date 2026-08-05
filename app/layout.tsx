@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, Manrope } from "next/font/google";
 import { headers } from "next/headers";
+import { ClientDataFreshnessBoundary } from "./components/ClientDataFreshnessBoundary";
 import { resolveAppEnvironment } from "./lib/app-environment";
 import "./globals.css";
 
@@ -37,7 +38,10 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${bodyFont.variable} ${displayFont.variable}`}>{children}</body>
+      <body className={`${bodyFont.variable} ${displayFont.variable}`}>
+        <ClientDataFreshnessBoundary />
+        {children}
+      </body>
     </html>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   BriefcaseBusiness,
   CheckCircle2,
@@ -14,11 +14,16 @@ import {
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { FIRST_RUN_IMPORT_TEST_MARKER } from "../../domain/first-run-import";
 import { FirstRunImportCard } from "../../import/components/FirstRunImportCard";
+import {
+  cachedGetJson,
+  invalidateCachedGet,
+  isTerminalCachedGetError,
+} from "../../lib/client-get-cache";
+import { useCachedGetSubscription } from "../../lib/client-get-hooks";
 import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "../../lib/sheet-mirror-status";
 import { EFFECTIVE_WORKSPACE_RESOURCE_SPECS } from "../../lib/workspace-effective-config";
 import styles from "./DirectorySyncPanel.module.css";
 
-const SHEET_STATUS_PATH = "/api/v1/integrations/google/sheets/status";
 const FORM_LEAD_PATH = "/api/v1/integrations/google/forms/leads";
 const LEADS_PATH = "/api/v1/leads";
 const CLIENT_DIRECTORY_SHEET_KEY = EFFECTIVE_WORKSPACE_RESOURCE_SPECS.clientDirectorySheet.envVar;
@@ -70,27 +75,6 @@ type FormLeadIntakeState = Readonly<{
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function isMirrorEntityStatus(value: unknown) {
-  return isRecord(value)
-    && typeof value.status === "string"
-    && (typeof value.lastSyncedAt === "number" || value.lastSyncedAt === null)
-    && (typeof value.lastError === "string" || value.lastError === null);
-}
-
-function isSheetMirrorStatus(value: unknown): value is SheetMirrorStatus {
-  return isRecord(value)
-    && typeof value.configured === "boolean"
-    && typeof value.enabled === "boolean"
-    && typeof value.connected === "boolean"
-    && (typeof value.spreadsheetUrl === "string" || value.spreadsheetUrl === null)
-    && (typeof value.spreadsheetName === "string" || value.spreadsheetName === null)
-    && isMirrorEntityStatus(value.clients)
-    && isMirrorEntityStatus(value.projects)
-    && (typeof value.lastSyncedAt === "number" || value.lastSyncedAt === null)
-    && (typeof value.reason === "string" || value.reason === null)
-    && ["app", "env", "none"].includes(String(value.source));
 }
 
 function optionalText(value: unknown) {
@@ -189,16 +173,10 @@ function responseError(body: unknown, fallback: string) {
   return message;
 }
 
-async function fetchFormLeadIntake(signal?: AbortSignal) {
-  const response = await fetch(FORM_LEAD_PATH, {
-    method: "GET",
-    cache: "no-store",
-    headers: { Accept: "application/json" },
-    signal,
-  });
-  const body = await response.json().catch(() => null) as unknown;
+async function fetchFormLeadIntake(force = false) {
+  const body = await cachedGetJson<unknown>(FORM_LEAD_PATH, { force });
   const parsed = parseFormLeadIntakeState(body);
-  if (!response.ok || !parsed) {
+  if (!parsed) {
     throw new Error(responseError(body, "Google Form lead intake could not be loaded."));
   }
   return parsed;
@@ -308,6 +286,10 @@ function FormLeadReviewCard({
         ));
       }
       setAcceptedLead(lead);
+      invalidateCachedGet(FORM_LEAD_PATH);
+      invalidateCachedGet("/api/v1/leads");
+      invalidateCachedGet("/api/v1/dashboard");
+      invalidateCachedGet("/api/v1/assistant/today");
       try {
         await onRetired();
       } catch {
@@ -349,6 +331,7 @@ function FormLeadReviewCard({
       const body = await response.json().catch(() => null) as unknown;
       if (!response.ok) throw new Error(responseError(body, "The response could not be dismissed."));
       reviewSaved = true;
+      invalidateCachedGet(FORM_LEAD_PATH);
       await onRetired();
     } catch (caught) {
       const detail = caught instanceof Error ? caught.message : "Google Form lead intake could not be loaded.";
@@ -426,19 +409,29 @@ function GoogleFormLeadIntakeCard({ isAdmin }: { isAdmin: boolean }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetchFormLeadIntake(controller.signal)
-      .then(setIntake)
-      .catch((caught) => {
-        if (caught instanceof DOMException && caught.name === "AbortError") return;
+  const loadIntake = useCallback(async (force = false, silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      setIntake(await fetchFormLeadIntake(force));
+      setError("");
+    } catch (caught) {
+      if (isTerminalCachedGetError(caught)) {
+        setIntake(null);
+        setMessage("");
+      }
+      if (!silent || isTerminalCachedGetError(caught)) {
         setError(caught instanceof Error ? caught.message : "Google Form lead intake could not be loaded.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
+      }
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(() => loadIntake());
+  }, [loadIntake]);
+
+  useCachedGetSubscription([FORM_LEAD_PATH], () => loadIntake(false, true));
 
   async function checkResponses() {
     setChecking(true);
@@ -452,7 +445,8 @@ function GoogleFormLeadIntakeCard({ isAdmin }: { isAdmin: boolean }) {
       const body = await response.json().catch(() => null) as unknown;
       if (!response.ok) throw new Error(responseError(body, "Form responses could not be checked."));
       setMessage(isRecord(body) && typeof body.message === "string" ? body.message : "Form responses checked.");
-      setIntake(await fetchFormLeadIntake());
+      invalidateCachedGet(FORM_LEAD_PATH);
+      setIntake(await fetchFormLeadIntake(true));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Form responses could not be checked.");
     } finally {
@@ -466,7 +460,8 @@ function GoogleFormLeadIntakeCard({ isAdmin }: { isAdmin: boolean }) {
     setError("");
     setMessage("");
     try {
-      setIntake(await fetchFormLeadIntake());
+      invalidateCachedGet(FORM_LEAD_PATH);
+      setIntake(await fetchFormLeadIntake(true));
     } finally {
       setLoading(false);
     }
@@ -552,35 +547,7 @@ export function DirectorySyncPanel({
   onImportConfirmed: () => Promise<void>;
   isAdmin: boolean;
 }) {
-  const [refreshSnapshot, setRefreshSnapshot] = useState<{
-    base: SheetMirrorStatus | null;
-    mirror: SheetMirrorStatus;
-  } | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshError, setRefreshError] = useState("");
-  const currentMirror = refreshSnapshot?.base === mirror ? refreshSnapshot.mirror : mirror;
-
-  async function refreshStatus() {
-    setRefreshing(true);
-    setRefreshError("");
-    try {
-      const response = await fetch(SHEET_STATUS_PATH, {
-        method: "GET",
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      });
-      const body = await response.json().catch(() => null) as unknown;
-      if (!response.ok || !isRecord(body) || !isSheetMirrorStatus(body.mirror)) {
-        throw new Error("sheet_status_unavailable");
-      }
-      setRefreshSnapshot({ base: mirror, mirror: body.mirror });
-    } catch {
-      setRefreshError("Mirror status could not be refreshed. Try again without leaving this page.");
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
+  const currentMirror = mirror;
   const ready = Boolean(currentMirror?.configured && currentMirror.enabled && currentMirror.connected);
   const unconfigured = currentMirror !== null && !currentMirror.configured;
 
@@ -594,9 +561,6 @@ export function DirectorySyncPanel({
       </div>
       <div className="workspace-actions">
         {currentMirror?.spreadsheetUrl && <a className="soft-button" href={currentMirror.spreadsheetUrl} target="_blank" rel="noreferrer"><FolderOpen size={15} /> Open spreadsheet</a>}
-        <button className="soft-button" type="button" onClick={() => void refreshStatus()} disabled={refreshing}>
-          <RefreshCw size={15} aria-hidden="true" /> {refreshing ? "Refreshing…" : "Refresh status"}
-        </button>
         <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void onSync()} disabled={syncing || !ready}>
           {syncing ? "Syncing…" : "Sync now"}
         </AdministratorActionButton>
@@ -612,8 +576,6 @@ export function DirectorySyncPanel({
       </span>
       <a className="soft-button" href="/settings?section=google-workspace#workspace-stage-3">Open Google Workspace setup</a>
     </div>}
-
-    {refreshError && <div className="workspace-missing" role="alert"><CircleAlert size={16} /><span>{refreshError}</span></div>}
 
     <div className="directory-sync-summary">
       <DirectoryMirrorSummary

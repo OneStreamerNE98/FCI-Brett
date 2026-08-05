@@ -3,10 +3,20 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { CalendarDays, CheckCircle2, ChevronDown, CircleAlert, FileText, FolderOpen, Mail, ShieldCheck, X } from "lucide-react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
+import { ClientDataNotice } from "../../components/ClientDataNotice";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { OperationsDataTable, OperationsDataTableCell } from "../../components/operations/OperationsDataTable";
 import { Status } from "../../components/operations/OperationsPrimitives";
-import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
+import {
+  cachedGetJson,
+  invalidateCachedGet,
+  invalidateGmailFilingReadCaches,
+  invalidateWorkspaceOperationsReadCache,
+  invalidateWorkspaceSimulationResetReadCaches,
+  invalidateWorkspaceTenantResetReadCaches,
+  isTerminalCachedGetError,
+} from "../../lib/client-get-cache";
+import { useCachedGetSubscription, useClientLifecycleRefresh } from "../../lib/client-get-hooks";
 import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "../../lib/sheet-mirror-status";
 import panelStyles from "./GoogleWorkspacePanel.module.css";
 import { WorkspaceBlueprintEditor } from "./WorkspaceBlueprintEditor";
@@ -408,11 +418,9 @@ function sheetMirrorFullySynced(mirror: SheetMirrorStatus | null | undefined) {
   return mirror?.clients.status === "synced" && mirror.projects.status === "synced";
 }
 
-async function readStageFourVerification<T>(url: string) {
+async function readStageFourVerification<T>(url: string, force = false) {
   try {
-    const response = await fetch(url, { cache: "no-store" });
-    if (!response.ok) return { ok: false as const, data: null };
-    return { ok: true as const, data: await response.json() as T };
+    return { ok: true as const, data: await cachedGetJson<T>(url, { force }) };
   } catch {
     return { ok: false as const, data: null };
   }
@@ -477,8 +485,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [sheetsWorking, setSheetsWorking] = useState(false);
   const [runtimeConfigurationWorking, setRuntimeConfigurationWorking] = useState<"drive" | "client-directory" | "lead-form" | "intake-mailbox" | null>(null);
   const [clientDirectorySheetId, setClientDirectorySheetId] = useState("");
+  const [savedClientDirectorySheetId, setSavedClientDirectorySheetId] = useState("");
   const [leadFormResponseSheetId, setLeadFormResponseSheetId] = useState("");
+  const [savedLeadFormResponseSheetId, setSavedLeadFormResponseSheetId] = useState("");
   const [intakeMailbox, setIntakeMailbox] = useState("");
+  const [savedIntakeMailbox, setSavedIntakeMailbox] = useState("");
   const [intakeMailboxOptions, setIntakeMailboxOptions] = useState<string[]>([]);
   const [intakeMailboxError, setIntakeMailboxError] = useState<string | null>(null);
   const [gmailLabelsReady, setGmailLabelsReady] = useState(false);
@@ -511,6 +522,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const readinessChecked = useRef(false);
   const [stageThreeSubsectionsInitialized, setStageThreeSubsectionsInitialized] = useState(false);
   const workspaceResourcesLoadIdRef = useRef(0);
+  const workspaceResourcesVisibleLoadsInFlightRef = useRef(0);
+  const workspaceResourcesForcedLoadsInFlightRef = useRef(0);
+  const workspaceResourcesFailureRef = useRef(false);
 
   const updateStageThreeCreationStatus = useCallback((next: StageThreeSubsectionStatus) => {
     setStageThreeCreationStatus((current) => (
@@ -566,9 +580,15 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     stageThreeCreationStatus.settled,
   ]);
 
-  const checkSetup = useCallback(async (force = false) => {
-    setChecking(true);
-    setWorkspaceReadinessState("loading");
+  const checkSetup = useCallback(async (
+    force = false,
+    silent = false,
+    preserveRuntimeDraft = false,
+  ) => {
+    if (!silent) {
+      setChecking(true);
+      setWorkspaceReadinessState("loading");
+    }
     try {
       const sheetsRequest = cachedGetJson<{ mirror?: SheetMirrorStatus }>("/api/v1/integrations/google/sheets/status", { force })
         .then((data) => ({ ok: true as const, data }))
@@ -582,8 +602,14 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       const calendarVerificationEligible = isAdmin && stageFourServiceEligible(nextWorkspace, "calendar");
       setMissingDetails(data.missingDetails ?? []);
       setWorkspace(nextWorkspace);
-      setClientDirectorySheetId(nextWorkspace?.sheets?.clientDirectory?.externalId ?? "");
-      setLeadFormResponseSheetId(nextWorkspace?.sheets?.leadFormResponses?.externalId ?? "");
+      const nextClientDirectorySheetId = nextWorkspace?.sheets?.clientDirectory?.externalId ?? "";
+      const nextLeadFormResponseSheetId = nextWorkspace?.sheets?.leadFormResponses?.externalId ?? "";
+      if (!preserveRuntimeDraft) {
+        setClientDirectorySheetId(nextClientDirectorySheetId);
+        setSavedClientDirectorySheetId(nextClientDirectorySheetId);
+        setLeadFormResponseSheetId(nextLeadFormResponseSheetId);
+        setSavedLeadFormResponseSheetId(nextLeadFormResponseSheetId);
+      }
       setWorkspaceReadinessState("ready");
       if (sheetsResult.ok) {
         const mirror = sheetsResult.data.mirror ?? null;
@@ -591,7 +617,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         setSheetsVerificationPassed((current) => current || sheetMirrorFullySynced(mirror));
         setSheetsStatusError(null);
       } else {
-        setSheetsStatusError("Mirror status could not be loaded. Refresh this step to try again.");
+        setSheetsStatusError("Mirror status could not be loaded. Try again from this error state.");
       }
       if (gmailVerificationEligible) {
         setGmailVerificationState("loading");
@@ -610,11 +636,13 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         gmailVerificationEligible
           ? readStageFourVerification<{ labelReady?: boolean; testEmailPassed?: boolean }>(
               "/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status",
+              force,
             )
           : Promise.resolve(null),
         calendarVerificationEligible
           ? readStageFourVerification<{ verificationPassed?: boolean }>(
               "/api/v1/integrations/google/calendar/events?verification=status",
+              force,
             )
           : Promise.resolve(null),
       ]);
@@ -623,44 +651,61 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         setGmailTestEmailPassed(Boolean(gmailVerification.data.testEmailPassed));
         setGmailVerificationState("ready");
       } else if (gmailVerificationEligible) {
+        setGmailLabelsReady(false);
+        setGmailTestEmailPassed(false);
         setGmailVerificationState("error");
       }
       if (calendarVerification?.ok) {
         setCalendarChecked(Boolean(calendarVerification.data.verificationPassed));
         setCalendarVerificationState("ready");
       } else if (calendarVerificationEligible) {
+        setCalendarChecked(false);
         setCalendarVerificationState("error");
       }
       if (!nextWorkspace?.simulation && nextWorkspace?.connectionStatus !== "connected") {
         setDriveVerified(false);
         setSheetsVerificationPassed(false);
       }
-      notify("Workspace readiness refreshed. Current status is shown above.", nextWorkspace?.simulation || data.credentialsPresent ? "info" : "warning");
-    } catch {
-      setWorkspaceReadinessState("error");
-      if (isAdmin) {
-        setGmailVerificationState("error");
-        setCalendarVerificationState("error");
+      if (!silent) notify("Workspace readiness refreshed. Current status is shown above.", nextWorkspace?.simulation || data.credentialsPresent ? "info" : "warning");
+    } catch (error) {
+      if (!silent || isTerminalCachedGetError(error)) {
+        if (isTerminalCachedGetError(error)) {
+          setWorkspace(null);
+          setMissingDetails([]);
+          setSheetMirror(null);
+          setClientDirectorySheetId("");
+          setSavedClientDirectorySheetId("");
+          setLeadFormResponseSheetId("");
+          setSavedLeadFormResponseSheetId("");
+        }
+        setWorkspaceReadinessState("error");
+        if (isAdmin) {
+          setGmailVerificationState("error");
+          setCalendarVerificationState("error");
+        }
+        if (!silent) notify("Workspace readiness could not be checked. Confirm the app is running and try again.", "error");
       }
-      notify("Workspace readiness could not be checked. Confirm the app is running and try again.", "error");
     } finally {
-      setChecking(false);
+      if (!silent) setChecking(false);
     }
   }, [isAdmin, notify]);
 
-  const loadConnectionHealth = useCallback(async (force = false) => {
+  const loadConnectionHealth = useCallback(async (force = false, silent = false) => {
     if (!isAdmin) return;
-    setConnectionHealthState("loading");
-    setConnectionHealthError(null);
+    if (!silent) {
+      setConnectionHealthState("loading");
+      setConnectionHealthError(null);
+    }
     try {
       const data = await cachedGetJson<ConnectionHealthPayload>("/api/v1/integrations/google/connection", { force });
       setConnectionHealth(data);
       setConnectionHealthState("ready");
       if (!data.simulation && data.connection.status === "revoked") {
         try {
-          const response = await fetch("/api/v1/integrations/google/tenant/reset", { cache: "no-store" });
-          const preview = await response.json() as TenantResetPreview & { error?: string };
-          if (!response.ok) throw new Error(preview.error ?? "Tenant reset details could not be loaded.");
+          const preview = await cachedGetJson<TenantResetPreview>(
+            "/api/v1/integrations/google/tenant/reset",
+            { force },
+          );
           setTenantResetPreview(preview);
           setTenantResetPreviewError(null);
         } catch {
@@ -673,29 +718,64 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         setTenantResetOpen(false);
         setTenantResetConfirmation("");
       }
-    } catch {
-      setConnectionHealthError("Connection details could not be loaded. Retry before changing the saved connection.");
-      setConnectionHealthState("error");
+    } catch (error) {
+      if (!silent || isTerminalCachedGetError(error)) {
+        if (isTerminalCachedGetError(error)) setConnectionHealth(null);
+        setConnectionHealthError("Connection details could not be loaded. Retry before changing the saved connection.");
+        setConnectionHealthState("error");
+      }
     }
   }, [isAdmin]);
 
   /** Fills the mailbox selector. Owns its own error state: this read must never be able to
    *  settle the Stage 3 surface, which belongs to the resources endpoint alone. */
-  const loadIntakeMailboxSettings = useCallback(async (force = false, isCurrent: () => boolean = () => true) => {
+  const loadIntakeMailboxSettings = useCallback(async (
+    force = false,
+    isCurrent: () => boolean = () => true,
+    preserveRuntimeDraft = false,
+  ) => {
     try {
       const settingsData = await cachedGetJson<WorkspaceSettingsPayload>("/api/v1/settings/workspace", { force });
       if (!isCurrent()) return;
-      setIntakeMailbox(settingsData.settings?.intakeMailbox ?? "");
+      const nextIntakeMailbox = settingsData.settings?.intakeMailbox ?? "";
+      if (!preserveRuntimeDraft) {
+        setIntakeMailbox(nextIntakeMailbox);
+        setSavedIntakeMailbox(nextIntakeMailbox);
+      }
       setIntakeMailboxOptions(settingsData.intakeMailboxOptions ?? []);
       setIntakeMailboxError(null);
-    } catch {
+    } catch (error) {
       if (!isCurrent()) return;
+      if (isTerminalCachedGetError(error)) {
+        setIntakeMailbox("");
+        setSavedIntakeMailbox("");
+        setIntakeMailboxOptions([]);
+      }
       setIntakeMailboxError("The saved intake mailbox could not be loaded. The rest of this stage is unaffected.");
     }
   }, []);
 
-  const loadWorkspaceResources = useCallback(async (force = false) => {
+  const loadWorkspaceResources = useCallback(async (
+    force = false,
+    silent = false,
+    preserveRuntimeDraft = false,
+  ) => {
     if (!isAdmin) return;
+    if (silent && workspaceResourcesVisibleLoadsInFlightRef.current > 0) return;
+    // A successful revalidation of an unrelated Workspace URL notifies the
+    // shared subscription too. Do not let that non-forced callback consume the
+    // retained stale registry and supersede a forced registry failure. Mailbox
+    // settings remain independent and may still refresh while registry controls
+    // stay failed closed until their own forced read succeeds.
+    if (silent && !force && (
+      workspaceResourcesForcedLoadsInFlightRef.current > 0
+      || workspaceResourcesFailureRef.current
+    )) {
+      void loadIntakeMailboxSettings(false, () => true, preserveRuntimeDraft);
+      return;
+    }
+    if (!silent) workspaceResourcesVisibleLoadsInFlightRef.current += 1;
+    if (force) workspaceResourcesForcedLoadsInFlightRef.current += 1;
     // Gate on the latest invocation: with a ?google=... OAuth callback the admin
     // mount effect and the callback's forced refresh both hit this endpoint, and
     // whichever completed first used to settle the status that seeds the one-shot
@@ -703,32 +783,45 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     // disclosures and chips reflect the authoritative (forced) response — not a
     // stale completion that lands out of order.
     const loadId = ++workspaceResourcesLoadIdRef.current;
-    setWorkspaceResourcesState("loading");
-    setWorkspaceResourcesError(null);
+    if (!silent) {
+      setWorkspaceResourcesState("loading");
+      setWorkspaceResourcesError(null);
+    }
     const isCurrent = () => loadId === workspaceResourcesLoadIdRef.current;
     // Two independent surfaces, settled independently. The resource inventory drives the whole
     // Stage 3 panel — Shared Drive adoption, the blueprint editor, the creation flows — while
     // the settings read only fills the mailbox selector. Awaiting both in one try/catch let an
     // unrelated settings 500 blank the entire stage behind a resources error message.
-    void loadIntakeMailboxSettings(force, isCurrent);
+    void loadIntakeMailboxSettings(force, isCurrent, preserveRuntimeDraft);
     try {
       const resources = await cachedGetJson<WorkspaceSetupResourcesPayload>("/api/v1/integrations/google/setup/resources", { force });
       if (!isCurrent()) return;
+      workspaceResourcesFailureRef.current = false;
       setWorkspaceResources(resources);
+      setWorkspaceResourcesError(null);
       setWorkspaceResourcesState("ready");
       return;
-    } catch {
+    } catch (error) {
       if (!isCurrent()) return;
+      workspaceResourcesFailureRef.current = true;
+      if (isTerminalCachedGetError(error)) setWorkspaceResources(null);
       setWorkspaceResourcesError("Workspace resource status could not be loaded. Retry before using this setup summary.");
       setWorkspaceResourcesState("error");
+    } finally {
+      if (!silent) workspaceResourcesVisibleLoadsInFlightRef.current -= 1;
+      if (force) workspaceResourcesForcedLoadsInFlightRef.current -= 1;
     }
   }, [isAdmin, loadIntakeMailboxSettings]);
 
-  const refreshWorkspaceSetup = useCallback(async (force = false) => {
+  const refreshWorkspaceSetup = useCallback(async (
+    force = false,
+    silent = false,
+    preserveRuntimeDraft = false,
+  ) => {
     await Promise.all([
-      checkSetup(force),
-      isAdmin ? loadConnectionHealth(force) : Promise.resolve(),
-      isAdmin ? loadWorkspaceResources(force) : Promise.resolve(),
+      checkSetup(force, silent, preserveRuntimeDraft),
+      isAdmin ? loadConnectionHealth(force, silent) : Promise.resolve(),
+      isAdmin ? loadWorkspaceResources(force, silent, preserveRuntimeDraft) : Promise.resolve(),
     ]);
   }, [checkSetup, isAdmin, loadConnectionHealth, loadWorkspaceResources]);
 
@@ -753,6 +846,49 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     void Promise.resolve().then(() => Promise.all([loadConnectionHealth(), loadWorkspaceResources()]));
   }, [isAdmin, loadConnectionHealth, loadWorkspaceResources]);
 
+  const runtimeConfigurationDraftDirty = clientDirectorySheetId !== savedClientDirectorySheetId
+    || leadFormResponseSheetId !== savedLeadFormResponseSheetId
+    || intakeMailbox !== savedIntakeMailbox;
+  useClientLifecycleRefresh(
+    () => loadWorkspaceResources(
+      true,
+      true,
+      runtimeConfigurationDraftDirty || runtimeConfigurationWorking !== null,
+    ),
+    isAdmin,
+  );
+  // SET42_ACTION_GATED_GMAIL_GET: the Gmail verification read is deliberately
+  // absent from this array. Every URL enrolled here is force-GET by
+  // revalidateSubscribedCachedGets() on focus, visibility change, and
+  // navigation, and /gmail/messages resolves a mailbox API client and a live
+  // label lookup before it reads its `verification` parameter — one OAuth
+  // refresh-token grant plus a mailbox round trip per trigger, per
+  // administrator. The stage-4 verification reads stay on cachedGetJson, a
+  // migration onto the shared transport, not enrollment in forced lifecycle
+  // refetch. Mailbox reads never auto-revalidate.
+  useCachedGetSubscription(
+    [
+      "/api/v1/google-workspace",
+      "/api/v1/integrations/google/sheets/status",
+      "/api/v1/integrations/google/connection",
+      "/api/v1/integrations/google/setup/resources",
+      "/api/v1/settings/workspace",
+      "/api/v1/integrations/google/calendar/events?verification=status",
+    ],
+    () => refreshWorkspaceSetup(
+      false,
+      true,
+      runtimeConfigurationDraftDirty || runtimeConfigurationWorking !== null,
+    ),
+    isAdmin,
+  );
+
+  useCachedGetSubscription(
+    ["/api/v1/integrations/google/tenant/reset"],
+    () => loadConnectionHealth(false, true),
+    isAdmin && connectionHealth?.connection.status === "revoked",
+  );
+
   useEffect(() => {
     const current = new URL(window.location.href);
     const result = current.searchParams.get("google");
@@ -760,11 +896,17 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     void Promise.resolve().then(() => setOauthResult(result));
     current.searchParams.delete("google");
     window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
-    invalidateCachedGet("/api/v1/google-workspace");
-    invalidateCachedGet("/api/v1/integrations/google/connection");
-    invalidateCachedGet("/api/v1/integrations/google/setup/resources");
-    invalidateCachedGet("/api/v1/integrations/google/sheets/status");
-    void Promise.resolve().then(() => refreshWorkspaceSetup(true));
+    void Promise.resolve().then(() => {
+      // The initial mount read is queued by the earlier effect. Quietly discard
+      // those cache entries only after that read starts, then issue the forced
+      // callback refresh as the authoritative latest request. Notifying here
+      // would schedule a third competing subscription refresh.
+      invalidateCachedGet("/api/v1/google-workspace", { notify: false });
+      invalidateCachedGet("/api/v1/integrations/google/connection", { notify: false });
+      invalidateCachedGet("/api/v1/integrations/google/setup/resources", { notify: false });
+      invalidateCachedGet("/api/v1/integrations/google/sheets/status", { notify: false });
+      return refreshWorkspaceSetup(true);
+    });
   }, [refreshWorkspaceSetup]);
 
   async function connectGoogleDrive() {
@@ -793,6 +935,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     } catch (error) {
       notify(error instanceof Error ? error.message : "The Drive workspace could not be verified.", "error");
     } finally {
+      invalidateWorkspaceOperationsReadCache();
       setWorking(false);
     }
   }
@@ -835,21 +978,36 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     } catch (error) {
       notify(error instanceof Error ? error.message : "The Google connection could not be removed.", "error");
     } finally {
+      invalidateWorkspaceOperationsReadCache();
       setWorking(false);
     }
   }
 
-  async function readApi<T>(url: string, init?: RequestInit) {
-    const response = await fetch(url, init);
-    const data = await response.json().catch(() => ({})) as T & { error?: string };
-    if (!response.ok) throw new Error(data.error ?? "The Workspace action could not be completed.");
-    return data;
+  async function runWorkspaceMutation<T>(url: string, init: RequestInit) {
+    if (!init.method || init.method.toUpperCase() === "GET") {
+      throw new Error("Workspace lifecycle reads must use cachedGetJson.");
+    }
+    try {
+      const response = await fetch(url, init);
+      const data = await response.json().catch(() => ({})) as T & { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "The Workspace action could not be completed.");
+      return data;
+    } finally {
+      invalidateWorkspaceOperationsReadCache();
+    }
+  }
+
+  function readActionGatedGmail<T>(url: string) {
+    // SET42_ACTION_GATED_GMAIL_GET: these exact setup checks run only after the
+    // administrator clicks. They are never mounted lifecycle subscriptions.
+    return cachedGetJson<T>(url, { force: true });
   }
 
   async function prepareTestGmailLabels() {
     setGmailWorking(true);
     try {
-      await readApi<{ prepared: boolean }>("/api/v1/integrations/google/gmail/labels/prepare", { method: "POST" });
+      await runWorkspaceMutation<{ prepared: boolean }>("/api/v1/integrations/google/gmail/labels/prepare", { method: "POST" });
+      invalidateCachedGet("/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status", { notify: false });
       setGmailLabelsReady(true);
       notify("FCI Gmail labels are ready. No messages were moved or archived.", "success");
     } catch (error) {
@@ -862,7 +1020,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   async function refreshTestGmail() {
     setGmailWorking(true);
     try {
-      const data = await readApi<{ messages?: WorkspaceMessage[] }>("/api/v1/integrations/google/gmail/messages?label=inbox");
+      const data = await readActionGatedGmail<{ messages?: WorkspaceMessage[] }>("/api/v1/integrations/google/gmail/messages?label=inbox");
       setGmailMessages(data.messages ?? []);
       notify(`Loaded ${data.messages?.length ?? 0} Workspace inbox message(s).`, "info");
     } catch (error) {
@@ -875,11 +1033,12 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   async function sendSelfTestEmail() {
     setGmailWorking(true);
     try {
-      await readApi<{ sent: boolean }>("/api/v1/integrations/google/gmail/send-test", {
+      await runWorkspaceMutation<{ sent: boolean }>("/api/v1/integrations/google/gmail/send-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
+      invalidateCachedGet("/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status", { notify: false });
       setGmailTestEmailPassed(true);
       notify(workspace?.simulation ? "A sample email was added to the simulated Workspace inbox." : "A test email was sent only to the configured Workspace mailbox.", "success");
     } catch (error) {
@@ -909,7 +1068,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     }
     setFilingLoading(true);
     try {
-      const data = await readApi<GmailFilingPreview>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?projectId=${encodeURIComponent(filingProjectId)}`);
+      const data = await readActionGatedGmail<GmailFilingPreview>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?projectId=${encodeURIComponent(filingProjectId)}`);
       setFilingPreview(data);
       notify(`Ready to review the Drive filing for ${data.project.number}. Nothing has been copied yet.`, "info");
     } catch (error) {
@@ -924,7 +1083,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     if (!filingMessage || !filingProjectId || !filingPreview) return;
     setFilingSubmitting(true);
     try {
-      const data = await readApi<{ filed: boolean; alreadyFiled?: boolean; archive?: { attachmentCount?: number } }>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file`, {
+      const data = await runWorkspaceMutation<{ filed: boolean; alreadyFiled?: boolean; archive?: { attachmentCount?: number } }>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId: filingProjectId }),
@@ -933,6 +1092,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setFilingMessage(null);
       setFilingProjectId("");
       setFilingPreview(null);
+      invalidateGmailFilingReadCaches({ includeOperations: false });
       await refreshTestGmail();
     } catch (error) {
       notify(error instanceof Error ? error.message : "The Gmail filing could not be completed.", "error");
@@ -944,13 +1104,16 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   async function refreshTestCalendar() {
     setCalendarWorking(true);
     try {
-      const data = await readApi<{ events?: Array<{ id: string; title: string; start: string; end: string; url?: string }> }>("/api/v1/integrations/google/calendar/events");
+      const data = await cachedGetJson<{ events?: Array<{ id: string; title: string; start: string; end: string; url?: string }> }>("/api/v1/integrations/google/calendar/events", { force: true });
       setCalendarEvents(data.events ?? []);
       setCalendarChecked(true);
+      invalidateCachedGet("/api/v1/integrations/google/calendar/events?verification=status", { notify: false });
       notify(`Loaded ${data.events?.length ?? 0} upcoming Workspace Calendar event(s).`, "info");
     } catch (error) {
       notify(error instanceof Error ? error.message : "The Workspace Calendar could not be loaded.", "error");
     } finally {
+      // The action-gated provider read records calendar.events_listed.
+      invalidateWorkspaceOperationsReadCache();
       setCalendarWorking(false);
     }
   }
@@ -958,7 +1121,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   async function createTestCalendarHold() {
     setCalendarWorking(true);
     try {
-      await readApi<{ event: { start: string } }>("/api/v1/integrations/google/calendar/test-hold", {
+      await runWorkspaceMutation<{ event: { start: string } }>("/api/v1/integrations/google/calendar/test-hold", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -983,8 +1146,8 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setSheetsStatusError(null);
       notify("Google Sheets mirror status was refreshed.", "info");
     } catch {
-      setSheetsStatusError("Mirror status could not be loaded. Refresh this step to try again.");
-      notify("Google Sheets mirror status could not be refreshed.", "error");
+      setSheetsStatusError("Mirror status could not be loaded. Try again from this error state.");
+      notify("Google Sheets mirror status could not be loaded.", "error");
     } finally {
       setSheetsWorking(false);
     }
@@ -993,7 +1156,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   async function syncGoogleSheets() {
     setSheetsWorking(true);
     try {
-      const data = await readApi<{ mirror?: SheetMirrorStatus }>("/api/v1/integrations/google/sheets/sync", { method: "POST" });
+      const data = await runWorkspaceMutation<{ mirror?: SheetMirrorStatus }>("/api/v1/integrations/google/sheets/sync", { method: "POST" });
       const mirror = data.mirror ?? null;
       setSheetMirror(mirror);
       setSheetsVerificationPassed((current) => current || sheetMirrorFullySynced(mirror));
@@ -1045,6 +1208,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         throw new Error(data.error ?? "The Gmail intake mailbox could not be saved.");
       }
       setIntakeMailbox(data.settings.intakeMailbox ?? "");
+      setSavedIntakeMailbox(data.settings.intakeMailbox ?? "");
       invalidateCachedGet("/api/v1/settings/workspace");
       invalidateCachedGet("/api/v1/google-workspace");
       invalidateCachedGet("/api/v1/integrations/google/setup/resources");
@@ -1099,7 +1263,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   async function resetSimulation() {
     setWorking(true);
     try {
-      const data = await readApi<{ reset: boolean; messages: number; events: number }>("/api/v1/integrations/google/simulation/reset", { method: "POST" });
+      const data = await runWorkspaceMutation<{ reset: boolean; messages: number; events: number }>("/api/v1/integrations/google/simulation/reset", { method: "POST" });
       setGmailMessages([]);
       setCalendarEvents([]);
       setGmailLabelsReady(true);
@@ -1108,6 +1272,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setSheetsVerificationPassed(false);
       setBlueprintEditorRevision((current) => current + 1);
       notify(`Workspace simulation reset with ${data.messages} sample messages and ${data.events} calendar events.`, "success");
+      invalidateWorkspaceSimulationResetReadCaches({ includeOperations: false });
       invalidateCachedGet("/api/v1/google-workspace");
       invalidateCachedGet("/api/v1/integrations/google/connection");
       invalidateCachedGet("/api/v1/integrations/google/setup/resources");
@@ -1125,7 +1290,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     if (!tenantResetPreview?.discardedTenant) return;
     setTenantResetWorking(true);
     try {
-      const data = await readApi<{ reset: boolean; discardedTenant: string }>("/api/v1/integrations/google/tenant/reset", {
+      const data = await runWorkspaceMutation<{ reset: boolean; discardedTenant: string }>("/api/v1/integrations/google/tenant/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirmation: tenantResetConfirmation }),
@@ -1142,6 +1307,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setTenantResetPreview(null);
       setBlueprintEditorRevision((current) => current + 1);
       notify(`Tenant data for ${data.discardedTenant} was cleared. Connect the new company tenant to provision cleanly.`, "success");
+      invalidateWorkspaceTenantResetReadCaches({ includeOperations: false });
       invalidateCachedGet("/api/v1/google-workspace");
       invalidateCachedGet("/api/v1/integrations/google/connection");
       invalidateCachedGet("/api/v1/integrations/google/setup/resources");
@@ -1320,7 +1486,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     bannerNextStep = "Waiting for all setup status checks to finish.";
   } else if (statusSourcesUnavailable) {
     bannerHeadline = "Current Workspace status is unavailable";
-    bannerNextStep = "Next: retry Check readiness before changing setup.";
+    bannerNextStep = "Next: retry the status check before changing setup.";
   } else if (bannerSimulation) {
     bannerHeadline = "Simulation ready";
     bannerNextStep = "Everything below runs locally.";
@@ -1357,7 +1523,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const bannerProgressDetail = statusSourcesLoading
     ? "Waiting for all status sources"
     : statusSourcesUnavailable
-      ? "Retry Check readiness"
+      ? "Retry status check"
       : currentStageName;
   const neutralStageStatus = statusSourcesLoading
     ? "CHECKING"
@@ -1421,13 +1587,15 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   return <section className="panel workspace-settings">
     <div className="settings-heading">
       <div><p className="eyebrow">Company integration</p><h2>Google Workspace</h2><p>Work through four stages in order. Every status comes from the current Workspace readiness or service response.</p></div>
-      <button className="primary-button" onClick={() => void refreshWorkspaceSetup(true)} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
     </div>
     <div className="workspace-status-banner" data-status-agreement={statusAgreement} role="status" aria-live="polite">
       <span className={`workspace-status-mode${statusSourcesLoading || statusSourcesUnavailable ? ` ${panelStyles.statusModeNeutral}` : ""}`}>{bannerModeLabel}</span>
       <span className="workspace-status-copy"><strong>{bannerHeadline}</strong><span>{bannerNextStep}</span></span>
       <span className="workspace-status-progress"><strong>{bannerProgressLabel}</strong><span>{bannerProgressDetail}</span></span>
     </div>
+    {statusSourcesUnavailable && <button className="soft-button" type="button" onClick={() => void refreshWorkspaceSetup(true)} disabled={checking}>
+      {checking ? "Checking…" : "Retry status check"}
+    </button>}
     {!simulation && oauthMessage && <p className={oauthResult === "connected" ? "workspace-warning" : "workspace-missing"}>{oauthMessage}</p>}
     <div className="workspace-stage-list" role="group" aria-label="Google Workspace setup stages">
       <SetupStage
@@ -1467,7 +1635,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
               </article>
               <article>
                 <div><label htmlFor="workspace-intake-mailbox"><strong>Gmail intake mailbox</strong></label><span>Source: {effectiveConfigurationSourceLabel(workspace?.intakeMailboxSource)}</span><span>Choose one account from the hosted authorized-account allowlist. The app reads Gmail as the connected account.</span></div>
-                {intakeMailboxError && <div className="workspace-connection-health-error" role="alert"><span>{intakeMailboxError}</span><button className="soft-button" type="button" onClick={() => void loadIntakeMailboxSettings(true)}>Retry mailbox</button></div>}
+                {intakeMailboxError && <ClientDataNotice state="error" error={intakeMailboxError} errorTitle="Intake mailbox is unavailable" retryLabel="Retry mailbox" onRetry={() => void loadIntakeMailboxSettings(true)} />}
                 <div className="workspace-copy-value">
                   <select id="workspace-intake-mailbox" value={intakeMailbox} onChange={(event) => setIntakeMailbox(event.target.value)} disabled={!isAdmin || simulation || runtimeConfigurationWorking !== null || intakeMailboxError !== null}>
                     <option value="">Use hosted intake mailbox</option>
@@ -1536,7 +1704,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
           </summary>
           <div className={panelStyles.connectionHealthBody} aria-labelledby="workspace-connection-health-heading">
             {connectionHealthState === "loading" && !connectionHealth && <p className="workspace-connection-health-message" role="status">Loading the saved connection details…</p>}
-            {connectionHealthError && <div className="workspace-connection-health-error" role="alert"><span>{connectionHealthError}</span><button className="soft-button" type="button" onClick={() => void loadConnectionHealth(true)}>Retry details</button></div>}
+            {connectionHealthError && <ClientDataNotice state="error" error={connectionHealthError} errorTitle="Connection details are unavailable" retryLabel="Retry details" onRetry={() => void loadConnectionHealth(true)} />}
             {connectionHealth && <>
               <dl className={panelStyles.connectionHealthAccount}>
                 <div><dt>Account</dt><dd>{maskWorkspaceAccountForDisplay(connectionHealth.connection.account)}</dd></div>
@@ -1666,7 +1834,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
                   </div>
                   <p>View up to 20 messages, add a sample email in simulation, and review-copy one message into the exact project. Inbox stays intact.</p>
                   <div className="workspace-actions">
-                    <AdministratorActionButton className="soft-button" isAdmin={isAdmin} aria-describedby={dependencyDescriptionId} onClick={() => void prepareTestGmailLabels()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Working…" : gmailLabelsReady ? "Refresh FCI labels" : "Prepare FCI labels"}</AdministratorActionButton>
+                    <AdministratorActionButton className="soft-button" isAdmin={isAdmin} aria-describedby={dependencyDescriptionId} onClick={() => void prepareTestGmailLabels()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Working…" : "Prepare FCI labels"}</AdministratorActionButton>
                     <AdministratorActionButton className="soft-button" isAdmin={isAdmin} aria-describedby={dependencyDescriptionId} onClick={() => void refreshTestGmail()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Loading…" : "View inbox"}</AdministratorActionButton>
                     <AdministratorActionButton className="primary-button" isAdmin={isAdmin} aria-describedby={dependencyDescriptionId} onClick={() => void sendSelfTestEmail()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Working…" : simulation ? "Add sample email" : "Send Workspace test"}</AdministratorActionButton>
                   </div>
@@ -1708,9 +1876,10 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
                   <article><span>Client Directory</span><strong>{sheetMirrorStatusLabel(sheetMirror, "clients")}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article>
                   <article><span>Project Register</span><strong>{sheetMirrorStatusLabel(sheetMirror, "projects")}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article>
                 </div>
-                {(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}
+                {sheetsStatusError
+                  ? <ClientDataNotice state="error" error={sheetsStatusError} errorTitle="Sheet mirror status is unavailable" retryLabel={sheetsWorking ? "Checking…" : "Try again"} onRetry={() => void refreshSheetsStatus()} />
+                  : sheetMirror?.reason ? <div className="workspace-missing"><span>{sheetMirror.reason}</span></div> : null}
                 <div className="workspace-actions">
-                  <button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button>
                   <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>
                   {sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}
                 </div>

@@ -2688,6 +2688,7 @@ equality entry per connection — build this packet's re-check as a helper WS-20
 per mailbox.
 
 ### SET-42 · Stale-while-revalidate everywhere: one data-freshness doctrine, zero refresh buttons (medium, after SET-40; InboxView portions after AI-12)
+**Status:** In progress — `codex/set42-swr-doctrine`
 
 **Why:** owner request, August 3, 2026 — stop pressing refresh/sync buttons, "one
 consistent way of doing things for everything," across all pages. A pattern census counted
@@ -3783,8 +3784,7 @@ surface; per-field validation messages named in tests; golden hashes — Overvie
 the Schedule card, so this packet REGENERATES the Overview hash via the A1
 screenshot-sign-off path (owner before/after screenshots in the PR, three pinning suites
 updated in the same commit); `npm test`, `npm run test:e2e`, `npm run lint` named.
-**Effort:** small-medium. **Cost:** $0. **Takes the FloorOpsApp slot** (claim-tail head
-position — see the tail).
+**Effort:** small-medium. **Cost:** $0. **Took and released the FloorOpsApp slot in PR #306.**
 
 ### DES-17 · The failure surface: error boundary, toast queue with next steps, empty-state actions (medium)
 
@@ -4911,8 +4911,7 @@ queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-0
 DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI (in flight, PR #217/#221) →
 **EDIT-05** → **EDIT-04** → **AI-10 sub-PR (f)** → **EDIT-06** → **EDIT-07** →
 SET-26 UI (blocked on SET-23) → HINT-02-B.
-**Every named packet above is now merged, so the slot is FREE.** The next claimant takes it
-from the tail below.
+**Every named packet above is now merged. SET-42 now holds the slot from the tail below.**
 
 **Tail added August 3, 2026 — five open packets were flagged for this slot and none of them
 were on the list.** A packet-assessment pass found that the claim list, which `AGENTS.md:54-58`
@@ -4923,7 +4922,8 @@ Adversarial review (August 3, 2026) then established that AI-12 takes no slot at
 its bullet — leaving four claimants; DES-14 and DES-12, filed August 3, 2026, then claimed
 in the tail, making six. Recommended claim order, most valuable first:
 
-**GI-05 (if approved) → WS-20 (if approved) → DES-14 → DES-17 (shell scope,
+**SET-42 (in progress on `codex/set42-swr-doctrine`) → GI-05 (if approved) →
+WS-20 (if approved) → DES-14 → DES-17 (shell scope,
 post-decomposition) → DES-10 (variants a/b only) → DES-12.**
 (DES-16 and DES-17 were added August 4, 2026 with the usability wave. DES-16 merged in
 PR #306 and released the slot; DES-17's slot need is the app-shell toast/boundary
@@ -4945,6 +4945,8 @@ machinery that remains in `FloorOpsApp.tsx` after DES-14, so it follows the extr
 - **DES-16** — merged in PR #306 and released the slot. Its lead-capture modal,
   Overview Schedule entry points, and application navigation were inline in
   `app/FloorOpsApp.tsx`.
+- **SET-42** — **holds the slot on `codex/set42-swr-doctrine`.** Its core directory
+  reads and shared navigation-triggered revalidation are inline in `app/FloorOpsApp.tsx`.
 - **GI-05** — the project drawer and its Planned-capabilities list
   (`app/FloorOpsApp.tsx:2538-2551`). Also gated on an owner decision about scheduling.
 - **WS-20** — a mailbox picker sits beside `bucket` at the same `InboxView` mount. Also gated
