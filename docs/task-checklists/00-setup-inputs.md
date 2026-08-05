@@ -91,7 +91,7 @@ Follow [Hosted development configuration and connection](03-hosted-development-c
 ### 4. Connect and test Google Workspace
 
 - Open the [hosted FCI Operations application](https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/).
-- Go to **Settings → Google Workspace → Check readiness**.
+- Go to **Settings → Google Workspace** and let readiness load automatically.
 - Resolve every missing item before selecting **Connect Google Workspace**.
 - Authorize only the approved operations connection account.
 - Verify Drive, Gmail, Calendar, and Sheets independently.

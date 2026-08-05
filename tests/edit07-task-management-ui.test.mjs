@@ -142,10 +142,12 @@ test("the Assistant task surface uses the exact-task GET for review-safe conflic
 
   assert.match(assistant, /type AssistantTab = "today" \| "ask" \| "tasks"/u);
   assert.match(assistant, /<TaskManagementPanel projects=\{projects\} \/>/u);
-  assert.match(panel, /fetch\(`\/api\/v1\/tasks\?\$\{taskManagementSearch\(nextFilters\)\}`\)/u);
+  // SET-42 migrates task GETs to the shared SWR transport; task writes below
+  // remain ordinary route mutations.
+  assert.match(panel, /cachedGetJson<[\s\S]{0,100}>\(`\/api\/v1\/tasks\?\$\{taskManagementSearch\(nextFilters\)\}`, \{ force \}\)/u);
   assert.match(panel, /fetch\("\/api\/v1\/tasks"/u);
   assert.match(panel, /fetch\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(editor\.task\.id\)\}`/u);
-  assert.match(panel, /fetch\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}`\)/u);
+  assert.match(panel, /cachedGetJson<[\s\S]{0,100}>\(taskUrl, \{ force: true \}\)/u);
   assert.doesNotMatch(panel, /method: "DELETE"|\/api\/v1\/tasks\/[^$]/u);
   assert.match(panel, /body: JSON\.stringify\(patch\)/u);
   assert.match(panel, /This task changed after you opened it\./u);
@@ -154,10 +156,10 @@ test("the Assistant task surface uses the exact-task GET for review-safe conflic
   assert.match(panel, /Reopen task/u);
   assert.match(panel, /fallbackFocusRef=\{stableFocusRef\}/u);
   assert.match(panel, /<fieldset className=\{styles\.formGrid\} disabled=\{saving\}>/u);
-  assert.match(panel, /loadTasks\(appliedFilters\)/u);
+  assert.match(panel, /loadTasks\(appliedFilters, true, true\)/u);
   assert.match(panel, /data\.task\.version !== currentVersion/u);
   assert.doesNotMatch(panel, /const searches =|for \(const \[index, search\] of searches/u);
-  assert.match(panel, /conflict && !conflict\.current[\s\S]*"Refresh list to continue"/u);
+  assert.match(panel, /conflict && !conflict\.current[\s\S]*"Wait for the automatic list update to continue"/u);
   assert.doesNotMatch(panel, /fetch\("\/api\/v1\/tasks\?limit=200"\)/u);
   assert.doesNotMatch(panel, /requestAnimationFrame/u);
   assert.match(helper, /Object\.keys\(patch\)\.length > 1 \? patch : null/u);

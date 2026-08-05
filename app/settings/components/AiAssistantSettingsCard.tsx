@@ -8,7 +8,15 @@ import {
   isSystemAssistantLabelSlug,
   MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH,
 } from "../../domain/assistant-label-definition";
-import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
+import {
+  cachedGetJson,
+  invalidateCachedGet,
+  isTerminalCachedGetError,
+} from "../../lib/client-get-cache";
+import {
+  useCachedGetSubscription,
+  useClientLoadState,
+} from "../../lib/client-get-hooks";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 import styles from "./AiAssistantSettingsCard.module.css";
 
@@ -150,8 +158,6 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
   const [features, setFeatures] = useState<AiFeatures | null>(null);
   const [model, setModel] = useState("");
   const [modelDirty, setModelDirty] = useState(false);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [labelCatalog, setLabelCatalog] = useState<AssistantLabelCatalog | null>(null);
   const [labelEdits, setLabelEdits] = useState<Record<string, string>>({});
@@ -159,50 +165,57 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
   const [labelLoadState, setLabelLoadState] = useState<LoadState>("loading");
   const [labelLoadError, setLabelLoadError] = useState("");
   const [labelSaving, setLabelSaving] = useState<string | null>(null);
-  const loadRequestRef = useRef(0);
   const labelLoadRequestRef = useRef(0);
+  const labelVisibleLoadsInFlightRef = useRef(0);
+  const { state: loadState, error: loadError, run: runConfigLoad } = useClientLoadState(
+    "AI assistant configuration could not be loaded.",
+  );
 
-  const loadConfig = useCallback(async (force = false) => {
-    const requestId = ++loadRequestRef.current;
-    setLoadState("loading");
-    setLoadError("");
-    try {
-      const nextConfig = parseAssistantConfig(
-        await cachedGetJson<unknown>(ASSISTANT_CONFIG_URL, { force }),
-      );
-      if (requestId !== loadRequestRef.current) return;
-      setConfig(nextConfig);
-      setFeatures({ ...nextConfig.features });
-      setModel(nextConfig.modelSource === "env"
-        ? nextConfig.savedModel ?? ""
-        : nextConfig.savedModel ?? nextConfig.model);
-      setModelDirty(false);
-      setLoadState("ready");
-    } catch (error) {
-      if (requestId !== loadRequestRef.current) return;
-      setConfig(null);
-      setFeatures(null);
-      setModel("");
-      setModelDirty(false);
-      setLoadError(
-        error instanceof Error
-          ? error.message
-          : "AI assistant configuration could not be loaded.",
-      );
-      setLoadState("error");
-    }
-  }, []);
+  const loadConfig = useCallback((
+    force = false,
+    silent = false,
+    preserveDraft = false,
+  ) => runConfigLoad(
+    () => cachedGetJson<unknown>(ASSISTANT_CONFIG_URL, { force }).then(parseAssistantConfig),
+    {
+      onSuccess: (nextConfig) => {
+        if (preserveDraft) return;
+        setConfig(nextConfig);
+        setFeatures({ ...nextConfig.features });
+        setModel(nextConfig.modelSource === "env"
+          ? nextConfig.savedModel ?? ""
+          : nextConfig.savedModel ?? nextConfig.model);
+        setModelDirty(false);
+      },
+      onFailure: () => {
+        setConfig(null);
+        setFeatures(null);
+        setModel("");
+        setModelDirty(false);
+      },
+    },
+    { silent },
+  ), [runConfigLoad]);
 
-  const loadLabels = useCallback(async (force = false) => {
+  const loadLabels = useCallback(async (
+    force = false,
+    silent = false,
+    preserveDraft = false,
+  ) => {
     if (!isAdmin) return;
+    if (silent && labelVisibleLoadsInFlightRef.current > 0) return;
+    if (!silent) labelVisibleLoadsInFlightRef.current += 1;
     const requestId = ++labelLoadRequestRef.current;
-    setLabelLoadState("loading");
-    setLabelLoadError("");
+    if (!silent) {
+      setLabelLoadState("loading");
+      setLabelLoadError("");
+    }
     try {
       const nextCatalog = parseAssistantLabelCatalog(
         await cachedGetJson<unknown>(ASSISTANT_LABELS_URL, { force }),
       );
       if (requestId !== labelLoadRequestRef.current) return;
+      if (preserveDraft) return;
       setLabelCatalog(nextCatalog);
       setLabelEdits(Object.fromEntries(
         nextCatalog.labels.map(({ slug, description }) => [slug, description]),
@@ -210,21 +223,40 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
       setLabelLoadState("ready");
     } catch (error) {
       if (requestId !== labelLoadRequestRef.current) return;
+      if (silent && !isTerminalCachedGetError(error)) return;
       setLabelCatalog(null);
       setLabelEdits({});
       setLabelLoadError(
         error instanceof Error ? error.message : "AI labels could not be loaded.",
       );
       setLabelLoadState("error");
+    } finally {
+      if (!silent) labelVisibleLoadsInFlightRef.current -= 1;
     }
   }, [isAdmin]);
 
   useEffect(() => {
     void Promise.resolve().then(() => loadConfig());
-    return () => {
-      loadRequestRef.current += 1;
-    };
   }, [loadConfig]);
+
+  const configDraftDirty = modelDirty || Boolean(config && features && AI_FEATURES.some(
+    ({ key }) => features[key] !== config.features[key],
+  ));
+  const labelDraftDirty = Boolean(labelCatalog && (
+    newLabelDescription.trim()
+    || labelCatalog.labels.some(({ slug, description }) => (
+      (labelEdits[slug] ?? description) !== description
+    ))
+  ));
+  useCachedGetSubscription(
+    [ASSISTANT_CONFIG_URL],
+    () => loadConfig(false, true, configDraftDirty || saving),
+  );
+  useCachedGetSubscription(
+    [ASSISTANT_LABELS_URL],
+    () => loadLabels(false, true, labelDraftDirty || labelSaving !== null),
+    isAdmin,
+  );
 
   useEffect(() => {
     if (isAdmin) void Promise.resolve().then(() => loadLabels());

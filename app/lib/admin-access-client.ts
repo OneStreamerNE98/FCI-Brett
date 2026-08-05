@@ -2,12 +2,22 @@ import type {
   AdminAccessOverview,
   AdminAccessRoleKey,
 } from "../ports/admin-access-persistence";
+import {
+  CachedGetError,
+  cachedGetJson,
+  invalidateCachedGet,
+  invalidateCachedGetPrefix,
+} from "./client-get-cache";
 
 const ADMIN_ACCESS_PATH = "/api/v1/admin/access";
 const CSRF_HEADER = "x-fci-csrf-token";
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
 
 type ErrorEnvelope = Readonly<{ error?: unknown }>;
+
+function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 
 export class AdminAccessClientError extends Error {
   constructor(
@@ -45,8 +55,12 @@ async function responseEnvelope(response: Response) {
   return value as Readonly<Record<string, unknown>>;
 }
 
-function dataObject(envelope: Readonly<Record<string, unknown>>) {
-  const data = envelope.data;
+function dataObject(envelope: unknown) {
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) {
+    throw new AdminAccessClientError(200, "invalid_server_response");
+  }
+  const record = envelope as Readonly<Record<string, unknown>>;
+  const data = record.data;
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new AdminAccessClientError(200, "invalid_server_response");
   }
@@ -75,20 +89,32 @@ async function postAdminMutation(
     headers: mutationHeaders(csrfToken),
     body: JSON.stringify(body),
   });
-  return dataObject(await responseEnvelope(response));
+  const data = dataObject(await responseEnvelope(response));
+  invalidateCachedGet(ADMIN_ACCESS_PATH);
+  invalidateCachedGetPrefix("/api/v1/admin/audit");
+  return data;
 }
 
 export async function readAdminAccessOverview(
   secureSessionReady: boolean,
+  force = false,
 ): Promise<AdminAccessOverview> {
   requireAdminApi(secureSessionReady);
-  const response = await fetch(ADMIN_ACCESS_PATH, {
-    method: "GET",
-    cache: "no-store",
-    credentials: "same-origin",
-    headers: { Accept: "application/json" },
-  });
-  return dataObject(await responseEnvelope(response)) as AdminAccessOverview;
+  try {
+    const envelope = await cachedGetJson<unknown>(ADMIN_ACCESS_PATH, { force });
+    return dataObject(envelope) as AdminAccessOverview;
+  } catch (error) {
+    if (error instanceof CachedGetError) {
+      const code = isErrorEnvelope(error.body)
+        ? error.body.error
+        : "invalid_server_response";
+      throw new AdminAccessClientError(
+        error.status,
+        typeof code === "string" && code ? code : "request_failed",
+      );
+    }
+    throw error;
+  }
 }
 
 export async function inviteAdminAccessPerson(

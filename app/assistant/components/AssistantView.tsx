@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   Bot,
   CheckCircle2,
@@ -17,6 +17,12 @@ import {
 } from "lucide-react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
 import { OperationsEmptyState, PageTitle } from "../../components/operations/OperationsPrimitives";
+import {
+  cachedGetJson,
+  invalidateTaskReadCaches,
+  isTerminalCachedGetError,
+} from "../../lib/client-get-cache";
+import { useCachedGetSubscription } from "../../lib/client-get-hooks";
 import { AssistantHelpPanel } from "./AssistantHelpPanel";
 import { TaskManagementPanel } from "./TaskManagementPanel";
 import { TodayPanel } from "./TodayPanel";
@@ -63,6 +69,8 @@ type TaskExtractionAvailability =
   | "disabled"
   | "unavailable";
 
+const ASSISTANT_CONFIG_URL = "/api/v1/assistant/config";
+
 function meetingLabel(meeting: AssistantMeeting) {
   const meetingAt = new Date(meeting.meetingAt);
   const date = Number.isNaN(meetingAt.valueOf())
@@ -108,6 +116,8 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
   const [availability, setAvailability] = useState<TaskExtractionAvailability>("checking");
   const [availabilityMessage, setAvailabilityMessage] = useState("Checking task extraction availability…");
   const extractionRequestRef = useRef<AbortController | null>(null);
+  const meetingLoadRequestRef = useRef(0);
+  const meetingVisibleLoadsInFlightRef = useRef(0);
   const currentProjectIdRef = useRef(projectId);
   currentProjectIdRef.current = projectId;
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -124,21 +134,17 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
     target?.focus();
   });
 
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/v1/assistant/config", { signal: controller.signal })
-      .then(async (response) => {
-        const data = await response.json().catch(() => ({})) as {
+  const loadAvailability = useCallback(async () => {
+    try {
+      const data = await cachedGetJson<{
           keyState?: "Configured" | "Missing";
           features?: { taskExtraction?: boolean };
-          error?: string;
-        };
+        }>(ASSISTANT_CONFIG_URL);
         if (
-          !response.ok
-          || (data.keyState !== "Configured" && data.keyState !== "Missing")
+          (data.keyState !== "Configured" && data.keyState !== "Missing")
           || typeof data.features?.taskExtraction !== "boolean"
         ) {
-          throw new Error(data.error ?? "Task extraction settings could not be loaded.");
+          throw new Error("Task extraction settings could not be loaded.");
         }
         if (data.keyState === "Missing") {
           // Keep the packet's deterministic non-AI fallback distinct from the
@@ -154,18 +160,56 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
           setAvailability("disabled");
           setAvailabilityMessage("Task extraction is turned off in AI settings.");
         }
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setAvailability("unavailable");
-        setAvailabilityMessage(
-          error instanceof Error
-            ? error.message
-            : "Task extraction settings could not be loaded.",
-        );
-      });
-    return () => controller.abort();
+    } catch (error) {
+      setAvailability("unavailable");
+      setAvailabilityMessage(
+        error instanceof Error
+          ? error.message
+          : "Task extraction settings could not be loaded.",
+      );
+    }
   }, []);
+
+  useEffect(() => {
+    void loadAvailability();
+  }, [loadAvailability]);
+
+  useCachedGetSubscription([ASSISTANT_CONFIG_URL], loadAvailability);
+
+  const meetingsUrl = projectId
+    ? `/api/v1/projects/${encodeURIComponent(projectId)}/meetings`
+    : "";
+  const loadMeetings = useCallback(async (silent = false) => {
+    if (!projectId) return;
+    if (silent && meetingVisibleLoadsInFlightRef.current > 0) return;
+    if (!silent) meetingVisibleLoadsInFlightRef.current += 1;
+    const requestId = ++meetingLoadRequestRef.current;
+    if (!silent) setMeetingState("loading");
+    try {
+      const data = await cachedGetJson<{ meetings?: AssistantMeeting[] }>(meetingsUrl);
+      if (requestId !== meetingLoadRequestRef.current || currentProjectIdRef.current !== projectId) return;
+      if (!Array.isArray(data.meetings)) throw new Error("Meeting notes could not be loaded.");
+      setMeetings(data.meetings);
+      setMeetingId((current) => data.meetings?.some(({ id }) => id === current)
+        ? current
+        : data.meetings?.[0]?.id ?? "");
+      setMeetingState("ready");
+      setMeetingError("");
+    } catch (error) {
+      if (requestId !== meetingLoadRequestRef.current || currentProjectIdRef.current !== projectId) return;
+      if (silent && !isTerminalCachedGetError(error)) return;
+      if (isTerminalCachedGetError(error)) {
+        setMeetings([]);
+        setMeetingId("");
+      }
+      setMeetingError(error instanceof Error ? error.message : "Meeting notes could not be loaded.");
+      setMeetingState("error");
+    } finally {
+      if (!silent) meetingVisibleLoadsInFlightRef.current -= 1;
+    }
+  }, [meetingsUrl, projectId]);
+
+  useCachedGetSubscription([meetingsUrl], () => loadMeetings(true), Boolean(projectId));
 
   useEffect(() => {
     extractionRequestRef.current?.abort();
@@ -183,34 +227,13 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
       setMeetingState("idle");
       return;
     }
-    const controller = new AbortController();
-    setMeetingState("loading");
-    fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/meetings`, {
-      signal: controller.signal,
-    }).then(async (response) => {
-      const data = await response.json().catch(() => ({})) as {
-        meetings?: AssistantMeeting[];
-        error?: string;
-      };
-      if (!response.ok || !Array.isArray(data.meetings)) {
-        throw new Error(data.error ?? "Meeting notes could not be loaded.");
-      }
-      setMeetings(data.meetings);
-      setMeetingId(data.meetings[0]?.id ?? "");
-      setMeetingState("ready");
-    }).catch((error) => {
-      if (controller.signal.aborted) return;
-      setMeetingError(
-        error instanceof Error ? error.message : "Meeting notes could not be loaded.",
-      );
-      setMeetingState("error");
-    });
+    void loadMeetings();
     return () => {
-      controller.abort();
+      meetingLoadRequestRef.current += 1;
       extractionRequestRef.current?.abort();
       extractionRequestRef.current = null;
     };
-  }, [projectId]);
+  }, [loadMeetings, projectId]);
 
   async function reviewTasks() {
     if (!projectId || !meetingId) return;
@@ -303,6 +326,7 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
       if (!response.ok || !data.task) {
         throw new Error(data.error ?? "The task could not be created.");
       }
+      invalidateTaskReadCaches();
       setAcceptAnnouncement(`Task created: ${proposal.title}`);
       setProposals((current) => {
         const acceptedIndex = current.findIndex((item) => item.reviewId === proposal.reviewId);

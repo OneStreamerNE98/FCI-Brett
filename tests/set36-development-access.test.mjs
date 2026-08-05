@@ -146,7 +146,10 @@ test("SET-36 card stays inside the Administrator-only settings branch and pins i
   ]);
 
   assert.match(app, /\{isAdmin && visibleSection === "Data & security" && <DataSecurityPanel \/>\}/);
-  assert.match(component, /fetch\(DEVELOPMENT_ACCESS_URL, \{ cache: "no-store" \}\)/);
+  // SET-42 keeps this read Administrator-scoped while moving the component to
+  // the shared cached transport and focus/navigation revalidation census.
+  assert.match(component, /cachedGetJson<unknown>\(DEVELOPMENT_ACCESS_URL, \{ force \}\)/);
+  assert.match(component, /useCachedGetSubscription\(\[DEVELOPMENT_ACCESS_URL\], \(\) => loadAccess\(false, true\)\)/);
   assert.match(component, /Office access is not configured — the app denies everyone/);
   assert.match(component, /access\.officeEmails\.length > 0 \|\| access\.officeDomains\.length > 0/);
   assert.match(component, /Maintain these identifiers in hosting configuration\. When live Google login is activated, manage people and roles in People &amp; Access\./);

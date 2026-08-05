@@ -40,7 +40,7 @@ async function routeMirrorSequence(page: Page, mirrors: readonly Mirror[]) {
   };
 }
 
-test("SET-11 refreshes mirror status without syncing, formats timestamps, and keeps errors verbatim", async ({ page }) => {
+test("SET-11 revalidates mirror status on focus without syncing, formats timestamps, and keeps errors verbatim", async ({ page }) => {
   const firstSyncedAt = 1_721_111_111_111;
   const refreshedSyncedAt = 1_722_222_222_222;
   const recordedError = "Recorded client mirror failure: row <7> & retry manually.";
@@ -79,7 +79,7 @@ test("SET-11 refreshes mirror status without syncing, formats timestamps, and ke
   await expect(panel.getByText(`Last synced: ${firstSyncedAt}`, { exact: true })).toHaveCount(0);
   const readsBeforeRefresh = calls.statusReads();
 
-  await panel.getByRole("button", { name: "Refresh status" }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 
   await expect.poll(calls.statusReads).toBe(readsBeforeRefresh + 1);
   const refreshedSyncedLabel = await page.evaluate((value) => new Date(value).toLocaleString(), refreshedSyncedAt);
@@ -113,5 +113,5 @@ test("SET-11 unconfigured state names the fallback key and links to Workspace St
     "/settings?section=google-workspace#workspace-stage-3",
   );
   await expect(panel.getByRole("button", { name: "Sync now" })).toBeDisabled();
-  await expect(panel.getByRole("button", { name: "Refresh status" })).toBeEnabled();
+  await expect(panel.getByRole("button", { name: "Refresh status" })).toHaveCount(0);
 });

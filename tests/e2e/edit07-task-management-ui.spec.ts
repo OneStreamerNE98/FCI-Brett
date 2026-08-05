@@ -383,9 +383,11 @@ test("a rejected by-id recovery read never invents saved values or re-applies", 
     "its latest saved version could not be loaded",
   );
   await expect(dialog.getByText(/^Saved value:/u)).toHaveCount(0);
-  await expect(dialog.getByRole("button", { name: "Refresh list to continue" })).toBeDisabled();
+  await expect(dialog.getByRole("button", {
+    name: "Wait for the automatic list update to continue",
+  })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Refresh list to continue" })).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "Re-apply changes" })).toHaveCount(0);
-  await dialog.getByRole("button", { name: "Refresh list to continue" }).click({ force: true });
   expect(recoveryReadCount).toBe(1);
   expect(patchCount).toBe(1);
 });

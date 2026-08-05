@@ -95,7 +95,9 @@ test("routes all three sheet-mirror UI surfaces through the shared mapper", asyn
   assert.equal(directorySummary.match(/<strong>/g)?.length, 1);
   assert.match(directorySummary, /<strong>\{sheetMirrorStatusLabel\(mirror, entity\)\}<\/strong>/);
 
-  const workspaceSummary = section(workspace, '<div className="workspace-sheet-summary">', "{(sheetsStatusError", "Workspace Sheets summary");
+  // SET-42 replaces the inline refresh/error block with the shared notice, so
+  // the error expression itself is now the stable end marker.
+  const workspaceSummary = section(workspace, '<div className="workspace-sheet-summary">', "{sheetsStatusError", "Workspace Sheets summary");
   assert.equal(workspaceSummary.match(/sheetMirrorStatusLabel\(/g)?.length, 2);
   assert.equal(workspaceSummary.match(/<strong>/g)?.length, 2);
   assert.match(workspaceSummary, /<strong>\{sheetMirrorStatusLabel\(sheetMirror, "clients"\)\}<\/strong>/);

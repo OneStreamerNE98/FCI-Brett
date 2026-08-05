@@ -1,11 +1,15 @@
 "use client";
 
-import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import { Building2, CalendarDays, Check, Mail, ShieldCheck } from "lucide-react";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { FeatureStateBadge } from "../../components/FeatureStateBadge";
 import { WorkspaceInfoHint } from "../../components/WorkspaceInfoHint";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
+import {
+  useCachedGetSubscription,
+  useClientLoadState,
+} from "../../lib/client-get-hooks";
 import { ChatNotificationSettingsCard } from "./ChatNotificationSettingsCard";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 import { buildWorkspaceDefaultsPatchBody } from "./workspace-defaults-request";
@@ -14,7 +18,6 @@ import styles from "./WorkspaceDefaultsPanel.module.css";
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
 type Notify = (message: string, kind?: NotificationKind, action?: NotificationAction) => void;
-type LoadState = "loading" | "ready" | "error";
 type CalendarConfigurationState = Readonly<{
   configured: boolean;
   source: "app" | "env" | "none";
@@ -95,6 +98,7 @@ function WorkflowSettingsStack({ children, notify, isAdmin }: { children: ReactN
 
 export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }: { mode: "calendar" | "workflow"; notify: Notify; onGoogleSetup: () => void; isAdmin: boolean }) {
   const [settings, setSettings] = useState<WorkspacePreferenceValues>(defaultWorkspacePreferences);
+  const [savedSettings, setSavedSettings] = useState<WorkspacePreferenceValues>(defaultWorkspacePreferences);
   const [saving, setSaving] = useState(false);
   const [verifyingCalendar, setVerifyingCalendar] = useState<"client-appointments" | "field-schedule" | null>(null);
   const [calendarAccount, setCalendarAccount] = useState<string | null>(null);
@@ -103,35 +107,44 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
     clientAppointments: CalendarConfigurationState;
     fieldSchedule: CalendarConfigurationState;
   }> | null>(null);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [loadError, setLoadError] = useState("");
-  const loadRequestRef = useRef(0);
+  const { state: loadState, error: loadError, run: runLoad } = useClientLoadState(
+    "The saved Workspace defaults could not be loaded.",
+  );
 
-  const loadWorkspaceSettings = useCallback(async (force = false) => {
-    const requestId = ++loadRequestRef.current;
-    setLoadState("loading");
-    setLoadError("");
-    try {
-      const [settingsData, googleData] = await Promise.all([
+  const loadWorkspaceSettings = useCallback((
+    force = false,
+    silent = false,
+    preserveDraft = false,
+  ) => runLoad(
+    () => Promise.all([
         cachedGetJson<{ settings?: WorkspacePreferenceValues }>("/api/v1/settings/workspace", { force }),
         cachedGetJson<{ workspace?: { connectionAccount?: unknown; calendarConnected?: boolean; calendarEnabled?: boolean; connectionStatus?: string; calendars?: { clientAppointments?: CalendarConfigurationState; fieldSchedule?: CalendarConfigurationState } } }>("/api/v1/google-workspace", { force }),
-      ]);
-      if (requestId !== loadRequestRef.current) return;
+      ]),
+    {
+      onSuccess: ([settingsData, googleData]) => {
       if (!settingsData.settings) throw new Error("The server returned no saved Workspace defaults.");
-      setSettings({ ...defaultWorkspacePreferences, ...settingsData.settings });
+      const nextSettings = { ...defaultWorkspacePreferences, ...settingsData.settings };
+      if (!preserveDraft) {
+        setSettings(nextSettings);
+        setSavedSettings(nextSettings);
+      }
       setCalendarAccount(typeof googleData.workspace?.connectionAccount === "string" ? googleData.workspace.connectionAccount : null);
       setCalendarConnected(googleData.workspace?.calendarConnected === true && googleData.workspace?.calendarEnabled === true && googleData.workspace?.connectionStatus === "connected");
       setCalendarConfiguration({
         clientAppointments: googleData.workspace?.calendars?.clientAppointments ?? { configured: false, source: "none", externalId: null },
         fieldSchedule: googleData.workspace?.calendars?.fieldSchedule ?? { configured: false, source: "none", externalId: null },
       });
-      setLoadState("ready");
-    } catch (error) {
-      if (requestId !== loadRequestRef.current) return;
-      setLoadError(error instanceof Error ? error.message : "The saved Workspace defaults could not be loaded.");
-      setLoadState("error");
-    }
-  }, []);
+      },
+      onFailure: () => {
+        setSettings(defaultWorkspacePreferences);
+        setSavedSettings(defaultWorkspacePreferences);
+        setCalendarAccount(null);
+        setCalendarConnected(false);
+        setCalendarConfiguration(null);
+      },
+    },
+    { silent },
+  ), [runLoad]);
 
   function calendarConfigurationLabel(value: CalendarConfigurationState | undefined, typed: string) {
     if (!value?.configured || value.source === "none") return "Not configured";
@@ -149,8 +162,17 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
 
   useEffect(() => {
     void Promise.resolve().then(() => loadWorkspaceSettings());
-    return () => { loadRequestRef.current += 1; };
   }, [loadWorkspaceSettings]);
+
+  const draftDirty = JSON.stringify(settings) !== JSON.stringify(savedSettings);
+  useCachedGetSubscription(
+    ["/api/v1/settings/workspace", "/api/v1/google-workspace"],
+    () => loadWorkspaceSettings(
+      false,
+      true,
+      draftDirty || saving || verifyingCalendar !== null,
+    ),
+  );
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -164,7 +186,9 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
       if (!response.ok || !data.settings) throw new Error(data.error ?? "Settings could not be saved.");
       invalidateCachedGet("/api/v1/settings/workspace");
       invalidateCachedGet("/api/v1/google-workspace");
-      setSettings({ ...defaultWorkspacePreferences, ...data.settings });
+      const nextSettings = { ...defaultWorkspacePreferences, ...data.settings };
+      setSettings(nextSettings);
+      setSavedSettings(nextSettings);
       await loadWorkspaceSettings(true);
       notify(mode === "calendar" ? "Calendar defaults saved" : "Workflow and notification defaults saved", "success");
     } catch (error) {
