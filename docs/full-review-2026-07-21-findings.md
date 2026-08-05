@@ -313,6 +313,7 @@ asserted distinct from loading-state copy on Overview and Reports.
 ## Wave R4 — after the SET series (queued with the feature resume)
 
 ### FIX-09 · E2e through the real simulation backend (P2 F-7; medium)
+**Status:** In progress — `kimi/fix09-e2e-simulation-backend`
 **Why (premise narrowed August 3, 2026):** F-7's "every browser test bypasses the
 simulation backend" is now false — `tests/e2e/set22-project-drive-files.spec.ts` is
 fully unstubbed and drives the real backend, and the stepper's real-reset path
