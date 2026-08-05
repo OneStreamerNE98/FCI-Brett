@@ -185,3 +185,61 @@ test("Gmail message reads remain action-gated across focus and navigation", asyn
   await expect(page.getByRole("button", { name: "Load messages", exact: true })).toBeEnabled();
   expect(gmailMessageReads).toBe(1);
 });
+
+test("the Google Workspace panel never auto-revalidates a Gmail read on focus, visibility, or navigation", async ({ page }) => {
+  // The Settings → Google Workspace panel is the surface that owns the Gmail
+  // subscription, so the counter has to be asserted here and not only on
+  // /inbox. Enrolling a /gmail/messages URL in useCachedGetSubscription makes
+  // revalidateSubscribedCachedGets() force-GET it once per focus, visibility
+  // change, and navigation — regardless of what the panel's own logic decides —
+  // and that route resolves a Workspace Gmail client and a live label lookup
+  // before it reads its `verification` parameter.
+  let gmailMailboxReads = 0;
+  let gmailVerificationReads = 0;
+
+  await mockShell(page, (route) => fulfillJson(route, { clients: [initialClient] }));
+  await page.route("**/api/v1/google-workspace", (route) => fulfillJson(route, {
+    credentialsPresent: true,
+    missing: [],
+    missingDetails: [],
+    workspace: {
+      connectionStatus: "connected",
+      connectionAccount: "workspace-simulation@fci.example",
+      gmailConnected: true,
+      gmailEnabled: true,
+      calendarConnected: true,
+      calendarEnabled: true,
+      runtimeMode: "simulation",
+      simulation: true,
+    },
+  }));
+  await page.route("**/api/v1/integrations/google/gmail/messages?*", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("verification") === "status") {
+      gmailVerificationReads += 1;
+      await fulfillJson(route, { bucket: "needs-review", messages: [], labelReady: true, testEmailPassed: true, limit: 20 });
+      return;
+    }
+    gmailMailboxReads += 1;
+    await fulfillJson(route, { bucket: "inbox", messages: [inboxMessage], labelReady: true, limit: 20 });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  await expect(page.getByRole("heading", { level: 2, name: "Google Workspace", exact: true })).toBeVisible();
+  await expect.poll(() => gmailVerificationReads).toBe(1);
+  expect(gmailMailboxReads).toBe(0);
+
+  // Fire all three lifecycle triggers back to back. The stage-4 verification
+  // read stays on cachedGetJson, so none of them may reach the network.
+  const readsBeforeTriggers = gmailVerificationReads;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await page.locator(".settings-nav").getByRole("button", { name: "Calendar & appointments", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "Calendar & appointments", exact: true })).toBeVisible();
+  await page.locator(".settings-nav").getByRole("button", { name: "Google Workspace", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "Google Workspace", exact: true })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+
+  expect(gmailVerificationReads).toBe(readsBeforeTriggers);
+  expect(gmailMailboxReads).toBe(0);
+});

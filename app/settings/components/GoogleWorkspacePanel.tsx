@@ -857,6 +857,15 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     ),
     isAdmin,
   );
+  // SET42_ACTION_GATED_GMAIL_GET: the Gmail verification read is deliberately
+  // absent from this array. Every URL enrolled here is force-GET by
+  // revalidateSubscribedCachedGets() on focus, visibility change, and
+  // navigation, and /gmail/messages resolves a mailbox API client and a live
+  // label lookup before it reads its `verification` parameter — one OAuth
+  // refresh-token grant plus a mailbox round trip per trigger, per
+  // administrator. The stage-4 verification reads stay on cachedGetJson, a
+  // migration onto the shared transport, not enrollment in forced lifecycle
+  // refetch. Mailbox reads never auto-revalidate.
   useCachedGetSubscription(
     [
       "/api/v1/google-workspace",
@@ -864,7 +873,6 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       "/api/v1/integrations/google/connection",
       "/api/v1/integrations/google/setup/resources",
       "/api/v1/settings/workspace",
-      "/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status",
       "/api/v1/integrations/google/calendar/events?verification=status",
     ],
     () => refreshWorkspaceSetup(

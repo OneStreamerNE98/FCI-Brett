@@ -89,6 +89,105 @@ function rawFetchSites(source, label) {
   return sites;
 }
 
+/**
+ * Every URL handed to useCachedGetSubscription lands in jsonGetSubscribers, and
+ * revalidateSubscribedCachedGets() force-GETs each of those keys on focus,
+ * visibility change, and navigation. Reading the arrays from the AST — rather
+ * than grepping one file — is what makes the Gmail rule repo-wide.
+ */
+function subscribedGetUrls(source, label) {
+  const sourceFile = ts.createSourceFile(
+    label,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    label.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  // Bindings at any depth, so a URL built next to its reader resolves too.
+  const initializerByName = new Map();
+  function collectBindings(node) {
+    if (
+      ts.isVariableDeclaration(node)
+      && ts.isIdentifier(node.name)
+      && node.initializer
+    ) {
+      initializerByName.set(
+        node.name.text,
+        ts.isAsExpression(node.initializer) ? node.initializer.expression : node.initializer,
+      );
+    }
+    ts.forEachChild(node, collectBindings);
+  }
+  collectBindings(sourceFile);
+
+  const urls = [];
+  const expressions = [];
+
+  function recordElement(element) {
+    if (ts.isStringLiteral(element) || ts.isNoSubstitutionTemplateLiteral(element)) {
+      urls.push(element.text);
+      return;
+    }
+    // A URL this census cannot fully evaluate still cannot be allowed to hide a
+    // mailbox read. Keep the element's own text and the text of whatever it
+    // resolves to, and hold both to the same rule as a literal.
+    expressions.push(element.getText(sourceFile));
+    const resolved = ts.isIdentifier(element) ? initializerByName.get(element.text) : undefined;
+    if (resolved) expressions.push(resolved.getText(sourceFile));
+  }
+
+  function recordArgument(argument) {
+    if (!argument) return;
+    const literal = ts.isIdentifier(argument)
+      ? initializerByName.get(argument.text) ?? argument
+      : argument;
+    if (ts.isArrayLiteralExpression(literal)) {
+      for (const element of literal.elements) recordElement(element);
+      return;
+    }
+    recordElement(literal);
+  }
+
+  function visit(node) {
+    if (
+      ts.isCallExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === "useCachedGetSubscription"
+    ) recordArgument(node.arguments[0]);
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return { label, urls, expressions };
+}
+
+/** Every setTimeout/setInterval reachable from a client component. */
+function timerSites(source, label) {
+  const sourceFile = ts.createSourceFile(
+    label,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    label.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const sites = [];
+  function visit(node) {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const name = ts.isIdentifier(callee)
+        ? callee.text
+        : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)
+          ? callee.name.text
+          : "";
+      if (name === "setTimeout" || name === "setInterval") {
+        sites.push({ label, functionName: enclosingFunctionName(node), timer: name });
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return sites;
+}
+
 function clientModuleSpecifiers(source, label) {
   const sourceFile = ts.createSourceFile(
     label,
@@ -201,6 +300,40 @@ test("client GET census covers TS and TSX modules reachable from client componen
   assert.match(aiSettings, /method: "POST" \| "PATCH" \| "DELETE"/u);
 });
 
+test("no Gmail mailbox read is enrolled in forced lifecycle revalidation anywhere under app/", async () => {
+  // Do-4: Gmail message reads stay behind the explicit action; mailbox reads
+  // never auto-revalidate. /gmail/messages resolves a Workspace Gmail client and
+  // a live label lookup before it reads its `verification` parameter, so a
+  // single enrollment here costs one OAuth refresh-token grant plus a mailbox
+  // round trip on every focus, visibility change, and navigation — for every
+  // administrator with the panel open. This is a repo-wide source rule, not a
+  // per-file one: it must fail from whichever component reintroduces it.
+  const files = await nestedFiles(appRoot, [".ts", ".tsx"]);
+  const sources = await Promise.all(files.map(async (file) => ({
+    label: sourcePath(file),
+    source: await readFile(file, "utf8"),
+  })));
+  const subscriptions = sources.map(({ source, label }) => subscribedGetUrls(source, label));
+  const enrolled = subscriptions.flatMap(({ label, urls, expressions }) => [
+    ...urls.map((url) => ({ label, url, resolved: true })),
+    ...expressions.map((url) => ({ label, url, resolved: false })),
+  ]);
+
+  assert.ok(
+    enrolled.filter(({ resolved }) => resolved).length >= 25,
+    `the subscription census must still find the mounted readers (found ${enrolled.length})`,
+  );
+  assert.ok(
+    enrolled.some(({ url }) => url === "/api/v1/google-workspace"),
+    "the census must still be reading real subscription arrays",
+  );
+  assert.deepEqual(
+    enrolled.filter(({ url }) => /gmail\/messages/u.test(url)),
+    [],
+    "no /gmail/messages URL may appear in any useCachedGetSubscription array: migrating a read onto cachedGetJson is not the same as enrolling it in forced lifecycle refetch",
+  );
+});
+
 test("the refresh-control census is closed while action and failure controls remain", async () => {
   const [inbox, google, directory, operations] = await Promise.all([
     read("app/inbox/components/InboxView.tsx"),
@@ -249,10 +382,70 @@ test("one loader hook replaces the six FIX-12 clones and lifecycle reads stay ti
   ]);
   const freshness = `${cache}\n${hooks}\n${boundary}`;
   assert.doesNotMatch(freshness, /setInterval|setTimeout/u);
+  // The freshness transport bounds an in-flight request with an abort deadline
+  // rather than a timer. Without it, one stalled GET wedges every future
+  // focus/visibility/navigation revalidation for the life of the tab, because
+  // lifecycleRevalidationInFlight is cleared only after Promise.allSettled
+  // resolves for every member. An abort deadline on a request that is already
+  // open queues nothing and repeats nothing, so it is not a scheduler.
+  assert.match(cache, /const REQUEST_DEADLINE_MS = 20_000;/u);
+  assert.match(cache, /const deadline = AbortSignal\.timeout\(REQUEST_DEADLINE_MS\);/u);
+  assert.match(cache, /signal: deadline,/u);
   assert.match(hooks, /window\.addEventListener\("focus", revalidate\)/u);
   assert.match(hooks, /document\.addEventListener\("visibilitychange", onVisibilityChange\)/u);
   assert.match(hooks, /previousRouteKey\.current !== routeKey/u);
   assert.match(cache, /if \(!options\.force && existing\.hasValue\) return Promise\.resolve/u);
+});
+
+test("the scheduler law is enforced across every client-reachable module, not just the files this packet wrote", async () => {
+  // The packet's Accept criterion is repo-wide: no background or polling work
+  // may run while nobody is signed in. Scoping the assertion to the three files
+  // SET-42 authored could not enforce that, so the census follows the same
+  // client import graph the GET census uses and pins the exact surviving set.
+  // Every entry below is pre-existing and is allowed for a stated reason. Adding
+  // a timer anywhere reachable from a client component fails this test.
+  const files = await nestedFiles(appRoot, [".ts", ".tsx"]);
+  const sources = await Promise.all(files.map(async (file) => ({
+    file,
+    label: sourcePath(file),
+    source: await readFile(file, "utf8"),
+  })));
+  const sites = clientReachableSources(sources)
+    .flatMap(({ source, label }) => timerSites(source, label))
+    .sort((left, right) => (
+      left.label.localeCompare(right.label)
+      || left.functionName.localeCompare(right.functionName)
+      || left.timer.localeCompare(right.timer)
+    ));
+
+  assert.deepEqual(
+    sites,
+    [
+      // Day-rollover refresh. ADJUDICATED August 4, 2026: this stays. The
+      // scheduler law targets background/polling work that runs while nobody is
+      // signed in. A single setTimeout that fires once at the local day boundary
+      // so an open tab stops calling yesterday "today" is UI correctness, not a
+      // scheduler.
+      { label: "app/assistant/components/TodayPanel.tsx", functionName: "TodayPanel", timer: "setTimeout" },
+      // Typeahead debounce: delays a keystroke-driven request the user started.
+      { label: "app/features/address-validation/AddressValidationField.tsx", functionName: "AddressValidationField", timer: "setTimeout" },
+      // Toast auto-dismiss: removes a rendered message, issues no request.
+      { label: "app/FloorOpsApp.tsx", functionName: "FloorOpsApp", timer: "setTimeout" },
+      // Wall-clock display tick: re-renders a shown time, issues no request.
+      { label: "app/FloorOpsApp.tsx", functionName: "Overview", timer: "setInterval" },
+      // Day-rollover refresh for the dashboard snapshot; same ruling as above.
+      { label: "app/FloorOpsApp.tsx", functionName: "schedule", timer: "setTimeout" },
+      // Hydration and focus deferrals to the next task; none of them fetch.
+      { label: "app/management/access/AdminAccessPage.tsx", functionName: "AdminAccessPage", timer: "setTimeout" },
+      { label: "app/management/access/AdminAccessPage.tsx", functionName: "AdminAccessPage", timer: "setTimeout" },
+      { label: "app/management/access/AdminAccessPage.tsx", functionName: "AdminAccessPage", timer: "setTimeout" },
+      { label: "app/management/access/AdminAccessPage.tsx", functionName: "selectSection", timer: "setTimeout" },
+      // Mount deferral and post-load focus restoration; neither repeats.
+      { label: "app/management/access/AdminActivityPanel.tsx", functionName: "AdminActivityPanel", timer: "setTimeout" },
+      { label: "app/management/access/AdminActivityPanel.tsx", functionName: "AdminActivityPanel", timer: "setTimeout" },
+    ],
+    "no new client timer may be introduced; freshness comes from focus, visibility, and navigation, never from a schedule",
+  );
 });
 
 test("assistant config and Sheets status use the one cached transport", async () => {
@@ -397,8 +590,16 @@ test("sliding audit windows, stage verification readers, and editor snapshots st
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/FloorOpsApp.tsx"),
   ]);
-  assert.match(activity, /useClientLifecycleRefresh\([\s\S]{0,500}requestFor\(appliedFilters\)[\s\S]{0,300}loadPage\(nextRequest/u);
-  assert.match(google, /\/gmail\/messages\?label=needs-review&verification=status/u);
+  assert.match(activity, /useClientLifecycleRefresh\([\s\S]{0,600}requestFor\(appliedFilters\)[\s\S]{0,400}loadPage\(nextRequest, null, false, appliedFilters, false, loadedPageCount\.current\)/u);
+  // A background revalidation refreshes the window the administrator has open.
+  // Re-reading only page one would silently discard every row that "Load more"
+  // already delivered, so the replacing read walks the same page count.
+  assert.match(activity, /while \(!append && refreshedPages < pages && next\.nextCursor !== null\)/u);
+  assert.match(activity, /loadedPageCount\.current = append \? loadedPageCount\.current \+ 1 : refreshedPages;/u);
+  // The stage-4 verification readers stay explicit, and stay on the plain
+  // cachedGetJson transport. Reading a URL is not enrollment in forced
+  // lifecycle refetch — the enrollment rule itself is pinned repo-wide below.
+  assert.match(google, /readStageFourVerification<\{ labelReady\?: boolean; testEmailPassed\?: boolean \}>\(\s*"\/api\/v1\/integrations\/google\/gmail\/messages\?label=needs-review&verification=status",/u);
   assert.match(google, /\/calendar\/events\?verification=status/u);
   assert.match(app, /editingSnapshot && <ProjectEditModal project=\{editingSnapshot\}/u);
   assert.match(app, /editingClientSnapshot && <ClientEditModal client=\{editingClientSnapshot\}/u);

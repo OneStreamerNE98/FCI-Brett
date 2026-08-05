@@ -101,6 +101,10 @@ export function AdminActivityPanel({
   const requestSequence = useRef(0);
   const applyButtonRef = useRef<HTMLButtonElement>(null);
   const restoreFilterFocusAfterLoad = useRef(false);
+  // How many pages the administrator actually has open. A background
+  // revalidation must refresh that whole window; collapsing it back to page one
+  // would silently discard every row reached through "Load more".
+  const loadedPageCount = useRef(1);
 
   const loadPage = useCallback(async (
     request: AppliedActivityRequest,
@@ -108,6 +112,7 @@ export function AdminActivityPanel({
     append: boolean,
     replacementFilters: ActivityFilters | null = null,
     restoreFilterFocus = false,
+    pages = 1,
   ) => {
     const sequence = requestSequence.current + 1;
     requestSequence.current = sequence;
@@ -124,11 +129,28 @@ export function AdminActivityPanel({
       setLoadMoreError("");
     }
     try {
-      const next = await readAdminAuditActivity(
+      let next = await readAdminAuditActivity(
         { ...request, cursor },
         secureSessionReady,
       );
       if (requestSequence.current !== sequence) return;
+      // A replacing read re-reads as many pages as are currently open so the
+      // refreshed window is at least as large as the one it replaces.
+      let refreshedPages = 1;
+      while (!append && refreshedPages < pages && next.nextCursor !== null) {
+        const continuation = await readAdminAuditActivity(
+          { ...request, cursor: next.nextCursor },
+          secureSessionReady,
+        );
+        if (requestSequence.current !== sequence) return;
+        next = Object.freeze({
+          events: Object.freeze([...next.events, ...continuation.events]),
+          nextCursor: continuation.nextCursor,
+          generatedAt: continuation.generatedAt,
+        });
+        refreshedPages += 1;
+      }
+      loadedPageCount.current = append ? loadedPageCount.current + 1 : refreshedPages;
       setActivityPage((current) => append && current
         ? Object.freeze({
             events: Object.freeze([...current.events, ...next.events]),
@@ -149,6 +171,7 @@ export function AdminActivityPanel({
       if (error instanceof AdminAuditClientError && error.status === 403) {
         setActivityPage(null);
         setAppliedRequest(null);
+        loadedPageCount.current = 1;
       }
       if (append) {
         setLoadMoreError("More activity could not be loaded. The records already shown were kept.");
@@ -167,10 +190,12 @@ export function AdminActivityPanel({
     () => {
       if (appliedRequest === null) return;
       // Relative period bounds slide on every lifecycle trigger. This reader is
-      // callback-only so no obsolete timestamped URL is fetched first.
+      // callback-only so no obsolete timestamped URL is fetched first. The
+      // refreshed window keeps every page the administrator has opened: a focus
+      // event must never throw away rows that "Load more" already delivered.
       const nextRequest = requestFor(appliedFilters);
       invalidateCachedGetPrefix("/api/v1/admin/audit?", { notify: false });
-      return loadPage(nextRequest, null, false, appliedFilters);
+      return loadPage(nextRequest, null, false, appliedFilters, false, loadedPageCount.current);
     },
     active && appliedRequest !== null,
   );
@@ -181,7 +206,7 @@ export function AdminActivityPanel({
     wasActive.current = active;
     if (!becameActive || !hasStarted || appliedRequest === null) return;
     const nextRequest = requestFor(appliedFilters);
-    void loadPage(nextRequest, null, false, appliedFilters);
+    void loadPage(nextRequest, null, false, appliedFilters, false, loadedPageCount.current);
   }, [active, appliedFilters, appliedRequest, hasStarted, loadPage]);
 
   useEffect(() => {

@@ -1996,6 +1996,21 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
     });
     await triggerAutomaticWorkspaceRefresh(page);
     await setStageExpanded(page, 4, true);
+    // The Calendar status read is enrolled in the lifecycle census, so the focus
+    // trigger reconciles it and it drops out of VERIFIED. The Gmail read is
+    // deliberately not enrolled: /gmail/messages resolves a mailbox API client
+    // and a live label lookup before it reads its `verification` parameter, so
+    // enrolling it would cost an OAuth refresh-token grant and a mailbox round
+    // trip on every focus. It stays mount- and action-gated and keeps showing
+    // its last read value — which is also why Calendar reads READY TO VERIFY
+    // instead of WAITING here: its actions are still unblocked by a Gmail step
+    // that has not been re-read yet.
+    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+
+    // A fresh mount is how the panel asks for the Gmail verification read again.
+    await page.reload();
+    await setStageExpanded(page, 4, true);
     await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("1 OF 3 VERIFIED");
     await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
     await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "WAITING");

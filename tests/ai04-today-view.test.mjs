@@ -476,6 +476,7 @@ test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard 
     read("app/assistant/components/TodayPanel.module.css"),
     read("tests/e2e/page-layouts.spec.ts"),
   ]);
+  const loadState = await read("app/lib/client-get-hooks.ts");
   assert.match(routeSource, /requireOfficeUser\(request\)/u);
   assert.match(routeSource, /noStoreJson\(today\)/u);
   assert.doesNotMatch(routeSource, /gmail|fetch\(/iu);
@@ -498,9 +499,21 @@ test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard 
   assert.match(panel, /fetch\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(task\.id\)\}`[\s\S]*method: "PATCH"[\s\S]*body: JSON\.stringify\(\{ status: "done" \}\)/u);
   assert.match(panel, /if \(!response\.ok\) throw new Error\(data\.error \?\? "The task could not be completed\."\)/u);
   // Completion refreshes in place: a silent reload keeps the current list mounted
-  // instead of swapping in the loading empty state.
+  // instead of swapping in the loading empty state. SET-42 moved that behavior
+  // into useClientLoadState, so it is pinned where it now lives — forwarding the
+  // flag is not the contract, suppressing the loading state is.
   assert.match(panel, /setAnnouncement\(`\$\{task\.title\} completed\.`\);\s+invalidateTaskReadCaches\(\{ notifyToday: false \}\);\s+const refreshed = await load\(\{ force: true, silent: true \}\);/u);
   assert.match(panel, /\{ silent: options\?\.silent \}/u);
+  assert.match(
+    loadState,
+    /if \(!options\.silent\) \{\s*visibleRequestsInFlight\.current \+= 1;\s*setState\("loading"\);/u,
+    "the shared loader may only enter the loading state when the read is not silent",
+  );
+  assert.equal(
+    (loadState.match(/setState\("loading"\)/gu) ?? []).length,
+    1,
+    "no second code path may swap a mounted list for the loading state behind a silent reload",
+  );
   // One live region stays mounted across every state (loading/error/ready), so
   // the announcement renders into an already-present region — it is the first
   // child of the always-rendered panel wrapper, before the state-dependent body.

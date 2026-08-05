@@ -13,6 +13,16 @@ type CachedJsonEntry = {
 };
 
 const DEFAULT_TTL_MS = 15_000;
+/**
+ * Every cached GET carries an abort deadline. Without one, a single stalled
+ * response wedges the whole freshness doctrine: lifecycleRevalidationInFlight
+ * is only cleared in the `.finally()` of a `Promise.allSettled` that waits for
+ * every member, so one hung request suppresses focus, visibility, and
+ * navigation revalidation for the life of the tab. An abort deadline on a
+ * request that is already open is not a scheduler — it queues nothing, repeats
+ * nothing, and cannot run while no request is in flight.
+ */
+const REQUEST_DEADLINE_MS = 20_000;
 const jsonGetCache = new Map<string, CachedJsonEntry>();
 const jsonGetSubscribers = new Map<string, Set<() => void>>();
 const clientLifecycleSubscribers = new Set<() => void | Promise<void>>();
@@ -61,10 +71,12 @@ function responseError(url: string, status: number, body: unknown) {
 
 function startJsonGet<T>(url: string, ttlMs: number, existing?: CachedJsonEntry): Promise<T> {
   const notifyOnSettlement = Boolean(existing?.hasValue || existing?.terminalError);
+  const deadline = AbortSignal.timeout(REQUEST_DEADLINE_MS);
   const request = fetch(url, {
     cache: "no-store",
     credentials: "same-origin",
     headers: { Accept: "application/json" },
+    signal: deadline,
   })
     .then(async (response) => {
       const body = await response.json().catch(() => null) as unknown;
@@ -84,14 +96,20 @@ function startJsonGet<T>(url: string, ttlMs: number, existing?: CachedJsonEntry)
       return value;
     })
     .catch((error) => {
+      // A timed-out request is an ordinary, retryable transport failure: it
+      // never becomes a terminal authorization state and never poisons a
+      // stale-but-honest cached value.
+      const failure = deadline.aborted && !isTerminalCachedGetError(error)
+        ? new CachedGetError(0, null, `GET ${url} did not respond within ${REQUEST_DEADLINE_MS / 1_000} seconds.`)
+        : error;
       const current = jsonGetCache.get(url);
       if (current?.inFlight === request) {
-        if (isTerminalCachedGetError(error)) {
+        if (isTerminalCachedGetError(failure)) {
           jsonGetCache.set(url, {
             expiresAt: Number.POSITIVE_INFINITY,
             hasValue: false,
             ttlMs,
-            terminalError: error,
+            terminalError: failure,
           });
           if (notifyOnSettlement) notifySubscribers(url);
         } else if (current.hasValue) {
@@ -100,7 +118,7 @@ function startJsonGet<T>(url: string, ttlMs: number, existing?: CachedJsonEntry)
           jsonGetCache.delete(url);
         }
       }
-      throw error;
+      throw failure;
     });
 
   jsonGetCache.set(url, existing?.hasValue

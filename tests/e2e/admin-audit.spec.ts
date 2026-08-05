@@ -251,6 +251,43 @@ test("Load more preserves existing rows after failure and retries the same curso
   expect(requests[1]!.searchParams.get("before")).toBe(requests[2]!.searchParams.get("before"));
 });
 
+test("a background revalidation refreshes the whole loaded window instead of collapsing it to page one", async ({ page }) => {
+  // A lifecycle revalidation used to re-read only page one with append=false,
+  // which replaced the accumulated list: an administrator who pressed "Load
+  // more" three times lost every row back to page one on a focus event.
+  const pageFor = (cursor: string | null) => {
+    if (cursor === null) return { rows: [{ ...firstEvent, actionLabel: "Window page one" }], next: "cursor-page-two" };
+    if (cursor === "cursor-page-two") return { rows: [{ ...secondEvent, actionLabel: "Window page two" }], next: "cursor-page-three" };
+    return { rows: [{ ...secondEvent, actionLabel: "Window page three" }], next: null };
+  };
+  const requests = await installAdminApis(page, async (route, url) => {
+    const { rows, next } = pageFor(url.searchParams.get("cursor"));
+    await fulfillAudit(route, auditPage(rows, next));
+  });
+  await openActivity(page);
+
+  const table = page.getByRole("table", { name: "Security activity" });
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(table).toContainText("Window page two");
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(table).toContainText("Window page three");
+  await expect(table.locator("tbody tr")).toHaveCount(3);
+  const readsBeforeRevalidation = requests.length;
+
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => requests.length).toBe(readsBeforeRevalidation + 3);
+
+  // The refreshed window is at least as large as the one it replaced, and it
+  // walked the same cursor chain instead of restarting at page one.
+  await expect(table.locator("tbody tr")).toHaveCount(3);
+  await expect(table).toContainText("Window page one");
+  await expect(table).toContainText("Window page two");
+  await expect(table).toContainText("Window page three");
+  expect(requests[readsBeforeRevalidation]!.searchParams.get("cursor")).toBeNull();
+  expect(requests[readsBeforeRevalidation + 1]!.searchParams.get("cursor")).toBe("cursor-page-two");
+  expect(requests[readsBeforeRevalidation + 2]!.searchParams.get("cursor")).toBe("cursor-page-three");
+});
+
 test("period and all-history empty states remain accurate", async ({ page }) => {
   await installAdminApis(page, (route) => fulfillAudit(route, auditPage([])));
   await openActivity(page);

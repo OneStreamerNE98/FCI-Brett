@@ -5,6 +5,14 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const read = async (path) => (await readFile(new URL(path, root), "utf8")).replaceAll("\r\n", "\n");
 
+function section(source, start, end, label) {
+  const startIndex = source.indexOf(start);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  assert.notEqual(startIndex, -1, `${label} start marker must remain present`);
+  assert.notEqual(endIndex, -1, `${label} end marker must remain present`);
+  return source.slice(startIndex, endIndex);
+}
+
 test("SET-11 status revalidates automatically without triggering a sync", async () => {
   const [app, panel, route] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
@@ -16,6 +24,24 @@ test("SET-11 status revalidates automatically without triggering a sync", async 
   // includes the no-store route in the shared lifecycle census.
   assert.match(app, /const DIRECTORY_GET_URLS = \[[\s\S]*"\/api\/v1\/integrations\/google\/sheets\/status"/);
   assert.match(app, /useCachedGetSubscription\(DIRECTORY_GET_URLS, \(\) => refreshDirectoryData\(true\)\)/);
+
+  // The client path that reads mirror status is now refreshDirectoryData. The
+  // SET-11 guarantee is unchanged and is asserted against that path directly,
+  // not merely inferred from a URL appearing in a list: reading the recorded
+  // mirror state can never write. Nothing in this reader may reach the sync
+  // endpoint or issue a non-GET request.
+  const statusRead = section(
+    app,
+    "const refreshDirectoryData = useCallback(",
+    "}, [userEmail, userName]);",
+    "directory status read",
+  );
+  assert.match(statusRead, /cachedGetJson<Record<string, unknown>>\(path, \{ force \}\)/);
+  assert.match(statusRead, /getJson\("\/api\/v1\/integrations\/google\/sheets\/status"\)/);
+  assert.match(statusRead, /setSheetMirror\(/);
+  assert.doesNotMatch(statusRead, /onSync|\/sync|method: "POST"/);
+  assert.doesNotMatch(statusRead, /\bfetch\(/);
+
   assert.doesNotMatch(panel, /refreshStatus|Refresh status|setRefreshSnapshot/);
   assert.match(panel, /<AdministratorActionButton[\s\S]+isAdmin=\{isAdmin\}[\s\S]+Sync now/);
   assert.match(route, /export async function GET/);
