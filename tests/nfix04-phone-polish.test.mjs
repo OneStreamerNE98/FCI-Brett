@@ -15,7 +15,6 @@ const domainChecklistPath = resolve(
 );
 
 const globals = readFileSync(globalsPath, "utf8");
-const floorOpsApp = readFileSync(resolve(repositoryRoot, "app/FloorOpsApp.tsx"), "utf8");
 const projectsView = readFileSync(resolve(repositoryRoot, "app/projects/components/ProjectsView.tsx"), "utf8");
 const assistantReviewStyles = readFileSync(assistantReviewPath, "utf8");
 const defaultsStyles = readFileSync(defaultsPath, "utf8");
