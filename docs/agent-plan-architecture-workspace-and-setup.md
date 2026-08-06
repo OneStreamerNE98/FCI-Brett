@@ -3784,6 +3784,240 @@ mutation, then revert); the remaining count is recorded with its composition; ev
 category (a) is named individually in the PR body with what it would have broken.
 **Effort:** medium. **Cost:** $0.
 
+### NFIX-11 · Error boundaries: one crash currently unmounts the whole app (medium; quality gate)
+**Status:** Superseded — absorbed into DES-17
+
+**Why:** filed August 6, 2026 from the comprehensive code review
+(`docs/code-review-2026-08-06-findings.md`, F2, adversarially confirmed by direct
+inspection) — and **superseded the same day**: DES-17, filed August 4 from the usability
+review, already owns the error boundary (plus the toast queue and empty-state actions).
+The August 6 measurement independently re-confirmed DES-17's premise (zero
+`error.tsx` files, zero `ErrorBoundary` classes, `app/layout.tsx` renders `{children}`
+bare) and is recorded in DES-17's Why rather than competing with it. The body below is
+retained as the second measurement.
+
+**Why (original filing):** Zero `error.tsx` files exist under `app/`, and zero `ErrorBoundary` class
+components exist anywhere: `app/layout.tsx` renders `{children}` bare, and
+`FloorOpsApp.tsx` — the root client component — wraps nothing. A single unhandled render
+exception in any leaf (a malformed API payload reaching `InboxView`, a `Status` component
+handed an unexpected enum) propagates to the root and unmounts the entire shell to a
+blank white screen. NFIX-10's lesson applies: a failure mode nobody can see is the same
+class as a test that cannot fail.
+**Do:** add `app/error.tsx` (the App Router root error UI) with an honest message and a
+recovery action, and add one shared class-based `ErrorBoundary` wrapped around the major
+feature areas — Overview, Inbox, Assistant, Settings, Reports — so a crash is confined
+to its panel, names the failed area, and offers retry. The boundary adds no DOM nodes on
+the healthy path.
+**Constraints:** healthy-path rendering stays byte-identical — both page-layout golden
+hashes and their four pinning Node suites pass unmodified. No error-telemetry service;
+the boundary surfaces the failure in-app only.
+**Accept:** a test throws deliberately inside one feature boundary and proves the shell
+and sibling features stay mounted while the failed panel shows its recovery UI;
+`app/error.tsx` renders for a root-level throw; both golden constants byte-identical;
+`npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### NFIX-12 · `useEffectEvent` underpins the whole subscription layer (small-medium)
+
+**Why:** filed August 6, 2026 from the review (F3, confirmed with a nuance the validator
+recorded). `app/lib/client-get-hooks.ts` imports `useEffectEvent` from `react` and builds
+`useCachedGetSubscription` and `useClientLifecycleRefresh` on it — the two hooks every
+panel's live data depends on. The API ships in the pinned React 19.2.6 but was never
+stabilized; its semantics can change or vanish in any future React release, and the
+repo's own rule against load-bearing use of signals nobody watches argues against
+building the entire data-subscription doctrine on an unversioned API.
+**Do:** replace `useEffectEvent` with a stable equivalent — a latest-callback `useRef`
+pattern or restructured `useCallback` dependencies — preserving the exact subscription
+semantics (silent revalidation, latest-request-wins, mount guards) the existing suites
+pin.
+**Constraints:** the SWR-doctrine suites (`set42-swr-doctrine.spec.ts`,
+`frontend-correctness.spec.ts`, and the `client-get-cache` Node suites) pass unmodified;
+zero behavior change is the accept bar.
+**Accept:** `grep -rn useEffectEvent app/` returns zero; the named suites pass;
+`npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
+### NFIX-13 · Paginate the clients and projects list endpoints (medium)
+
+**Why:** filed August 6, 2026 from the review (B1/B2, both validator-confirmed against
+source). `GET /api/v1/clients` runs a five-correlated-subquery join with no `LIMIT`;
+`GET /api/v1/projects` returns the full table the same way. Growth makes response size
+and Worker CPU linear and unbounded, and the SET-09 audit viewer already solved this
+class with opaque-cursor pagination (PR #308) — the pattern is in-repo.
+**Do:** add cursor-based pagination (the SET-09 pattern, not OFFSET) to both endpoints
+with a page size at or under 500, and teach the consuming views to accumulate pages.
+Land server and client atomically, or keep the response envelope backward compatible so
+an unpaginated consumer cannot silently truncate.
+**Constraints:** no schema change needed; the D1 routes and the Postgres production
+repositories gain the same contract in the same PR (the two-engine rule); golden hashes
+untouched.
+**Accept:** a test proves a dataset larger than the page size returns a first page plus
+an opaque cursor and that follow-up fetches complete the set exactly once; the views
+render the full dataset across pages; `npm test`, `npm run test:e2e`, `npm run lint`
+named with outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### NFIX-14 · AI/provider failure observability: the bare catch and the 503 that ate its error (small-medium)
+
+**Why:** filed August 6, 2026 from the review (B3/B7, both confirmed). This is the
+operator-side residual AI-12 (Complete — PR #287) deliberately left open: AI-12 shipped
+the user-visible half (failed analyses surface in the queue; "You're caught up" is
+qualified) and recorded the bare-catch errorCode collapse as an accepted gap. This packet
+owns that gap.
+`app/api/v1/inbox-analysis/route.ts` (lines ~972–982) wraps the OpenAI call in
+`catch { analysis = null; }` — the error variable is not even bound, so rate limits,
+auth failures, timeouts, and malformed responses are indistinguishable and unlogged;
+operators see only a generic `analysis_failed`. The same class lives in
+`app/lib/google-integration-error.ts`: any non-`GoogleIntegrationError` becomes a flat
+503 with a fallback string, discarding type and stack. Silent failure is how the FIX-09
+flake survived weeks — the app's instinct is to swallow.
+**Do:** log the caught error with context (message id, error class, retriable-vs-
+permanent classification) before the null fallback, and extend the integration-error
+mapper to record the original error class in the integration event stream before
+returning the generic response. No new telemetry service — the existing audit/event
+tables are the sink.
+**Constraints:** never widen the client-visible response beyond today's messages; no PII
+in logged context beyond what the event tables already carry.
+**Accept:** a test forces each failure class (timeout, rate limit, auth) through the
+inbox-analysis path and proves each is recorded distinctly; the mapper's generic-503
+path writes an event carrying the original error class; `npm test`, `npm run test:e2e`,
+`npm run lint` named with outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
+### NFIX-15 · Upload endpoint: prove the same-origin guard and the round trip (small)
+
+**Why:** filed August 6, 2026 from the review (T2/T8, both confirmed).
+`tests/e2e/upload.spec.ts` exercises 201/415/404, but every request carries a valid
+`Origin` — the `requireSameOrigin` 403 path is untested, so a regression that deletes
+the guard ships green. The happy path also never reads the object back, so a silent R2
+write failure ships green too.
+**Do:** add (a) a no-Origin request asserting the 403, and (b) a retrieval assertion
+after the 201 that proves the stored bytes round-trip.
+**Accept:** each new assertion is shown to fail when its target behavior is deliberately
+broken (mutation, then revert); `npm run test:e2e` and `npm test` named with outcomes.
+**Effort:** small. **Cost:** $0.
+
+### NFIX-16 · E2E hygiene batch: assertions that cannot fail, waits that lie, and the missing golden path (medium)
+
+**Why:** filed August 6, 2026 from the review (T3/T4/T6/T7 cluster, each confirmed).
+Four specs assert `expect(descriptionId).toBeTruthy()` on aria hookups (hint02a, hint02b,
+set25, workspace-setup-stepper) — any wrong non-null value passes. `admin-access.spec.ts`
+and `admin-audit.spec.ts` carry unexplained `waitForTimeout(0)` no-ops in `afterEach`.
+`gi04-address-validation.spec.ts` hardcodes four 350 ms debounce sleeps,
+`set42-swr-doctrine.spec.ts` sleeps 100 ms, and `frontend-correctness.spec.ts` polls
+`Date.now()`. And no spec walks a full business journey end to end — the suite is
+feature-isolated.
+**Do:** replace truthiness assertions with exact values; delete or justify the
+zero-sleeps; replace fixed sleeps with request/predicate waits; add one unmocked
+golden-path spec (create a lead → see it on Overview → convert/edit → persists across
+reload) against the simulation backend.
+**Constraints:** the golden-path spec obeys the simulation-reset recovery law (AGENTS.md
+environment traps); total e2e wall time grows by no more than ~2 minutes.
+**Accept:** each touched assertion is shown to fail against its original defect shape
+(mutation, then revert); the golden-path spec passes against the real simulation flow;
+`npm run test:e2e` and `npm test` named with outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### NFIX-17 · D1 foreign keys and the task-reference race (medium)
+
+**Why:** filed August 6, 2026 from the review (B4/B6, both confirmed): zero
+`FOREIGN KEY` clauses across all 26 D1 migrations, SQLite's `PRAGMA foreign_keys`
+defaults OFF, and `task-repository.ts` checks project/lead existence in a separate read
+before its insert batch — a delete landing between check and write leaves an orphaned
+task. Application-level checks are inherently racy; the database is the only honest
+enforcer.
+**Do:** audit existing rows for orphans first (the rehearsal tooling is the pattern),
+then enable FK enforcement for the D1 connection and add `FOREIGN KEY` constraints to
+the referencing tables in a new migration, and guard the task insert with `WHERE EXISTS`
+as belt-and-suspenders for the window a migration cannot close retroactively.
+**Constraints:** the D1 and Postgres schemas stay in lockstep (the two-engine rule);
+the migration is additive-safe for the Sites surface; the orphan-audit output is
+recorded in the PR body.
+**Accept:** a test proves an insert with a dangling project/lead id is rejected at the
+database layer and that the `WHERE EXISTS` guard closes the pre-check race window;
+`npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### NFIX-18 · Address review release is best-effort with no compensation (small-medium)
+
+**Why:** filed August 6, 2026 from the review (B8, confirmed).
+`releaseFailedAddressMutation` (`app/lib/address-mutation-sites.ts`, lines ~66–73)
+releases a consumed address-validation review when the subsequent create/update fails —
+but if the release itself throws, the claim leaks permanently: consumed, unapplied,
+invisible. There is no retry, no outbox, no reconciliation.
+**Do:** choose deliberately between (a) a bounded retry inside the mutation path and
+(b) an outbox row drained by the existing job machinery; record the choice in the PR
+body. If (a) is chosen, add a reconciliation read that surfaces leaked claims on the
+operations health card.
+**Accept:** a test kills the release call once and proves the claim is still released
+(retry) or is visible and re-releasable (outbox/reconciliation); `npm test`,
+`npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
+### NFIX-19 · FIX-09 stage-4 toggle race: fix the component, not the test (small-medium)
+**Status:** Blocked — the FIX-09 packet (`kimi/fix09-e2e-simulation-backend`, still In progress after PR #317 merged the first tranche) is mid-flight on the same spec file; claim this once that branch resolves.
+
+**Why:** filed August 6, 2026 from the review (T5) and the standing flaky-test record:
+the `GoogleWorkspacePanel` stage-4 toggle's click does not reliably land
+`aria-expanded="true"` before the e2e assertion runs, so the FIX-09 calendar test-hold
+spec passes only on Playwright retry — which the retry-only-pass reporter correctly
+treats as a failure. The in-flight `kimi/fix09-*` branches weaken the assertion instead
+of the race; that is the same defect class as deleting a detector.
+**Do:** make the stage-4 expand transition deterministic for a mounted panel (a
+synchronous state commit before focus returns, or a transition boundary the test can
+await), then restore the honest `aria-expanded` assertion in
+`tests/e2e/fix09-simulation-backend.spec.ts`.
+**Constraints:** this packet supersedes only the assertion-weakening hunk of the in-flight
+FIX-09 work, not the whole branch; rendering otherwise byte-identical and
+both golden suites untouched.
+**Accept:** the calendar test-hold spec passes first-attempt across repeated CI runs
+with the honest assertion restored, and the retry-only-pass reporter stays silent;
+`npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
+### NFIX-20 · DevOps hygiene batch (medium)
+
+**Why:** filed August 6, 2026 from the review's DevOps cluster, validator-corrected.
+Confirmed: `vinext` is pinned at 0.0.50 while 1.0.0-beta.4 exists; `npm test` forces two
+full Vite builds before any unit test although no test imports build output; neither
+workflow runs `npm audit` or an image scan; the base `tsconfig.json` targets ES2017 under
+Node 22; there is no `.nvmrc`; `.env.example` ships the real `cherryhillfci.com` domain
+as a default; the Cloud Run image builds twice with no layer cache; and the Postgres
+runner has no down-migration path. Rejected by validation: the build-stamp "gap" —
+`.env.example` documents those variables as the deploy step's responsibility (DOC-06),
+and the Cloud Run build never reads them.
+**Do:** land each sub-item as its own commit: (a) evaluate the vinext upgrade or write
+the ADR pinning 0.0.50; (b) split `test:unit` (no builds) from `test:integration` and
+re-point CI's fast lane; (c) add `npm audit --audit-level=moderate` and an image scan to
+the workflows; (d) raise the base tsconfig target to ES2022; (e) add `.nvmrc` at
+22.13.0; (f) replace the real-domain default with `example.com` plus a comment; (g) add
+GHA layer caching to the image build; (h) document the manual rollback procedure where
+down migrations do not exist.
+**Constraints:** the test-script split must not change what CI ultimately enforces (all
+three gates still named in PRs); NFIX-10's root-typecheck CI step is the neighbor this
+batch must not collide with — rebase over whichever lands first.
+**Accept:** each sub-item is verifiable independently (the audit gate fails on a seeded
+moderate finding, then revert; the image-scan output is archived; `npm run test:unit`
+completes without a build); `npm test`, `npm run test:e2e`, `npm run lint` named with
+outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### NFIX-21 · Worker-isolate rate limiter is a per-isolate limit (small; hardening)
+
+**Why:** filed August 6, 2026 from the review (S1, confirmed with the validator's
+scoping). The development limiter (`app/lib/development-request-rate-limit.ts`) keeps
+state in a module-scope `Map`, so Cloudflare isolates count independently — the intended
+10 requests/60 s is per isolate, not per user. The mitigations are real (it runs after
+`requireOfficeUser`, keys per user, and production Cloud Run has the token-bucket
+limiter), but the code comment oversells the guarantee.
+**Do:** either persist the fixed-window counters to D1 (a small windows table is enough
+at this scale) or narrow the contract in code and docs to "best-effort per isolate"
+deliberately. Pick one; both are honest.
+**Accept:** a test proves the chosen semantics (global counting across two simulated
+isolates, or the documented per-isolate contract asserted); `npm test` named with
+outcome.
+**Effort:** small. **Cost:** $0.
+
 ### DES-14b · FloorOpsApp decomposition: the modal and drawer cluster (large, after DES-14)
 
 **Why:** filed August 5, 2026 after measuring the file rather than assuming it. DES-14 as 
@@ -3892,7 +4126,11 @@ boundaries (a render throw blanks the whole app); 53 of 54 error toasts offer no
 step and ~50 prefer raw `error.message` ("Failed to fetch") over their own authored
 fallback; the single toast slot overwrites rapid notifications (a suppression hack at
 the notify callback papers over one case); `OperationsEmptyState` has no action slot,
-which is the mechanical cause of 9 of 12 sampled empty-state dead ends.
+which is the mechanical cause of 9 of 12 sampled empty-state dead ends. Independently
+re-measured August 6, 2026 by the comprehensive code review
+(`docs/code-review-2026-08-06-findings.md`, F2 — zero `error.tsx` files, zero
+`ErrorBoundary` classes, `app/layout.tsx` renders `{children}` bare); that review's
+duplicate filing is recorded as NFIX-11, superseded into this packet.
 **Do:** (1) an app-shell error boundary plus route-level error surface that says what
 broke in plain words and offers Reload; (2) a short toast queue replacing the single
 slot (delete the suppression hack); (3) `action` affordances on every error toast with
