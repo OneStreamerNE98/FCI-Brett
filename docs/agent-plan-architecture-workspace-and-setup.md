@@ -3785,6 +3785,7 @@ category (a) is named individually in the PR body with what it would have broken
 **Effort:** medium. **Cost:** $0.
 
 ### DES-14b · FloorOpsApp decomposition: the modal and drawer cluster (large, after DES-14)
+**Status:** In progress — `codex/des14b-modal-drawer-cluster`
 
 **Why:** filed August 5, 2026 after measuring the file rather than assuming it. DES-14 as 
 originally written claimed the four record views owned the modals and would therefore dissolve 
