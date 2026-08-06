@@ -20,6 +20,8 @@ export type TaskCreationIntent = {
     intent: "schedule" | "warranty";
     approvedProjectId: string | null;
     acceptedAt: number;
+    reviewedBy: string;
+    acceptedIntent: string;
   };
 };
 

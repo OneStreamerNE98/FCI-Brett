@@ -128,6 +128,9 @@ class ReviewQueueDatabase {
         failure_attempts INTEGER NOT NULL DEFAULT 0,
         error_code TEXT,
         coverage_complete INTEGER NOT NULL DEFAULT 0,
+        reviewed_by TEXT,
+        reviewed_at INTEGER,
+        accepted_intent TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -217,9 +220,11 @@ class ReviewQueueDatabase {
          email_drive_file_id, analysis_payload, party, confidence, content_hash,
          label_definition_version, attempted_label_definition_version,
          subject, sender, received_at, failure_attempts, error_code,
-         coverage_complete, created_at, updated_at
+         coverage_complete, reviewed_by, reviewed_at, accepted_intent,
+         created_at, updated_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?,
-                 'prospect', ?, ?, ?, NULL, ?, ?, ?, 0, NULL, 1, ?, ?)`,
+                 'prospect', ?, ?, ?, NULL, ?, ?, ?, 0, NULL, 1,
+                 NULL, NULL, NULL, ?, ?)`,
     ).run(
       id,
       connectionKey,
@@ -831,6 +836,10 @@ test("filing a message retires its review row inside the lease-guarded batch", a
   );
   const statement = source.slice(mailItemUpdate, mailItemUpdate + 400);
   assert.match(statement, /approved_project_id = \?/u);
+  // AI-11(d): attribution columns must be written at every accept path.
+  assert.match(statement, /reviewed_by = \?/u);
+  assert.match(statement, /reviewed_at = \?/u);
+  assert.match(statement, /accepted_intent = \?/u);
   // A terminal row carrying retry state violates the v12 failure-state CHECK on
   // PostgreSQL and is rejected by normalizeStoredMailItem on read, so every
   // later sweep would throw on this message (review-bot P1, second round).

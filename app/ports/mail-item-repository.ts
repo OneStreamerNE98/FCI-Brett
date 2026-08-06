@@ -82,7 +82,9 @@ export interface MailItemRepository {
     id: string,
     connectionKey: string,
     updatedAt: number,
+    reviewedBy: string,
     outcome?: MailItemReviewOutcome,
+    acceptedIntent?: string,
   ): Promise<boolean>;
   insertIfAbsent(item: MailItem): Promise<MailItemUpsertResult>;
   upsert(item: MailItem): Promise<MailItemUpsertResult>;

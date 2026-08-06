@@ -113,6 +113,11 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "assistant_label_catalog",
       checksum: "sha256:ff56691723e3d4c9121ff156a54f5a229844cbbb82512a16ae9cd02cb4ea14cb",
     }),
+    Object.freeze({
+      version: 16,
+      name: "mail_item_review_attribution",
+      checksum: "sha256:0c6b26c3d062766b6a4cb80dc9b38cedd708fee8ec77fc871fdc5673168495ad",
+    }),
   ]);
 
 /**
