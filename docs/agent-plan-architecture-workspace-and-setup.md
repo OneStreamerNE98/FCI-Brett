@@ -3680,7 +3680,7 @@ introduces one raw hex (negative test); every re-pointed pin enumerated in the P
 instead of inventing their own.
 
 ### DES-14 · FloorOpsApp decomposition: extract the four record views and their shared record contracts (large, after GI-04)
-**Status:** In progress — `codex/des14-floorops-decomposition`
+**Status:** Complete — PR #327, August 5, 2026. Source-only and undeployed. The four record views, shared record contracts, and shared display helpers moved out of `app/FloorOpsApp.tsx` with byte-identical rendering; DES-14b now holds the slot for the modal/drawer extraction.
 
 **Why:** `app/FloorOpsApp.tsx` (~200KB) is the reason the single-file queue-slot law
 exists, and that law serialized four separate owner requests in one day (grid views,
@@ -5015,7 +5015,8 @@ queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-0
 DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI (in flight, PR #217/#221) →
 **EDIT-05** → **EDIT-04** → **AI-10 sub-PR (f)** → **EDIT-06** → **EDIT-07** →
 SET-26 UI (blocked on SET-23) → HINT-02-B.
-**Every named packet above is now merged. DES-14 now holds the slot from the tail below.**
+**Every named packet above is now merged. DES-14 completed in PR #327; DES-14b now holds
+the slot from the tail below.**
 
 **Tail added August 3, 2026 — five open packets were flagged for this slot and none of them
 were on the list.** A packet-assessment pass found that the claim list, which `AGENTS.md:54-58`
@@ -5026,7 +5027,7 @@ Adversarial review (August 3, 2026) then established that AI-12 takes no slot at
 its bullet — leaving four claimants; DES-14 and DES-12, filed August 3, 2026, then claimed
 in the tail, making six. Recommended claim order, most valuable first:
 
-**DES-14 (in progress on `codex/des14-floorops-decomposition`) → DES-14b →
+**DES-14 (complete in PR #327) → DES-14b (in progress on `codex/des14b-modal-drawer-cluster`) →
 GI-05 (if approved) → WS-20 (if approved) → DES-17 (shell scope,
 post-decomposition) → DES-10 (variants a/b only) → DES-12.**
 (DES-16 and DES-17 were added August 4, 2026 with the usability wave. DES-16 merged in
@@ -5059,11 +5060,12 @@ machinery that remains in `FloorOpsApp.tsx` after DES-14, so it follows the extr
   (inside `ProjectDrawer`). Also gated on an owner decision about scheduling.
 - **WS-20** — a mailbox picker sits beside `bucket` at the same `InboxView` mount. Also gated
   on two owner decisions recorded in its packet.
-- **DES-14** — **holds the slot on `codex/des14-floorops-decomposition`.** It moves the
-  four record views and their shared contracts out of `app/FloorOpsApp.tsx`; those record
-  views exit the queue permanently, while the modal/drawer cluster and shell scope remain.
-- **DES-14b** — follows DES-14 immediately and owns the modal/drawer cluster that DES-14
-  deliberately leaves in `app/FloorOpsApp.tsx`.
+- **DES-14** — complete in PR #327. It moved the four record views, shared contracts, and
+  shared display helpers out of `app/FloorOpsApp.tsx`; those record views permanently exit
+  the queue.
+- **DES-14b** — **holds the slot on `codex/des14b-modal-drawer-cluster`.** It owns the
+  modal/drawer cluster that DES-14 deliberately left in `app/FloorOpsApp.tsx`; those
+  overlays permanently exit the queue in this branch.
 - **DES-10** — only variants (a) and (b), which edit `app/FloorOpsApp.tsx:1701`. Variant (c)
   is CSS-only and takes no slot.
 - **DES-12** — editor chrome + resolved-preview rendering at the layout mount; also holds
