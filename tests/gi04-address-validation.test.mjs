@@ -248,8 +248,12 @@ test("seeded mounts never autofire autocomplete and the field meets the shared c
   // The global `.modal label` field-wrapper margin never leaks into the
   // module label, and the modal keeps the standard inter-field separation.
   assert.match(componentStyles, /\.field \.label \{\s+margin-bottom: 0;\s+\}/u);
-  const app = await readFile(new URL("../app/FloorOpsApp.tsx", import.meta.url), "utf8");
-  assert.equal(app.match(/className="modal-address-field"/gu)?.length, 5);
+  const modalSources = await Promise.all([
+    "../app/leads/components/LeadModal.tsx",
+    "../app/clients/components/ClientModals.tsx",
+    "../app/projects/components/ProjectModals.tsx",
+  ].map((path) => readFile(new URL(path, import.meta.url), "utf8")));
+  assert.equal(modalSources.join("\n").match(/className="modal-address-field"/gu)?.length, 5);
 });
 
 class SqliteD1Statement {

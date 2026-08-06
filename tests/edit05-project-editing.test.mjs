@@ -538,8 +538,9 @@ test("project PATCH auth and origin failures are no-store", async () => {
 });
 
 test("project edit source keeps legacy operations isolated and reloads D1 creation before editing", async () => {
-  const [app, collectionRoute, itemRoute, operations, creation, recordOperation] = await Promise.all([
+  const [app, projectModals, collectionRoute, itemRoute, operations, creation, recordOperation] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
+    read("app/projects/components/ProjectModals.tsx"),
     read("app/api/v1/projects/route.ts"),
     read("app/api/v1/projects/[projectId]/route.ts"),
     read("app/domain/project-operations.ts"),
@@ -556,10 +557,10 @@ test("project edit source keeps legacy operations isolated and reloads D1 creati
     "D1 creation must refresh the collection GET before the versioned edit surface can open",
   );
   assert.match(app, /version: normalizeRecordVersion\(project\.version\) \?\? undefined/u);
-  assert.match(app, /Re-apply changes/u);
-  assert.match(app, /Saved value: \{displayValue\}/u);
+  assert.match(projectModals, /Re-apply changes/u);
+  assert.match(projectModals, /Saved value: \{displayValue\}/u);
   assert.match(app, /throw new ProjectEditConflictError/u);
-  assert.doesNotMatch(app, /planned-project-updates|Project updates planned/u);
+  assert.doesNotMatch(`${app}\n${projectModals}`, /planned-project-updates|Project updates planned/u);
   assert.doesNotMatch(itemRoute, /\bcreationAuthorizationFor\b/u);
   assert.match(itemRoute, /noStoreResponse\(originError\)/u);
   assert.match(itemRoute, /noStoreResponse\(auth\.response\)/u);
