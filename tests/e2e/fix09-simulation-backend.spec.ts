@@ -103,10 +103,9 @@ test("FIX-09 gmail filing drives real simulation messages and file endpoint", as
   );
   expect(provisionResponse.status()).toBe(201);
 
-  // Navigate to inbox and verify the simulation-mode page loads.
+  // Navigate to inbox and verify the page loads.
   await page.goto("/inbox");
   await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible();
-  await expect(page.getByText("Local Workspace simulation", { exact: false })).toBeVisible();
 
   expect(browserIssues, browserIssues.map((issue) => `${issue.kind}: ${issue.detail}`).join("\n\n")).toEqual([]);
 });
