@@ -483,7 +483,11 @@ test("clients can be filtered by code and show a clear no-match state", async ({
 
   await filter.fill("no-such-e2e-client");
   await expect(clientRow).toHaveCount(0);
-  await expect(page.getByText("No clients match “no-such-e2e-client”.", { exact: true })).toBeVisible();
+  const emptyState = page.locator(".client-directory .empty-table");
+  await expect(emptyState).toContainText("No clients match “no-such-e2e-client”.");
+  await emptyState.getByRole("button", { name: "Clear search", exact: true }).click();
+  await expect(filter).toHaveValue("");
+  await expect(clientRow).toBeVisible();
 
   await filter.fill("E2E-CLIENT");
   await expect(clientRow).toBeVisible();

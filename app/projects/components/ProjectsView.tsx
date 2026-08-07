@@ -54,6 +54,6 @@ export function ProjectsView({ projects, state, filter, lifecycle, onFilter, onP
         <strong className="project-row-value"><span>Estimated value</span>{project.value}</strong>
         <ChevronRight size={17} aria-hidden="true" />
       </OperationsActionableListItem>)}
-    </OperationsActionableList>{!filteredProjects.length && <OperationsEmptyState variant="table">{state === "ready" ? lifecycleLabel ? `There are no projects in ${lifecycleLabel}.` : filter === "Active" ? "No active projects yet." : `There are no ${filter.toLowerCase()} projects.` : "Loading projects…"}</OperationsEmptyState>}</div>
+    </OperationsActionableList>{!filteredProjects.length && <OperationsEmptyState variant="table" action={state !== "ready" ? undefined : projects.length === 0 || (!lifecycle && filter === "Active") ? <button type="button" className="primary-button" onClick={onNewProject}><Plus size={16} /> New project</button> : <button type="button" className="soft-button" onClick={() => onFilter("Active")}>Show active projects</button>}>{state === "ready" ? lifecycleLabel ? `There are no projects in ${lifecycleLabel}.` : filter === "Active" ? "No active projects yet." : `There are no ${filter.toLowerCase()} projects.` : "Loading projects…"}</OperationsEmptyState>}</div>
   </>;
 }

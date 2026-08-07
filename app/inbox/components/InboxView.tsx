@@ -40,6 +40,7 @@ import {
   invalidateWorkspaceOperationsReadCache,
   isTerminalCachedGetError,
 } from "../../lib/client-get-cache";
+import { notifyError } from "../../lib/notification-policy";
 import { useCachedGetSubscription } from "../../lib/client-get-hooks";
 import {
   evaluateInboxFilingRules,
@@ -1073,12 +1074,11 @@ export function InboxView({
         queue ? "success" : "warning",
       );
     } catch (retryError) {
-      notify(
-        retryError instanceof Error
-          ? retryError.message
-          : "Failed inbox analyses could not be retried.",
-        "error",
-      );
+      notifyError(notify, {
+        message: "Failed inbox analyses could not be retried.",
+        cause: retryError,
+        action: { label: "Try again", run: () => void retryFailedAnalyses() },
+      });
     } finally {
       setRetryingFailedAnalyses(false);
     }
@@ -1157,22 +1157,22 @@ export function InboxView({
           if (current.has(row.id)) return current;
           return new Set(current).add(row.id);
         });
-        notify(
-          "The lead was created, but this message is still in review because it could not be marked reviewed.",
-          "error",
-        );
+        notifyError(notify, {
+          message: "The lead was created, but this message is still in review because it could not be marked reviewed.",
+          cause: reviewError,
+          action: { label: "Mark reviewed", run: () => void markReviewed(row, "lead-created") },
+        });
         // The modal returned focus to the Create lead button, which this error
         // state removes; without naming a target focus lands on <body>. Send it
         // to the row's surviving Mark reviewed button — the action the banner
         // tells the user to take. The ref guard only claims focus if it was lost.
         setFocusReviewRowId(row.id);
       } else {
-        notify(
-          reviewError instanceof Error
-            ? reviewError.message
-            : "The message could not be marked reviewed.",
-          "error",
-        );
+        notifyError(notify, {
+          message: "The message could not be marked reviewed.",
+          cause: reviewError,
+          action: { label: "Try again", run: () => void markReviewed(row, reason) },
+        });
       }
       // This click bumped the request id and so invalidated any refresh already
       // in flight, which returns without touching state. Without this re-sync a
@@ -1196,9 +1196,12 @@ export function InboxView({
       notify("FCI Gmail labels are ready. No messages were moved or archived.", "success");
       await loadMessages();
     } catch (prepareError) {
-      const message = prepareError instanceof Error ? prepareError.message : "FCI Gmail labels could not be prepared.";
-      setError(message);
-      notify(message, "error");
+      setError("FCI Gmail labels could not be prepared.");
+      notifyError(notify, {
+        message: "FCI Gmail labels could not be prepared.",
+        cause: prepareError,
+        action: { label: "Try again", run: () => void prepareLabels() },
+      });
     } finally {
       setLoading(false);
     }
@@ -1393,12 +1396,11 @@ export function InboxView({
       );
     } catch (triageError) {
       if (requestId !== triageRequestIdRef.current) return;
-      notify(
-        triageError instanceof Error
-          ? triageError.message
-          : "AI filing suggestions could not be prepared.",
-        "error",
-      );
+      notifyError(notify, {
+        message: "AI filing suggestions could not be prepared.",
+        cause: triageError,
+        action: { label: "Try again", run: () => void suggestWithAi() },
+      });
     } finally {
       if (requestId === triageRequestIdRef.current) setTriageLoading(false);
     }
@@ -1427,27 +1429,41 @@ export function InboxView({
       notify(`Review the Drive filing for ${data.project.number}. Nothing has been copied yet.`, "info");
     } catch (previewError) {
       setFilingPreview(null);
-      notify(previewError instanceof Error ? previewError.message : "The Gmail filing preview could not be loaded.", "error");
+      notifyError(notify, { message: "The Gmail filing preview could not be loaded.", cause: previewError, action: { label: "Try preview again", run: () => void previewGmailFiling() } });
     } finally {
       setFilingLoading(false);
     }
   }
 
   async function confirmGmailFiling() {
-    if (!filingMessage || !filingProjectId || !filingPreview) return;
+    const reviewedMessage = filingMessage;
+    const reviewedProjectId = filingProjectId;
+    const reviewedPreview = filingPreview;
+    if (!reviewedMessage || !reviewedProjectId || !reviewedPreview) return;
     setFilingSubmitting(true);
     try {
-      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: filingProjectId }) });
+      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(reviewedMessage.id)}/file`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: reviewedProjectId }) });
       const data = await response.json().catch(() => ({})) as { filed?: boolean; alreadyFiled?: boolean; archive?: { attachmentCount?: number }; error?: string };
       if (!response.ok) throw new Error(data.error ?? "The Gmail filing could not be completed.");
-      notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? filingPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`, data.alreadyFiled ? "info" : "success");
+      notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? reviewedPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`, data.alreadyFiled ? "info" : "success");
       setFilingMessage(null);
       setFilingProjectId("");
       setFilingPreview(null);
       invalidateGmailFilingReadCaches({ includeOperations: false });
       await loadMessages();
     } catch (filingError) {
-      notify(filingError instanceof Error ? filingError.message : "The Gmail filing could not be completed.", "error");
+      notifyError(notify, {
+        message: "The Gmail filing could not be completed. Review the message and project before trying again.",
+        cause: filingError,
+        action: {
+          label: "Review filing",
+          run: () => {
+            setFilingMessage(reviewedMessage);
+            setFilingProjectId(reviewedProjectId);
+            setFilingPreview(null);
+          },
+        },
+      });
     } finally {
       // The route can persist an operations failure even when filing returns non-2xx.
       invalidateWorkspaceOperationsReadCache();
@@ -1480,7 +1496,11 @@ export function InboxView({
       setReplyMessage(null);
       setReplyBody("");
     } catch (replyError) {
-      notify(replyError instanceof Error ? replyError.message : "Gmail draft could not be saved.", "error");
+      notifyError(notify, {
+        message: "Gmail draft could not be saved. The composer remains open so you can review it before trying again.",
+        cause: replyError,
+        actionlessReason: "Replaying a draft save from a toast can create a duplicate Gmail draft.",
+      });
     } finally {
       setReplySaving(false);
     }
@@ -1679,16 +1699,13 @@ export function InboxView({
                     <p>Loading stored review rows. A bounded sweep runs only when Gmail and AI analysis are available.</p>
                   </OperationsEmptyState>
                 : reviewQueueState === "unavailable" && visibleReviewRows.length === 0
-                  ? <OperationsEmptyState variant="inbox">
+                  ? <OperationsEmptyState variant="inbox" action={<button className="soft-button" type="button" onClick={() => void loadReviewQueue(true)}>Try queue again</button>}>
                       <Inbox size={25} />
                       <h2>Review queue unavailable</h2>
                       <p>Stored review rows could not be read.</p>
-                      <button className="soft-button" type="button" onClick={() => void loadReviewQueue(true)}>
-                        Try queue again
-                      </button>
                     </OperationsEmptyState>
                   : visibleReviewRows.length === 0
-                ? <OperationsEmptyState variant="inbox">
+                ? <OperationsEmptyState variant="inbox" action={analysisFailed ? <button className="soft-button" type="button" onClick={() => onBucket("inbox")}>Open Inbox to load messages</button> : undefined}>
                     <Inbox size={25} />
                     <h2
                       tabIndex={-1}
@@ -1839,11 +1856,10 @@ export function InboxView({
                     </div>
                   </article>)
           : !gmailReady
-            ? <OperationsEmptyState variant="inbox">
+            ? <OperationsEmptyState variant="inbox" action={<button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button>}>
                 <Mail size={25} />
                 <h2>Connect Workspace Gmail to see the company inbox</h2>
                 <p>Until Workspace is available, switch the local app to Workspace simulation to test the full inbox workflow with sample data.</p>
-                <button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button>
               </OperationsEmptyState>
             : visibleMessages.length === 0
               ? <OperationsEmptyState variant="inbox">

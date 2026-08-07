@@ -1,6 +1,7 @@
 "use client";
 
 import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Bot,
   CheckCircle2,
@@ -19,6 +20,7 @@ import { AccessibleOverlay } from "../../components/AccessibleOverlay";
 import { OperationsEmptyState, PageTitle } from "../../components/operations/OperationsPrimitives";
 import {
   cachedGetJson,
+  invalidateCachedGet,
   invalidateTaskReadCaches,
   isTerminalCachedGetError,
 } from "../../lib/client-get-cache";
@@ -379,7 +381,7 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
       className={styles.message}
       role={availability === "unavailable" ? "alert" : "status"}
     >{availabilityMessage}</p>}
-    {!projectId ? <OperationsEmptyState variant="source">Choose a project to review its saved meeting action items.</OperationsEmptyState> : meetingState === "loading" ? <OperationsEmptyState variant="source"><RefreshCw className={styles.spinner} size={18} aria-hidden="true" /> Loading saved meetings…</OperationsEmptyState> : meetingState === "error" ? <OperationsEmptyState variant="source" tone="error">{meetingError}</OperationsEmptyState> : meetings.length === 0 ? <OperationsEmptyState variant="source">No saved meetings are available for this project.</OperationsEmptyState> : <>
+    {!projectId ? <OperationsEmptyState variant="source">Choose a project to review its saved meeting action items.</OperationsEmptyState> : meetingState === "loading" ? <OperationsEmptyState variant="source"><RefreshCw className={styles.spinner} size={18} aria-hidden="true" /> Loading saved meetings…</OperationsEmptyState> : meetingState === "error" ? <OperationsEmptyState variant="source" tone="error" action={<button className="soft-button" type="button" onClick={() => { invalidateCachedGet(meetingsUrl, { notify: false }); void loadMeetings(false); }}>Try saved meetings again</button>}>{meetingError}</OperationsEmptyState> : meetings.length === 0 ? <OperationsEmptyState variant="source" action={<Link className="soft-button" href="/projects">Open projects</Link>}>No saved meetings are available for this project.</OperationsEmptyState> : <>
       <div className={styles.controls}>
         <label>Saved meeting<select value={meetingId} onChange={(event) => { setMeetingId(event.target.value); setProposals([]); setReviewStarted(false); setReviewFailed(false); setReviewMessage(""); setAcceptAnnouncement(""); }} disabled={extracting || Boolean(acceptingId)}>{meetings.map((meeting) => <option value={meeting.id} key={meeting.id}>{meetingLabel(meeting)}</option>)}</select></label>
         <button className="primary-button" type="button" onClick={() => void reviewTasks()} disabled={!["ai-enabled", "records-only"].includes(availability) || !meetingId || extracting || Boolean(acceptingId)}>{extracting ? <><span className="spinner" /> Preparing…</> : availability === "records-only" ? "Review saved action items" : "Review proposed tasks"}</button>

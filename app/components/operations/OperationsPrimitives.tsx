@@ -28,27 +28,29 @@ export function Metric({ label, value, note, icon: Icon, color, href, className,
 type OperationsEmptyStateProps = {
   variant: "table" | "dashboard" | "page" | "inbox" | "source" | "meeting" | "board" | "client-projects";
   tone?: "default" | "error";
+  action?: ReactNode;
   children: ReactNode;
 };
 
-export function OperationsEmptyState({ variant, tone = "default", children }: OperationsEmptyStateProps) {
+export function OperationsEmptyState({ variant, tone = "default", action, children }: OperationsEmptyStateProps) {
+  const content = <>{children}{action}</>;
   switch (variant) {
     case "page":
-      return <section className="panel empty-tab">{children}</section>;
+      return <section className="panel empty-tab">{content}</section>;
     case "source":
-      return <p className="source-empty">{children}</p>;
+      return <p className={`source-empty${tone === "error" ? " error" : ""}`}>{content}</p>;
     case "board":
-      return <p className="board-empty">{children}</p>;
+      return <p className="board-empty">{content}</p>;
     case "client-projects":
-      return <p className="empty-client-projects">{children}</p>;
+      return <p className="empty-client-projects">{content}</p>;
     case "table":
-      return <div className="empty-table">{children}</div>;
+      return <div className="empty-table">{content}</div>;
     case "dashboard":
-      return <div className="dashboard-inbox-empty">{children}</div>;
+      return <div className="dashboard-inbox-empty">{content}</div>;
     case "inbox":
-      return <div className="inbox-empty">{children}</div>;
+      return <div className="inbox-empty">{content}</div>;
     case "meeting":
-      return <div className={`meeting-empty${tone === "error" ? " error" : ""}`}>{children}</div>;
+      return <div className={`meeting-empty${tone === "error" ? " error" : ""}`}>{content}</div>;
   }
 }
 

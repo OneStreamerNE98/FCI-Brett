@@ -53,8 +53,9 @@ test("notifications use typed persistent errors and navigation disclosure popove
   const search = page.getByRole("combobox", { name: "Search workspace" });
   await search.fill("forced error");
   await search.press("Enter");
-  const errorNotice = page.getByRole("alert").filter({ hasText: "Search is temporarily unavailable." });
+  const errorNotice = page.getByRole("alert").filter({ hasText: "Workspace search could not be completed." });
   await expect(errorNotice).toHaveClass(/toast-error/);
+  await expect(errorNotice).not.toContainText("Search is temporarily unavailable.");
   await expect(errorNotice.getByRole("button", { name: "Retry" })).toBeVisible();
   await page.clock.fastForward(10_000);
   await expect(errorNotice).toBeVisible();

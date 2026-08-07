@@ -240,9 +240,9 @@ test("review-first reconcile creates a newly defined folder and never deletes a 
     const missing = driftCard.locator('[data-workspace-reconcile-row][data-workspace-reconcile-state="missing"]');
     await expect(missing).toContainText("FCI TEST Reconcile Folder");
     await missing.getByRole("button", { name: "Create from blueprint", exact: true }).click();
-    await expect(page.locator(".toast.toast-success")).toContainText(
-      "FCI TEST Reconcile Folder was reviewed and the matching setup ensure action completed.",
-    );
+    await expect(page.locator(".toast.toast-success").filter({
+      hasText: "FCI TEST Reconcile Folder was reviewed and the matching setup ensure action completed.",
+    })).toBeVisible();
     await expect(driftCard.getByText("Blueprint and simulated Workspace resources are in sync.", { exact: true })).toBeVisible();
 
     await page.evaluate(() => {

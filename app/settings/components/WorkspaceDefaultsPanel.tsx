@@ -10,6 +10,7 @@ import {
   useCachedGetSubscription,
   useClientLoadState,
 } from "../../lib/client-get-hooks";
+import { notifyError } from "../../lib/notification-policy";
 import { ChatNotificationSettingsCard } from "./ChatNotificationSettingsCard";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 import { buildWorkspaceDefaultsPatchBody } from "./workspace-defaults-request";
@@ -192,7 +193,16 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
       await loadWorkspaceSettings(true);
       notify(mode === "calendar" ? "Calendar defaults saved" : "Workflow and notification defaults saved", "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Settings could not be saved.", "error");
+      notifyError(notify, {
+        message: mode === "calendar"
+          ? "Calendar defaults could not be saved."
+          : "Workflow and notification defaults could not be saved.",
+        cause: error,
+        action: {
+          label: "Reload defaults",
+          run: () => void loadWorkspaceSettings(true),
+        },
+      });
     } finally {
       setSaving(false);
     }
@@ -235,7 +245,14 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
           : { ...current, fieldCalendarId: adopted }));
       }
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The calendar could not be verified.", "error");
+      notifyError(notify, {
+        message: "The calendar could not be verified. Review the current calendar ID before trying again.",
+        cause: error,
+        action: {
+          label: "Review calendar ID",
+          run: () => document.getElementById(calendarKey === "client-appointments" ? "workspace-appointment-calendar-id" : "workspace-field-calendar-id")?.focus(),
+        },
+      });
     } finally {
       setVerifyingCalendar(null);
     }
@@ -281,8 +298,8 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
           <label>Field schedule calendar name<input value={settings.fieldCalendarName} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarName: event.target.value }))} /></label>
         </div>
         <div className="form-row">
-          <label>Client appointments calendar ID<input value={settings.appointmentCalendarId} onChange={(event) => setSettings((current) => ({ ...current, appointmentCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /><small>{calendarConfigurationLabel(calendarConfiguration?.clientAppointments, settings.appointmentCalendarId)}</small><AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={!settings.appointmentCalendarId.trim() || verifyingCalendar !== null} onClick={() => void verifyCalendar("client-appointments", settings.appointmentCalendarId)}>{verifyingCalendar === "client-appointments" ? "Verifying…" : "Verify calendar"}</AdministratorActionButton></label>
-          <label>Field schedule calendar ID<input value={settings.fieldCalendarId} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /><small>{calendarConfigurationLabel(calendarConfiguration?.fieldSchedule, settings.fieldCalendarId)}</small><AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={!settings.fieldCalendarId.trim() || verifyingCalendar !== null} onClick={() => void verifyCalendar("field-schedule", settings.fieldCalendarId)}>{verifyingCalendar === "field-schedule" ? "Verifying…" : "Verify calendar"}</AdministratorActionButton></label>
+          <label>Client appointments calendar ID<input id="workspace-appointment-calendar-id" value={settings.appointmentCalendarId} onChange={(event) => setSettings((current) => ({ ...current, appointmentCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /><small>{calendarConfigurationLabel(calendarConfiguration?.clientAppointments, settings.appointmentCalendarId)}</small><AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={!settings.appointmentCalendarId.trim() || verifyingCalendar !== null} onClick={() => void verifyCalendar("client-appointments", settings.appointmentCalendarId)}>{verifyingCalendar === "client-appointments" ? "Verifying…" : "Verify calendar"}</AdministratorActionButton></label>
+          <label>Field schedule calendar ID<input id="workspace-field-calendar-id" value={settings.fieldCalendarId} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /><small>{calendarConfigurationLabel(calendarConfiguration?.fieldSchedule, settings.fieldCalendarId)}</small><AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={!settings.fieldCalendarId.trim() || verifyingCalendar !== null} onClick={() => void verifyCalendar("field-schedule", settings.fieldCalendarId)}>{verifyingCalendar === "field-schedule" ? "Verifying…" : "Verify calendar"}</AdministratorActionButton></label>
         </div>
         <div className="form-row">
           <PlannedSettingField id="appointment-reminder-hours" label="Appointment reminder hours" hint={APPOINTMENT_REMINDER_HINT} hintAnchor="auto">

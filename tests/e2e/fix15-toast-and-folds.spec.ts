@@ -133,13 +133,19 @@ async function mockStableDirectory(page: Page) {
   return { dashboardReads: () => dashboardReads };
 }
 
-async function expectSuccessToastLifetime(page: Page, message: string) {
-  const successToast = page.locator(".toast.toast-success");
-  await expect(successToast).toContainText(message);
-  await expect(page.locator(".toast.toast-info")).toHaveCount(0);
+async function expectQueuedToastLifetime(page: Page, successMessage: string, infoMessage: string) {
+  const successToast = page.locator(".toast.toast-success").filter({ hasText: successMessage });
+  const infoToast = page.locator(".toast.toast-info").filter({ hasText: infoMessage });
+  await expect(successToast).toContainText(successMessage);
+  await expect(infoToast).toContainText(infoMessage);
+  await expect(page.locator(".toast")).toHaveCount(2);
   await page.clock.fastForward(3_199);
-  await expect(successToast).toContainText(message);
+  await expect(successToast).toContainText(successMessage);
+  await expect(infoToast).toContainText(infoMessage);
   await page.clock.fastForward(1);
+  await expect(successToast).toHaveCount(0);
+  await expect(infoToast).toContainText(infoMessage);
+  await page.clock.fastForward(1_800);
   await expect(page.locator(".toast")).toHaveCount(0);
 }
 
@@ -161,8 +167,11 @@ test.describe("FIX-15 toast timeline", () => {
     markResetAttempted();
     await stageTwo.getByRole("button", { name: "Reset simulation data", exact: true }).click();
 
-    await expectSuccessToastLifetime(page, "Workspace simulation reset with");
-    await expect(page.getByText("Workspace readiness refreshed. Current status is shown above.", { exact: true })).toHaveCount(0);
+    await expectQueuedToastLifetime(
+      page,
+      "Workspace simulation reset with",
+      "Workspace readiness refreshed. Current status is shown above.",
+    );
   });
 
   test("Gmail filing success is not clobbered by the follow-up message reload", async ({ page }) => {
@@ -225,8 +234,11 @@ test.describe("FIX-15 toast timeline", () => {
     await page.getByRole("button", { name: "Dismiss notification" }).click();
     await filingDialog.getByRole("button", { name: "Copy email + 2 attachments", exact: true }).click();
 
-    await expectSuccessToastLifetime(page, "Email and 2 attachment(s) were copied");
-    await expect(page.getByText("Loaded 1 message from Inbox.", { exact: true })).toHaveCount(0);
+    await expectQueuedToastLifetime(
+      page,
+      "Email and 2 attachment(s) were copied",
+      "Loaded 1 message from Inbox.",
+    );
   });
 });
 
