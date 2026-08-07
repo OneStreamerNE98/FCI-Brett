@@ -4,9 +4,9 @@ import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMe
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  Activity, BriefcaseBusiness, Building2, CheckCircle2,
-  ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, Clipboard, Clock3, ContactRound, FolderTree, HardHat,
-  Inbox, Info, LayoutDashboard, Mail, MapPin, Menu, MessageSquareText, MoreHorizontal, Navigation,
+  Activity, BriefcaseBusiness, Building2,
+  ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Clipboard, Clock3, ContactRound, FolderTree, HardHat,
+  Inbox, LayoutDashboard, Mail, MapPin, Menu, MessageSquareText, MoreHorizontal, Navigation,
   LogOut, Search, Settings, ShieldCheck, Sparkles, Users, X, Zap,
 } from "lucide-react";
 import type { AppEnvironment } from "./lib/app-environment";
@@ -27,6 +27,8 @@ import type { InboxLeadProposal } from "./inbox/components/InboxView";
 import { DEFAULT_FILING_RULES, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
 import { ClientDataNotice } from "./components/ClientDataNotice";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import { AppNotifications, useNotificationQueue } from "./components/AppNotifications";
 import { Avatar, Metric, OperationsEmptyState, PageTitle, PanelHeader, Status } from "./components/operations/OperationsPrimitives";
 import { OperationsActionableList, OperationsActionableListItem } from "./components/operations/OperationsActionableList";
 import { PageLayoutEditor } from "./components/operations/PageLayoutEditor";
@@ -79,8 +81,8 @@ import {
   money,
   recordInitials,
 } from "./lib/record-display";
+import { notifyError } from "./lib/notification-policy";
 import type {
-  AppNotification,
   Client,
   ClientEditPatch,
   ClientUpdatePayload,
@@ -91,7 +93,6 @@ import type {
   LeadEditPatch,
   LeadUpdatePayload,
   LiveDataState,
-  NotificationKind,
   Notify,
   Project,
   ProjectEditPatch,
@@ -122,15 +123,6 @@ type CurrentUserSettingsPayload = {
 const projectLifecycleOrder = [...PROJECT_LIFECYCLE_FILTERS];
 const PIPELINE_ACTIONABLE_COLUMNS = ["Client / opportunity", "Stage", "Est. value", "Next action"] as const;
 const MOBILE_TOPBAR_SCROLL_THRESHOLD = 8;
-const SUCCESS_INFO_SUPPRESSION_MS = 2_000;
-// Constraint: success-window suppression may only ever swallow these two post-success reload
-// notices (workspace-readiness refresh after a simulation reset, and the inbox message reload
-// after a Gmail filing). Any info toast that does not match one of these must always render —
-// unrelated info feedback (e.g. "already at the final pipeline stage") must never be dropped.
-const SUPPRESSIBLE_FOLLOW_UP_INFO: RegExp[] = [
-  /^Workspace readiness refreshed\. Current status is shown above\.$/u,
-  /^Loaded \d+ messages? from .+\.$/u,
-];
 
 const focusableControlSelector = [
   "a[href]",
@@ -286,7 +278,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
   const [liveDataState, setLiveDataState] = useState<LiveDataState>("loading");
   const [liveDataError, setLiveDataError] = useState("");
-  const [toast, setToast] = useState<AppNotification | null>(null);
+  const { notifications, notify, dismissNotification } = useNotificationQueue();
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<WorkspaceSearchResult[]>([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
@@ -323,8 +315,6 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const notificationsMenuRef = useRef<HTMLDivElement>(null);
-  const toastTimerRef = useRef<number | null>(null);
-  const activeToastRef = useRef<{ kind: NotificationKind; shownAt: number } | null>(null);
   const projectDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const clientDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const leadDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -734,45 +724,6 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     return () => document.removeEventListener("pointerdown", closeOpenPopovers);
   }, [notificationsOpen, profileMenuOpen, workspaceMenuOpen]);
 
-  const dismissNotification = useCallback(() => {
-    if (toastTimerRef.current !== null) {
-      window.clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = null;
-    }
-    activeToastRef.current = null;
-    setToast(null);
-  }, []);
-
-  const notify = useCallback<Notify>((message, kind = "info", action) => {
-    const shownAt = Date.now();
-    const activeToast = activeToastRef.current;
-    if (kind === "info"
-      && activeToast?.kind === "success"
-      && shownAt - activeToast.shownAt < SUCCESS_INFO_SUPPRESSION_MS
-      && SUPPRESSIBLE_FOLLOW_UP_INFO.some((pattern) => pattern.test(message))) {
-      return;
-    }
-    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = null;
-    const nextActiveToast = { kind, shownAt };
-    activeToastRef.current = nextActiveToast;
-    setToast({ message, kind, action });
-    if (kind !== "error") {
-      const duration = kind === "warning" ? 8_000 : kind === "info" ? 5_000 : 3_200;
-      toastTimerRef.current = window.setTimeout(() => {
-        if (activeToastRef.current !== nextActiveToast) return;
-        toastTimerRef.current = null;
-        activeToastRef.current = null;
-        setToast(null);
-      }, duration);
-    }
-  }, []);
-
-  useEffect(() => () => {
-    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
-    activeToastRef.current = null;
-  }, []);
-
   function openInboxLead(
     proposal: InboxLeadProposal,
     afterCreate: () => Promise<void>,
@@ -806,7 +757,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Lead could not be saved.");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Lead could not be saved.", "error");
+      notifyError(notify, { message: "The lead save result could not be confirmed.", cause: error, action: { label: "Check records", run: () => void refreshDirectoryData(false, true) } });
       return;
     }
     setLeadModal(null);
@@ -877,7 +828,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       setClientModal(false);
       notify(data.sheetSync?.message ?? `${client.name} saved in FCI Operations`, data.sheetSync?.status === "pending" ? "warning" : data.sheetSync?.status === "not-configured" ? "info" : "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Client could not be saved.", "error");
+      notifyError(notify, { message: "The client save result could not be confirmed.", cause: error, action: { label: "Check records", run: () => void refreshDirectoryData(false, true) } });
     }
   }
 
@@ -992,7 +943,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       setProjectModalClientId(null);
       notify(data.sheetSync?.message ?? `${project.name} saved in FCI Operations`, data.sheetSync?.status === "pending" ? "warning" : data.sheetSync?.status === "not-configured" ? "info" : "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Project could not be saved.", "error");
+      notifyError(notify, { message: "The project save result could not be confirmed.", cause: error, action: { label: "Check records", run: () => void refreshDirectoryData(false, true) } });
     }
   }
 
@@ -1073,7 +1024,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       await refreshDirectoryData();
       notify(`Google Sheet synced: ${data.result?.clients?.total ?? 0} clients and ${data.result?.projects?.total ?? 0} projects`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Google Sheet sync could not be completed.", "error");
+      notifyError(notify, { message: "Google Sheets could not complete the directory sync.", cause: error, action: { label: "Try sync again", run: () => void syncGoogleSheet() } });
     } finally {
       setSheetSyncing(false);
     }
@@ -1091,7 +1042,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       setSelectedProject((current) => current?.id === project.id ? updated : current);
       notify(data.created ? `${project.name} now has a ${data.environment ?? "test"} Drive workspace` : `${project.name} already has a Drive workspace`, data.created ? "success" : "info");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The project Drive workspace could not be created.", "error");
+      notifyError(notify, { message: "The project Drive workspace result could not be confirmed.", cause: error, action: { label: "Check project", run: () => void refreshDirectoryData(false, true) } });
     }
   }
 
@@ -1105,7 +1056,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       setRuleModal(false);
       notify(`Email rule “${rule.name}” added`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Rule could not be saved.", "error");
+      notifyError(notify, { message: "The email rule save result could not be confirmed.", cause: error, action: { label: "Check rules", run: () => void refreshDirectoryData(false, true) } });
     }
   }
 
@@ -1120,7 +1071,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         setFilingRules((current) => current.map((item) => item.name === rule.name ? { ...override, id: data.id } : item).sort((left, right) => left.priority - right.priority));
         notify(`Email rule “${rule.name}” ${patch.enabled === false ? "paused" : "updated"}`, "success");
       } catch (error) {
-        notify(error instanceof Error ? error.message : "Rule could not be updated.", "error");
+        notifyError(notify, { message: "The email rule update result could not be confirmed.", cause: error, action: { label: "Check rules", run: () => void refreshDirectoryData(false, true) } });
       }
       return;
     }
@@ -1132,7 +1083,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       setFilingRules((current) => current.map((item) => item.id === rule.id ? { ...item, ...patch } : item).sort((left, right) => left.priority - right.priority));
       notify(`Email rule “${rule.name}” ${patch.enabled === false ? "paused" : "updated"}`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Rule could not be updated.", "error");
+      notifyError(notify, { message: "The email rule update result could not be confirmed.", cause: error, action: { label: "Check rules", run: () => void refreshDirectoryData(false, true) } });
     }
   }
 
@@ -1150,7 +1101,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       setFilingRules((current) => defaultRule ? current.map((item) => item.id === rule.id ? defaultRule : item).sort((left, right) => left.priority - right.priority) : current.filter((item) => item.id !== rule.id));
       notify(defaultRule ? `Email rule “${rule.name}” reset to its built-in default` : `Email rule “${rule.name}” deleted`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Rule could not be deleted.", "error");
+      notifyError(notify, { message: "The email rule delete result could not be confirmed.", cause: error, action: { label: "Check rules", run: () => void refreshDirectoryData(false, true) } });
     }
   }
 
@@ -1289,12 +1240,12 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
             await refreshDirectoryData();
             notify(`${currentLead.company} returned to ${currentLead.stage}`, "success");
           } catch (undoError) {
-            notify(undoError instanceof Error ? undoError.message : "Lead stage could not be restored.", "error");
+            notifyError(notify, { message: "The restored lead stage could not be confirmed.", cause: undoError, action: { label: "Check records", run: () => void refreshDirectoryData(false, true) } });
           }
         })();
       } });
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Lead stage could not be updated.", "error");
+      notifyError(notify, { message: "The lead stage update could not be confirmed.", cause: error, action: { label: "Check records", run: () => void refreshDirectoryData(false, true) } });
     }
   }
 
@@ -1320,10 +1271,10 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     } catch (error) {
       setSearchResults([]);
       setActiveSearchIndex(-1);
-      notify(error instanceof Error ? error.message : "Workspace search could not be completed.", "error", {
+      notifyError(notify, { message: "Workspace search could not be completed.", cause: error, action: {
         label: "Retry",
         run: () => void searchWorkspace(),
-      });
+      } });
     } finally {
       setSearching(false);
     }
@@ -1370,7 +1321,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       setSelectedProject((current) => current ? updateManager(current) : current);
       notify(`${project.number} is now assigned to your signed-in account`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The project manager could not be assigned.", "error");
+      notifyError(notify, { message: "The project manager assignment could not be confirmed. Check the project before assigning it again.", cause: error, action: { label: "Check project", run: () => void refreshDirectoryData(false, true) } });
     }
   }
 
@@ -1544,17 +1495,19 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         </header>
 
         <div className="page-wrap">
-          {development && <section className="development-banner" role="status" aria-label="Development environment; test data only"><ShieldCheck size={17} /><div><strong>Development environment · Test data only</strong><span>Use approved test records while this working copy moves toward production readiness.</span></div></section>}
-          <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData(false, true)} />
-          {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.overview} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("overview", layout)} onView={navigateToView} onProject={openProject} onLead={openLead} />}
-          {view === "Leads" && <LeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal({})} onAdvance={advanceLead} onLead={openLead} />}
-          {view === "Clients" && <ClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
-          {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} filter={projectStatus} lifecycle={projectLifecycle} onFilter={navigateToProjectStatus} onNewProject={() => openNewProject()} onProject={openProject} />}
-          {view === "Schedule" && <ScheduleView dashboard={dashboard} onSettings={() => navigateToSettings("Workflow & notifications")} />}
-          {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} onCreateLead={openInboxLead} />}
-          {view === "AI Assistant" && <AssistantView projects={projectItems} />}
-          {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.reports} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("reports", layout)} />}
-          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} onCurrentUserSettingsLoaded={reconcileCurrentUserSettings} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} onImportConfirmed={refreshDirectoryData} syncingSheet={sheetSyncing} />}
+          <AppErrorBoundary key={view}>
+            {development && <section className="development-banner" role="status" aria-label="Development environment; test data only"><ShieldCheck size={17} /><div><strong>Development environment · Test data only</strong><span>Use approved test records while this working copy moves toward production readiness.</span></div></section>}
+            <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData(false, true)} />
+            {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.overview} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("overview", layout)} onView={navigateToView} onProject={openProject} onLead={openLead} />}
+            {view === "Leads" && <LeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal({})} onAdvance={advanceLead} onLead={openLead} />}
+            {view === "Clients" && <ClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
+            {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} filter={projectStatus} lifecycle={projectLifecycle} onFilter={navigateToProjectStatus} onNewProject={() => openNewProject()} onProject={openProject} />}
+            {view === "Schedule" && <ScheduleView dashboard={dashboard} onSettings={() => navigateToSettings("Workflow & notifications")} />}
+            {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} onCreateLead={openInboxLead} />}
+            {view === "AI Assistant" && <AssistantView projects={projectItems} />}
+            {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.reports} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("reports", layout)} />}
+            {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} onCurrentUserSettingsLoaded={reconcileCurrentUserSettings} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} onImportConfirmed={refreshDirectoryData} syncingSheet={sheetSyncing} />}
+          </AppErrorBoundary>
         </div>
       </main>
       {leadModal && <LeadModal mode="create" initialValues={leadModal.initialValues} isAdmin={isAdmin} mapsRuntime={jobSiteMaps} onClose={() => setLeadModal(null)} onSave={addLead} />}
@@ -1564,12 +1517,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       {leadOpen && selectedLead && <LeadDrawer lead={selectedLead} isAdmin={isAdmin} mapsRuntime={jobSiteMaps} onClose={() => setLeadOpen(false)} onAdvance={advanceLead} onSaveLead={saveLeadEdits} returnFocusRef={leadDrawerReturnFocusRef} fallbackFocusRef={workspaceSearchRef} />}
       {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} clients={clients} jobSiteMaps={jobSiteMaps} onClose={() => setProjectOpen(false)} notify={notify} onSaveProject={saveProjectEdits} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} onRecordInstallationDates={recordProjectInstallationDates} onRecordFollowUpResult={recordProjectFollowUpResult} onMeetingRecorded={() => void refreshDashboardSnapshot().catch(() => {})} isAdmin={isAdmin} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
       {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} jobSiteMaps={jobSiteMaps} onClose={() => setClientOpen(false)} onSaveClient={saveClientEdits} onSaveContact={saveContactEdits} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} returnFocusRef={clientDrawerReturnFocusRef} />}
-      {toast && <div className={`toast toast-${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"} aria-live={toast.kind === "error" ? "assertive" : "polite"} aria-atomic="true">
-        {toast.kind === "success" ? <CheckCircle2 size={18} aria-hidden="true" /> : toast.kind === "info" ? <Info size={18} aria-hidden="true" /> : <CircleAlert size={18} aria-hidden="true" />}
-        <span>{toast.message}</span>
-        {toast.action && <button type="button" className="toast-action" onClick={() => { const action = toast.action; dismissNotification(); action?.run(); }}>{toast.action.label}</button>}
-        <button type="button" className="toast-dismiss" onClick={dismissNotification} aria-label="Dismiss notification"><X size={16} aria-hidden="true" /></button>
-      </div>}
+      <AppNotifications notifications={notifications} onDismiss={dismissNotification} />
     </div>
   );
 }

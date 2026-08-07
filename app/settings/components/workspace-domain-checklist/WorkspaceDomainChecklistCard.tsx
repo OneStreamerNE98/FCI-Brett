@@ -5,6 +5,7 @@ import { CheckCircle2, Copy, ExternalLink, ShieldCheck } from "lucide-react";
 import { OperationsDataTable, OperationsDataTableCell } from "../../../components/operations/OperationsDataTable";
 import { Status } from "../../../components/operations/OperationsPrimitives";
 import { WorkspaceInfoHint } from "../../../components/WorkspaceInfoHint";
+import { notifyError } from "../../../lib/notification-policy";
 import styles from "./WorkspaceDomainChecklistCard.module.css";
 import {
   deriveWorkspaceDomainChecklist,
@@ -148,8 +149,12 @@ export function WorkspaceDomainChecklistCard({
     try {
       await navigator.clipboard.writeText(value);
       notify(`${label} copied.`, "success");
-    } catch {
-      notify(`${label} could not be copied. Select the text and copy it manually.`, "error");
+    } catch (cause) {
+      notifyError(notify, {
+        message: `${label} could not be copied. Select the text and copy it manually.`,
+        cause,
+        action: { label: "Try copy again", run: () => void copySetupHelper(value, label) },
+      });
     }
   }
 

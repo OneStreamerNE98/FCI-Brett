@@ -8,6 +8,7 @@ import {
   useCachedGetSubscription,
   useClientLoadState,
 } from "../../lib/client-get-hooks";
+import { notifyError } from "../../lib/notification-policy";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 
 const CHAT_CONFIG_URL = "/api/v1/integrations/google/chat/config";
@@ -207,7 +208,14 @@ export function ChatNotificationSettingsCard({ notify, isAdmin }: { notify: Noti
       setFeatureDirty(false);
       notify("Google Chat notification routing saved", "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Google Chat notification routing could not be saved.", "error");
+      notifyError(notify, {
+        message: "Google Chat notification routing could not be saved.",
+        cause: error,
+        action: {
+          label: "Reload routing",
+          run: () => void loadConfig(true),
+        },
+      });
     } finally {
       setSaving(false);
     }

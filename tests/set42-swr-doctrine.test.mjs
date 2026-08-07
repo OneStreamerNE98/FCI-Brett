@@ -427,10 +427,11 @@ test("the scheduler law is enforced across every client-reachable module, not ju
       // so an open tab stops calling yesterday "today" is UI correctness, not a
       // scheduler.
       { label: "app/assistant/components/TodayPanel.tsx", functionName: "TodayPanel", timer: "setTimeout" },
+      // Toast-queue auto-dismiss: removes rendered messages independently and
+      // issues no request. DES-17 moved this timer out of the app shell.
+      { label: "app/components/AppNotifications.tsx", functionName: "useNotificationQueue", timer: "setTimeout" },
       // Typeahead debounce: delays a keystroke-driven request the user started.
       { label: "app/features/address-validation/AddressValidationField.tsx", functionName: "AddressValidationField", timer: "setTimeout" },
-      // Toast auto-dismiss: removes a rendered message, issues no request.
-      { label: "app/FloorOpsApp.tsx", functionName: "FloorOpsApp", timer: "setTimeout" },
       // Wall-clock display tick: re-renders a shown time, issues no request.
       { label: "app/FloorOpsApp.tsx", functionName: "Overview", timer: "setInterval" },
       // Day-rollover refresh for the dashboard snapshot; same ruling as above.

@@ -8,6 +8,7 @@ import {
   useCachedGetSubscription,
   useClientLoadState,
 } from "../../lib/client-get-hooks";
+import { notifyError } from "../../lib/notification-policy";
 import {
   defaultUserSettingsPreferences,
   normalizeUserNotificationPreferences,
@@ -112,7 +113,14 @@ export function MySettingsPanel({ notify, userName, userEmail, isAdmin, onTimezo
       onTimezoneChange(savedPreferences.displayTimezone);
       notify("My settings are saved to this signed-in FCI account", "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Your settings could not be saved.", "error");
+      notifyError(notify, {
+        message: "Your settings could not be saved.",
+        cause: error,
+        action: {
+          label: "Reload settings",
+          run: () => void loadMySettings(true),
+        },
+      });
     } finally {
       setSaving(false);
     }

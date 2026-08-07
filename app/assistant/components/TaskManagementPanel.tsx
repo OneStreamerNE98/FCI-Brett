@@ -486,8 +486,10 @@ export function TaskManagementPanel({
             onRetry={() => void loadTasks(appliedFilters, true, true)}
           />
         : tasks.length === 0
-          ? <OperationsEmptyState variant="source">
-              No tasks match these filters.
+          ? <OperationsEmptyState variant="source" action={taskManagementSearch(appliedFilters) === taskManagementSearch(EMPTY_TASK_FILTERS)
+              ? <button className="primary-button" type="button" onClick={(event) => openCreate(event.currentTarget)}><Plus size={15} aria-hidden="true" /> New task</button>
+              : <button className="soft-button" type="button" onClick={clearFilters}>Clear filters</button>}>
+              {taskManagementSearch(appliedFilters) === taskManagementSearch(EMPTY_TASK_FILTERS) ? "No tasks have been saved yet." : "No tasks match these filters."}
             </OperationsEmptyState>
           : <>
               {tasks.length >= TASK_MANAGEMENT_RESULT_LIMIT ? <p className={styles.truncationNotice} role="status">
