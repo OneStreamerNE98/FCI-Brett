@@ -120,14 +120,13 @@ test("FIX-09 calendar test-hold creates a real simulation event", async ({ page 
   await signInAsAdmin(page);
   await resetAndRestoreSimulation(page);
 
-  await page.goto("/settings?section=google-workspace");
+  await page.goto("/settings?section=google-workspace#workspace-stage-4");
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
 
-  // Expand Stage 4 to reach the calendar verification area.
+  // Target Stage 4 through its stable deep link so asynchronous setup-status
+  // reconciliation cannot close the stage between a one-shot read and click.
   const stage4Toggle = page.locator('[data-workspace-stage="4"] .workspace-stage-toggle');
-  if (await stage4Toggle.getAttribute("aria-expanded") !== "true") {
-    await stage4Toggle.click();
-  }
+  await expect(stage4Toggle).toBeVisible();
   await expect(stage4Toggle).toHaveAttribute("aria-expanded", "true");
 
   // The calendar verification row should show a state from the real backend.
@@ -137,8 +136,10 @@ test("FIX-09 calendar test-hold creates a real simulation event", async ({ page 
   // The real simulation backend returns verification status.
   // In a fresh simulation, calendar may show "READY TO VERIFY" or "VERIFIED"
   // depending on whether the calendar events endpoint has been hit.
-  const stateText = await calendarRow.getAttribute("data-stage-four-state");
-  expect(stateText).toMatch(/READY TO VERIFY|VERIFIED/);
+  await expect(calendarRow).toHaveAttribute(
+    "data-stage-four-state",
+    /READY TO VERIFY|VERIFIED/,
+  );
 
   expect(browserIssues, browserIssues.map((issue) => `${issue.kind}: ${issue.detail}`).join("\n\n")).toEqual([]);
 });
