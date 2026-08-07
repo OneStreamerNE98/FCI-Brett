@@ -3746,6 +3746,7 @@ with outcomes.
 **Effort:** small-medium. **Cost:** $0.
 
 ### NFIX-09 · Every merge to main cancels the previous merge's verification (small; CI only)
+**Status:** In progress — `kimi/nfix09-main-concurrency`
 
 **Why:** `.github/workflows/ci.yml` sets `cancel-in-progress: true` on a concurrency group keyed
 on `github.ref`, which is CONSTANT for pushes to `main`. So each merge kills the still-running
