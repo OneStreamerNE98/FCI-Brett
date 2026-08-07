@@ -3680,7 +3680,7 @@ introduces one raw hex (negative test); every re-pointed pin enumerated in the P
 instead of inventing their own.
 
 ### DES-14 · FloorOpsApp decomposition: extract the four record views and their shared record contracts (large, after GI-04)
-**Status:** Complete — PR #327, August 5, 2026. Source-only and undeployed. The four record views, shared record contracts, and shared display helpers moved out of `app/FloorOpsApp.tsx` with byte-identical rendering; DES-14b now holds the slot for the modal/drawer extraction.
+**Status:** Complete — PR #327, August 5, 2026. Source-only and undeployed. The four record views, shared record contracts, and shared display helpers moved out of `app/FloorOpsApp.tsx` with byte-identical rendering; follow-on DES-14b completed in PR #328 and released the modal/drawer queue slot.
 
 **Why:** `app/FloorOpsApp.tsx` (~200KB) is the reason the single-file queue-slot law
 exists, and that law serialized four separate owner requests in one day (grid views,
@@ -3817,24 +3817,28 @@ and sibling features stay mounted while the failed panel shows its recovery UI;
 `npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
 **Effort:** medium. **Cost:** $0.
 
-### NFIX-12 · `useEffectEvent` underpins the whole subscription layer (small-medium)
+### NFIX-12 · Execute the remaining direct-route coverage gaps (small-medium)
 
-**Why:** filed August 6, 2026 from the review (F3, confirmed with a nuance the validator
-recorded). `app/lib/client-get-hooks.ts` imports `useEffectEvent` from `react` and builds
-`useCachedGetSubscription` and `useClientLifecycleRefresh` on it — the two hooks every
-panel's live data depends on. The API ships in the pinned React 19.2.6 but was never
-stabilized; its semantics can change or vanish in any future React release, and the
-repo's own rule against load-bearing use of signals nobody watches argues against
-building the entire data-subscription doctrine on an unversioned API.
-**Do:** replace `useEffectEvent` with a stable equivalent — a latest-callback `useRef`
-pattern or restructured `useCallback` dependencies — preserving the exact subscription
-semantics (silent revalidation, latest-request-wins, mount guards) the existing suites
-pin.
-**Constraints:** the SWR-doctrine suites (`set42-swr-doctrine.spec.ts`,
-`frontend-correctness.spec.ts`, and the `client-get-cache` Node suites) pass unmodified;
-zero behavior change is the accept bar.
-**Accept:** `grep -rn useEffectEvent app/` returns zero; the named suites pass;
-`npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Why:** filed August 6, 2026 from the review's corrected T1 census. The original NFIX-12
+premise was rejected during PR #329 review: `useEffectEvent` is a stable API in the
+repository's pinned React 19.2.6 and `@types/react` 19.2.14, so replacing the shared
+subscription layer would create risk without removing an unstable dependency. The useful
+packet number instead owns the two route handlers the review proved have no executing test:
+`GET app/api/v1/projects/[projectId]/meetings/route.ts` and
+`POST app/api/v1/integrations/google/gmail/messages/[messageId]/reply-draft/route.ts`.
+Meetings POST is already executed in `tests/task-foundation.test.mjs`; Gmail filing is
+already exercised by the FIX-03 simulation-parity coverage. Do not rebuild those tests.
+**Do:** add executing route tests for the two residual handlers using the existing
+simulation/route-harness patterns. Exercise authorization ahead of repository/provider
+work, request and response validation, the successful record/payload shape, and the
+not-found or provider-failure outcome each handler exposes. Source-text greps do not count
+as execution.
+**Constraints:** no route contract or production behavior change; no new endpoint; keep
+the Gmail reply-draft action human-triggered and no-send.
+**Accept:** a deliberate mutation in each handler is caught by its new executing test,
+then reverted; the tests prove the meetings GET and Workspace Gmail reply-draft POST each
+run through their real handler; `npm test`, `npm run test:e2e`, `npm run lint` named with
+outcomes.
 **Effort:** small-medium. **Cost:** $0.
 
 ### NFIX-13 · Paginate the clients and projects list endpoints (medium)
@@ -3884,17 +3888,24 @@ path writes an event carrying the original error class; `npm test`, `npm run tes
 `npm run lint` named with outcomes.
 **Effort:** small-medium. **Cost:** $0.
 
-### NFIX-15 · Upload endpoint: prove the same-origin guard and the round trip (small)
+### NFIX-15 · Upload boundary and stored-byte round-trip coverage (small)
 
-**Why:** filed August 6, 2026 from the review (T2/T8, both confirmed).
-`tests/e2e/upload.spec.ts` exercises 201/415/404, but every request carries a valid
-`Origin` — the `requireSameOrigin` 403 path is untested, so a regression that deletes
-the guard ships green. The happy path also never reads the object back, so a silent R2
-write failure ships green too.
-**Do:** add (a) a no-Origin request asserting the 403, and (b) a retrieval assertion
-after the 201 that proves the stored bytes round-trip.
-**Accept:** each new assertion is shown to fail when its target behavior is deliberately
-broken (mutation, then revert); `npm run test:e2e` and `npm test` named with outcomes.
+**Why:** filed August 6, 2026 from the review (T2/T8, both confirmed and corrected in
+PR #329). `tests/e2e/upload.spec.ts` exercises 201/415/404, but every request carries a
+valid `Origin`, and the happy path trusts response metadata without proving the bytes
+reached R2. The upload surface is POST-only: there is no public download endpoint, so a
+test must not invent or authorize one merely to satisfy the round-trip assertion.
+**Do:** execute four separate boundary cases: missing `Origin` returns the exact 403;
+valid Origin plus an empty identity returns 401; valid Origin plus an authenticated
+outsider returns 403; and each denial occurs before schema or R2 access. For the success
+path, use the returned object key to read the object directly through the fake R2 binding
+or adapter in the test harness and compare the stored bytes exactly with the upload.
+**Constraints:** no GET/read route and no public object URL; keep CSRF, authentication,
+and authorization assertions separate so one denial cannot masquerade as another.
+**Accept:** deliberate removal of each guard and of the R2 write is caught by the
+corresponding assertion, then reverted; all three denial classes precede storage work;
+the successful POST round-trips exact bytes by returned key; `npm run test:e2e`,
+`npm test`, and `npm run lint` named with outcomes.
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-16 · E2E hygiene batch: assertions that cannot fail, waits that lie, and the missing golden path (medium)
@@ -3918,25 +3929,30 @@ environment traps); total e2e wall time grows by no more than ~2 minutes.
 `npm run test:e2e` and `npm test` named with outcomes.
 **Effort:** medium. **Cost:** $0.
 
-### NFIX-17 · D1 foreign keys and the task-reference race (medium)
+### NFIX-17 · Atomic D1 task-reference guards; defer the foreign-key rebuild (small-medium)
 
-**Why:** filed August 6, 2026 from the review (B4/B6, both confirmed): zero
-`FOREIGN KEY` clauses across all 26 D1 migrations, SQLite's `PRAGMA foreign_keys`
-defaults OFF, and `task-repository.ts` checks project/lead existence in a separate read
-before its insert batch — a delete landing between check and write leaves an orphaned
-task. Application-level checks are inherently racy; the database is the only honest
-enforcer.
-**Do:** audit existing rows for orphans first (the rehearsal tooling is the pattern),
-then enable FK enforcement for the D1 connection and add `FOREIGN KEY` constraints to
-the referencing tables in a new migration, and guard the task insert with `WHERE EXISTS`
-as belt-and-suspenders for the window a migration cannot close retroactively.
-**Constraints:** the D1 and Postgres schemas stay in lockstep (the two-engine rule);
-the migration is additive-safe for the Sites surface; the orphan-audit output is
-recorded in the PR body.
-**Accept:** a test proves an insert with a dangling project/lead id is rejected at the
-database layer and that the `WHERE EXISTS` guard closes the pre-check race window;
-`npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
-**Effort:** medium. **Cost:** $0.
+**Why:** filed August 6, 2026 from the review (B4/B6), then corrected during PR #329
+review. D1's task create/update paths perform project/lead existence reads before their
+write statements, so those statements do not enforce the reference in the same atomic
+operation. PostgreSQL already has both task foreign keys. Adding them to existing D1
+tables requires SQLite table rebuilds and destructive DDL, which the development
+migration guard deliberately rejects; the product also exposes no lead/project delete
+route that makes the originally claimed race reachable today.
+**Do:** make the D1 task INSERT and UPDATE statements themselves conditional on the
+referenced project and lead existing (nullable references remain allowed), while retaining
+friendly post-failure rechecks that distinguish project-not-found, lead-not-found,
+task-not-found, and version-conflict outcomes. Cover both ordinary creation and the
+inbox-review acceptance batch so a failed guard cannot retire the review row or write its
+activity event.
+**Constraints:** no migration, `PRAGMA`, table rebuild, or destructive DDL in this packet;
+do not weaken PostgreSQL's existing constraints. A future D1 foreign-key rebuild requires
+an owner-approved preservation/migration design and is not silently authorized here.
+**Accept:** executing D1 tests prove dangling project and lead references produce their
+typed outcomes for create and update, the guarded statements write zero task/activity/
+review mutations, a valid nullable reference still succeeds, and source assertions pin
+the atomic `EXISTS` predicates; `npm test`, `npm run test:e2e`, `npm run lint` named with
+outcomes.
+**Effort:** small-medium. **Cost:** $0.
 
 ### NFIX-18 · Address review release is best-effort with no compensation (small-medium)
 
@@ -3954,26 +3970,18 @@ operations health card.
 `npm run test:e2e`, `npm run lint` named with outcomes.
 **Effort:** small-medium. **Cost:** $0.
 
-### NFIX-19 · FIX-09 stage-4 toggle race: fix the component, not the test (small-medium)
-**Status:** Blocked — the FIX-09 packet (`kimi/fix09-e2e-simulation-backend`, still In progress after PR #317 merged the first tranche) is mid-flight on the same spec file; claim this once that branch resolves.
+### NFIX-19 · FIX-09 stage-4 verification race (resolved)
+**Status:** Resolved in PR #330
 
-**Why:** filed August 6, 2026 from the review (T5) and the standing flaky-test record:
-the `GoogleWorkspacePanel` stage-4 toggle's click does not reliably land
-`aria-expanded="true"` before the e2e assertion runs, so the FIX-09 calendar test-hold
-spec passes only on Playwright retry — which the retry-only-pass reporter correctly
-treats as a failure. The in-flight `kimi/fix09-*` branches weaken the assertion instead
-of the race; that is the same defect class as deleting a detector.
-**Do:** make the stage-4 expand transition deterministic for a mounted panel (a
-synchronous state commit before focus returns, or a transition boundary the test can
-await), then restore the honest `aria-expanded` assertion in
-`tests/e2e/fix09-simulation-backend.spec.ts`.
-**Constraints:** this packet supersedes only the assertion-weakening hunk of the in-flight
-FIX-09 work, not the whole branch; rendering otherwise byte-identical and
-both golden suites untouched.
-**Accept:** the calendar test-hold spec passes first-attempt across repeated CI runs
-with the honest assertion restored, and the retry-only-pass reporter stays silent;
-`npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
-**Effort:** small-medium. **Cost:** $0.
+**Why:** filed August 6, 2026 from the review (T5) and resolved August 7. Adversarial
+reproduction showed the defect was the spec's one-shot read/click/read sequence, not the
+component: `GoogleWorkspacePanel` already uses a functional state update, while the test
+could inspect stale `aria-expanded` state before Playwright's retrying assertion model had
+a chance to observe the render.
+**Resolution:** PR #330 deep-links directly to Stage 4, restores an auto-retrying honest
+`aria-expanded="true"` assertion, and auto-retries the stage-state assertion. The repaired
+case passed 10/10 locally, the full local FIX-09 spec passed 4/4, and the required GitHub
+Chromium gate passed before merge. No component behavior or golden hash changed.
 
 ### NFIX-20 · DevOps hygiene batch (medium)
 
@@ -3982,17 +3990,19 @@ Confirmed: `vinext` is pinned at 0.0.50 while 1.0.0-beta.4 exists; `npm test` fo
 full Vite builds before any unit test although no test imports build output; neither
 workflow runs `npm audit` or an image scan; the base `tsconfig.json` targets ES2017 under
 Node 22; there is no `.nvmrc`; `.env.example` ships the real `cherryhillfci.com` domain
-as a default; the Cloud Run image builds twice with no layer cache; and the Postgres
-runner has no down-migration path. Rejected by validation: the build-stamp "gap" —
-`.env.example` documents those variables as the deploy step's responsibility (DOC-06),
-and the Cloud Run build never reads them.
+as a default; and the Cloud Run image builds twice with no layer cache. Rejected by
+validation: the build-stamp "gap" — `.env.example` documents those variables as the
+deploy step's responsibility (DOC-06), and the Cloud Run build never reads them — plus
+the claimed rollback-doc gap. The deliberate forward-fix/restore posture is already
+documented in `docs/production-postgresql-foundation.md` and
+`docs/runbooks/google-cloud/migration-cutover-and-recovery.md`; do not duplicate or
+reverse it here.
 **Do:** land each sub-item as its own commit: (a) evaluate the vinext upgrade or write
 the ADR pinning 0.0.50; (b) split `test:unit` (no builds) from `test:integration` and
 re-point CI's fast lane; (c) add `npm audit --audit-level=moderate` and an image scan to
 the workflows; (d) raise the base tsconfig target to ES2022; (e) add `.nvmrc` at
 22.13.0; (f) replace the real-domain default with `example.com` plus a comment; (g) add
-GHA layer caching to the image build; (h) document the manual rollback procedure where
-down migrations do not exist.
+GHA layer caching to the image build.
 **Constraints:** the test-script split must not change what CI ultimately enforces (all
 three gates still named in PRs); NFIX-10's root-typecheck CI step is the neighbor this
 batch must not collide with — rebase over whichever lands first.
@@ -4018,8 +4028,95 @@ isolates, or the documented per-isolate contract asserted); `npm test` named wit
 outcome.
 **Effort:** small. **Cost:** $0.
 
+### NFIX-22 · Decompose InboxView and centralize inbox contracts (medium-large)
+
+**Why:** filed August 7, 2026 from the August 6 review (F4). On current main,
+`InboxView.tsx` is 79,491 bytes / 1,976 lines and owns queue loading, Gmail loading,
+triage, filing, reply, typed accepts, filters, and modal state. It also imports
+`GmailFilingModal`, `WorkspaceMessage`, and `GmailFilingPreview` from the Settings-only
+`GoogleWorkspacePanel` module while redeclaring local notification/project shapes. AI-11(d)
+is currently using the inbox-file cluster; this packet must wait for that branch to merge
+and consume its final activity-attribution shape rather than racing it.
+**Do:** first move neutral inbox/filing contracts to one dependency-neutral module and move
+`GmailFilingModal` into the inbox surface. Then extract cohesive Gmail-list, review-queue,
+filing/reply, and typed-accept components/hooks while keeping one orchestration component.
+Enumerate every extracted component's props before moving it. Land structural moves first;
+any behavior change requires a separately named commit and acceptance evidence.
+**Constraints:** takes the inbox-file cluster; no `FloorOpsApp.tsx` queue slot; no new
+state-management dependency; preserve review-first filing, explicit human actions, DOM
+order, accessible names, and Gmail's action-gated reads.
+**Accept:** `InboxView.tsx` is materially smaller with no duplicate inbox contract shapes;
+component-boundary tests pin the new directory and imports; rendering and existing inbox
+Playwright specs pass unmodified unless a pin needs a path-only re-point; both golden hashes
+byte-identical; `npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium-large. **Cost:** $0. **Sequencing:** after AI-11(d), before NFIX-23.
+
+### NFIX-23 · Decompose GoogleWorkspacePanel and centralize Workspace contracts (medium-large, after NFIX-22)
+
+**Why:** filed August 7, 2026 from the August 6 review (F4).
+`GoogleWorkspacePanel.tsx` is 107,711 bytes / 1,999 lines and combines setup stages,
+connection health, blueprint editing, resource operations, and locally repeated Workspace
+contract shapes in one client module. That concentration makes the highest-risk Settings
+surface difficult to review and lets route/UI payload definitions drift.
+**Do:** consume NFIX-22's neutral Gmail contracts, then extract each setup stage,
+connection-health/tenant-reset flow, verification-action cluster, and its state hooks into
+the existing Settings component tree. Define the parent-owned state and each child's props
+first, then move one cohesive stage at a time without changing behavior or copy.
+**Constraints:** NFIX-22 lands first so the two packets never move `GmailFilingModal`
+concurrently; serialize with any other packet touching `GoogleWorkspacePanel.tsx`; no
+`FloorOpsApp.tsx` change or queue slot; no new dependency; preserve admin gating, setup
+provenance, action-triggered Gmail reads, focus behavior, and every existing stage anchor.
+**Accept:** the panel becomes an orchestrator rather than the implementation home for all
+stages; no duplicate Workspace contract declarations remain in the extracted cluster;
+boundary and mutation-sensitive tests pin the split; existing setup e2e passes unmodified
+apart from path-only source pins; golden hashes byte-identical; `npm test`,
+`npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium-large. **Cost:** $0.
+
+### NFIX-24 · FloorOps shell state ownership and major-view code splitting (large; FloorOpsApp queue)
+
+**Why:** filed August 7, 2026 from the August 6 review (F5/F6), after DES-14 and DES-14b
+moved the record views and overlay cluster out. The remaining file is 108,430 bytes / 1,810
+lines with 39 `useState` calls, still owns broad cross-surface state/data controllers, and
+eagerly imports the major views, so route changes carry unnecessary prop/state coupling and
+initial bundle cost.
+**Do:** measure the current client chunks; move cohesive directory/dashboard/settings
+state ownership into existing cache-backed hooks or narrowly scoped contexts; then lazy-load
+major route views at their current render boundaries with honest, accessible loading and
+error behavior. Split state and code loading in reviewable commits so attribution is clear.
+**Constraints:** takes the single `FloorOpsApp.tsx` queue slot and follows DES-17's shell
+boundary/toast work; zero new state-management framework or dependency; do not move server
+authorization into the client; no markup/copy change merely to facilitate extraction.
+**Accept:** prop chains and shell-owned state counts materially fall and are reported
+before/after; route chunks are separately emitted and navigation preserves state/focus;
+major-view loading/error states are tested; both golden hashes byte-identical unless a
+future owner-approved packet explicitly authorizes regeneration; `npm test`,
+`npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** large. **Cost:** $0. **Sequencing:** after DES-17.
+
+### NFIX-25 · Bound the filing-rule catalog on both engines (small-medium)
+**Status:** Blocked — awaiting owner-approved filing-rule catalog limit
+
+**Why:** filed August 7, 2026 from the August 6 review (B9). Both the D1 and PostgreSQL
+filing-rule repositories list the entire catalog with deterministic ordering and no bound.
+The current business catalog is small, but choosing a hard cap, pagination contract, and
+overflow behavior is a product decision; silently truncating rules could hide active filing
+behavior from administrators.
+**Owner decision required:** approve the maximum saved-row count and whether an over-limit
+legacy catalog is paged or shown as a complete diagnostic overflow. Existing rows must never
+be auto-deleted or hidden.
+**Do after the owner decision:** define one shared named maximum; enforce it atomically in
+both engines' create statements rather than list-then-create; apply the same list/continuation
+contract to both adapters, their port, the Settings consumer, and validation. Return a typed
+capacity outcome and make overflow visible and actionable; never drop enabled rules silently.
+**Accept:** datasets below, at, and above the approved limit behave identically on D1 and
+PostgreSQL; the UI exposes the complete contract or an honest overflow state; ordering is
+stable with no duplicates across pages if pagination is chosen; `npm test`,
+`npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
 ### DES-14b · FloorOpsApp decomposition: the modal and drawer cluster (large, after DES-14)
-**Status:** In progress — `codex/des14b-modal-drawer-cluster`
+**Status:** Complete — PR #328, August 7, 2026. Source-only and undeployed. The move-only extraction relocated the complete modal/drawer cluster (78,089 bytes) into per-surface modules, retained shared record-contract identity, kept both golden constants byte-identical, and passed all required GitHub gates after merging current main. The adjudicated retained shell is 108,430 bytes; the `FloorOpsApp.tsx` queue slot is released.
 
 **Amendment (August 6, 2026, orchestrator):** the "~65KB" accept premise undercounted the
 retained shell. Measured at PR #328's head: the complete cluster moved out (78,089 bytes,
@@ -5266,8 +5363,8 @@ queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-0
 DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI (in flight, PR #217/#221) →
 **EDIT-05** → **EDIT-04** → **AI-10 sub-PR (f)** → **EDIT-06** → **EDIT-07** →
 SET-26 UI (blocked on SET-23) → HINT-02-B.
-**Every named packet above is now merged. DES-14 completed in PR #327; DES-14b now holds
-the slot from the tail below.**
+**Every named packet above is now merged. DES-14 completed in PR #327 and DES-14b
+completed in PR #328, releasing the slot to the tail below.**
 
 **Tail added August 3, 2026 — five open packets were flagged for this slot and none of them
 were on the list.** A packet-assessment pass found that the claim list, which `AGENTS.md:54-58`
@@ -5278,7 +5375,7 @@ Adversarial review (August 3, 2026) then established that AI-12 takes no slot at
 its bullet — leaving four claimants; DES-14 and DES-12, filed August 3, 2026, then claimed
 in the tail, making six. Recommended claim order, most valuable first:
 
-**DES-14 (complete in PR #327) → DES-14b (in progress on `codex/des14b-modal-drawer-cluster`) →
+**DES-14 (complete in PR #327) → DES-14b (complete in PR #328) →
 GI-05 (if approved) → WS-20 (if approved) → DES-17 (shell scope,
 post-decomposition) → DES-10 (variants a/b only) → DES-12.**
 (DES-16 and DES-17 were added August 4, 2026 with the usability wave. DES-16 merged in
@@ -5314,9 +5411,9 @@ machinery that remains in `FloorOpsApp.tsx` after DES-14, so it follows the extr
 - **DES-14** — complete in PR #327. It moved the four record views, shared contracts, and
   shared display helpers out of `app/FloorOpsApp.tsx`; those record views permanently exit
   the queue.
-- **DES-14b** — **holds the slot on `codex/des14b-modal-drawer-cluster`.** It owns the
-  modal/drawer cluster that DES-14 deliberately left in `app/FloorOpsApp.tsx`; those
-  overlays permanently exit the queue in this branch.
+- **DES-14b** — complete in PR #328. It moved the modal/drawer cluster that DES-14
+  deliberately left in `app/FloorOpsApp.tsx`; those overlays permanently exit the queue,
+  and the slot is released until the next eligible packet claims it through its status line.
 - **DES-10** — only variants (a) and (b), which edit `app/FloorOpsApp.tsx:1701`. Variant (c)
   is CSS-only and takes no slot.
 - **DES-12** — editor chrome + resolved-preview rendering at the layout mount; also holds

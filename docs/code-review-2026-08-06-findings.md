@@ -13,12 +13,12 @@
 | Dimension | Confirmed Issues | Critical/High | Medium | Low |
 |-----------|-----------------|---------------|--------|-----|
 | **Security** | 1 | 0 | 1 | 0 |
-| **Frontend** | 3 | 2 | 1 | 0 |
-| **Backend** | 3 | 2 | 1 | 0 |
+| **Frontend** | 5 | 5 | 0 | 0 |
+| **Backend** | 8 | 3 | 4 | 1 |
 | **TypeScript** | 0 | 0 | 0 | 0 |
-| **Testing** | 3 | 1 | 2 | 0 |
-| **DevOps** | 2 | 0 | 2 | 0 |
-| **Total** | **12** | **5** | **7** | **0** |
+| **Testing** | 8 | 3 | 5 | 0 |
+| **DevOps** | 8 | 0 | 3 | 5 |
+| **Total** | **30** | **11** | **13** | **6** |
 
 ### Critical Issues Needing Immediate Attention
 
@@ -72,29 +72,37 @@
 - **Details:** Zero `error.tsx` files in the Next.js App Router. Zero `ErrorBoundary` class components anywhere. `app/layout.tsx` renders `{children}` with no error handling wrapper. A single unhandled exception in any leaf component unmounts the entire application to a blank white screen.
 - **Remediation:** Add a root-level `error.tsx` in `app/` for Next.js App Router error handling. Add React class-based Error Boundaries around major feature areas (Overview, Inbox, Assistant, Settings) so one feature crashing does not take down the entire app shell.
 
-#### F3. React Patterns — Experimental `useEffectEvent` Hook — **High**
+#### F3. React Patterns — `useEffectEvent` Stability Concern — **Rejected after correction**
 - **File:** `app/lib/client-get-hooks.ts`
-- **Validation:** Confirmed (with nuance: present in React 19.2.6 but not a stabilized API)
-- **Details:** The code imports and uses `useEffectEvent` from React, an experimental/canary feature not part of the stable React 19 API guarantee. It is the foundation for `useCachedGetSubscription` and `useClientLifecycleRefresh`. If React removes or changes this API in a future update, the entire real-time data subscription system breaks.
-- **Remediation:** Replace `useEffectEvent` with a stable pattern. Use `useRef` to hold the latest callback, or restructure subscription hooks to use `useCallback` with stable dependency arrays. Pin the exact React canary version as a stopgap, but plan migration away from the experimental API.
+- **Validation:** Rejected during PR #329 review.
+- **Details:** The repository pins stable React 19.2.6 and `@types/react` 19.2.14, where
+  `useEffectEvent` is a stable API. Replacing the shared subscription layer with ref/callback
+  approximations would add lifecycle risk without removing an unstable dependency.
+- **Disposition:** No implementation packet. The original NFIX-12 premise is withdrawn;
+  NFIX-12 now owns the two real residual direct-route coverage gaps from T1.
 
-#### F4. Massive View Components — **High (confirmed but not in final tally)**
+#### F4. Massive View Components — **High**
 - **Files:** `app/inbox/components/InboxView.tsx` (1,976 lines), `app/settings/components/GoogleWorkspacePanel.tsx` (1,999 lines)
 - **Validation:** Confirmed
 - **Details:** Both redeclare local copies of types that exist in the parent (`Notify`, `Project`, `WorkspaceMessage`, `GmailFilingPreview`), indicating tight coupling and copy-paste drift risk.
 - **Remediation:** Decompose into smaller sub-components and extract shared types to a shared location.
+- **Disposition:** NFIX-22 owns `InboxView`; NFIX-23 owns `GoogleWorkspacePanel`.
 
-#### F5. Centralized State with Heavy Prop Drilling — **High (confirmed but not in final tally)**
+#### F5. Centralized State with Heavy Prop Drilling — **High**
 - **File:** `app/FloorOpsApp.tsx`
 - **Validation:** Confirmed
 - **Details:** 53 `useState` hooks in one component, state passed down through 5–7 layers of props. Zero React Context usage anywhere in the app.
-- **Remediation:** Introduce a lightweight state management layer (Zustand) or extend the custom GET cache for client UI state.
+- **Remediation:** Move cohesive state ownership into the existing cache-backed hooks or
+  narrowly scoped contexts; a new state-management dependency is not required.
+- **Disposition:** NFIX-24, sequenced after DES-17.
 
-#### F6. No Code Splitting — **High (confirmed but not in final tally)**
+#### F6. No Code Splitting — **High**
 - **File:** `app/FloorOpsApp.tsx`
 - **Validation:** Confirmed
 - **Details:** All 8+ views are conditionally rendered inline. No `React.lazy` or dynamic import usage anywhere.
-- **Remediation:** Use `React.lazy` + `Suspense` to lazy-load each major view.
+- **Remediation:** Lazy-load major views at their current route render boundaries after
+  measuring the existing chunks.
+- **Disposition:** NFIX-24, sequenced after DES-17.
 
 ---
 
@@ -118,23 +126,34 @@
 - **Details:** `processWork` wraps the AI provider call in a bare `catch { analysis = null; }` — the catch block does not even bind the error variable. All OpenAI errors (rate limits, auth failures, timeouts, malformed responses, network errors) are silently discarded with no logging, no metrics, and no differentiation. Downstream code records a generic failure code (`"analysis_deadline_exceeded"` or `"analysis_failed"`), but the actual error is inaccessible.
 - **Remediation:** Log the error with context (message ID, error type) before falling back to `null`. Distinguish retriable errors (rate limit, timeout) from permanent ones (auth failure, bad request) so operators can alert appropriately.
 
-#### B4. No Foreign Key Constraints in D1 Schema — **Medium**
+#### B4. No Foreign Key Constraints in D1 Schema — **Medium (remediation constrained)**
 - **Files:** `drizzle/*.sql` (all migration files)
 - **Validation:** Confirmed
 - **Details:** None of the D1 migrations define `FOREIGN KEY` constraints. SQLite defaults to `PRAGMA foreign_keys = OFF`. Tables like `projects` (`client_id`), `contacts` (`client_id`), and `tasks` (`project_id`, `lead_id`) reference other tables without database-level referential integrity.
-- **Remediation:** Add `FOREIGN KEY` constraints to migration files. Enable `PRAGMA foreign_keys = ON` in the D1 connection setup. Audit existing data for orphaned references before enforcing.
+- **Correction:** PostgreSQL already enforces both task references. Retrofitting foreign
+  keys on existing D1 tables requires a SQLite table rebuild, which conflicts with the
+  repository's destructive-DDL preservation guard and is not authorized by this review.
+- **Remediation:** NFIX-17 adds atomic reference predicates to the D1 task writes now.
+  A D1 foreign-key rebuild is deferred until the owner approves a dedicated preservation,
+  rehearsal, and rollback design.
 
 #### B5. In-Memory Rate Limiter Ineffective Across Worker Isolates — **Medium**
 - **File:** `app/lib/development-request-rate-limit.ts`
 - **Validation:** Confirmed
 - **Details:** Same as S1. The `Map`-based rate limiter is isolate-local in Cloudflare Workers.
 - **Remediation:** Move rate-limit state to D1 or use a Durable Object for global consistency.
+- **Disposition:** Duplicate of S1; NFIX-21 owns the single work item.
 
-#### B6. Non-Atomic Reference Validation in Task Creation — **Medium**
+#### B6. Non-Atomic Reference Validation in D1 Task Writes — **Medium**
 - **File:** `app/adapters/d1/task-repository.ts` (lines 62-81, 123-127)
 - **Validation:** Confirmed
-- **Details:** `missingTaskReference()` performs separate `SELECT` queries to verify `project_id`/`lead_id` exist before the INSERT batch runs. Without FK constraints and without atomic `SELECT FOR UPDATE` semantics in D1, the referenced row can be deleted by a concurrent request between the check and the insert.
-- **Remediation:** Add FK constraints (see B4). As a short-term mitigation, guard the INSERT with `WHERE EXISTS` subqueries.
+- **Details:** `missingTaskReference()` performs separate `SELECT` queries before the D1
+  INSERT/UPDATE statements. The product currently exposes no lead/project delete route, so
+  the originally claimed user-reachable deletion race is not present today; the statements
+  nevertheless do not enforce their reference assumptions atomically.
+- **Remediation:** NFIX-17 guards both D1 INSERT and UPDATE statements with reference
+  `EXISTS` predicates and retains typed post-failure rechecks. A future D1 FK rebuild remains
+  owner-gated as described in B4.
 
 #### B7. `googleIntegrationErrorResponse` Loses Non-Google Error Context — **Medium**
 - **File:** `app/lib/google-integration-error.ts` (lines 13-28)
@@ -152,7 +171,9 @@
 - **File:** `app/adapters/d1/filing-rule-repository.ts` (line 42)
 - **Validation:** Confirmed
 - **Details:** `list()` queries without `LIMIT`. Filing rules are typically small in number.
-- **Remediation:** Add `LIMIT` or document expected maximum row count.
+- **Remediation:** Apply an owner-approved bound or pagination contract identically in D1
+  and PostgreSQL, with an honest overflow state rather than silent truncation.
+- **Disposition:** NFIX-25 (blocked pending the owner's catalog-limit decision).
 
 ---
 
@@ -172,22 +193,30 @@
 
 ### Testing
 
-#### T1. Untested API Routes with Data-Mutation Surface — **High (partially overstated)**
-- **Validation:** Partially rejected. Three of six claimed untested routes *are* tested:
+#### T1. Residual Direct-Route Execution Gaps — **High (corrected census)**
+- **Validation:** Partially rejected. Additional source verification narrowed the
+  originally named surfaces to two handler-operation gaps:
   - `contacts/[contactId]/route.ts` (PATCH): tested in `edit06-client-contact-editing.spec.ts`
   - `projects/[projectId]/drive/route.ts` (POST): tested in `set22-project-drive-files.spec.ts`
   - `projects/[projectId]/drive/files/route.ts` (GET/POST): tested in `set22-project-drive-files.spec.ts`
+  - `projects/[projectId]/meetings/route.ts` (POST): executed in `task-foundation.test.mjs`
+  - Gmail filing GET/POST: executed by the FIX-03 simulation-parity suite
 - **Confirmed gaps:**
-  - `projects/[projectId]/meetings/route.ts` (GET/POST): no direct test
-  - `gmail/messages/[messageId]/file/route.ts` (GET/POST): no direct test
+  - `projects/[projectId]/meetings/route.ts` (GET): no direct route execution
   - `gmail/messages/[messageId]/reply-draft/route.ts` (POST): `ai06-reply-draft.spec.ts` tests the AI assistant endpoint, not the Gmail Workspace endpoint
-- **Remediation:** Add e2e tests for the three confirmed gaps using the simulation backend pattern. Add unit tests for request validation and authorization guards on all mutation routes.
+- **Remediation:** Add executing route tests for the two residual handlers using the
+  established simulation/route harnesses, including authorization-before-work and their
+  success/failure payload contracts.
+- **Disposition:** NFIX-12.
 
 #### T2. No E2E Authorization Test for Upload Endpoint — **High**
 - **File:** `tests/e2e/upload.spec.ts`
 - **Validation:** Confirmed
 - **Details:** Tests exercise happy path (201) and validation failures (415, 404) but every request includes `headers: { origin: ORIGIN }`. No test omits the origin header or tests without authentication. The route uses `requireSameOrigin`, so an unauthenticated/missing-origin request should be rejected.
-- **Remediation:** Add a test case that omits the origin header and asserts a 403/401 response.
+- **Remediation:** Test the boundaries separately: missing Origin is exactly 403; valid
+  Origin with no identity is 401; valid Origin with an authenticated outsider is 403. Prove
+  each denial occurs before schema or R2 access.
+- **Disposition:** NFIX-15.
 
 #### T3. Weak `toBeTruthy()` Assertions on DOM Attribute IDs — **Medium**
 - **Files:** `tests/e2e/hint02a-info-hints.spec.ts`, `tests/e2e/hint02b-floorops-modal-hints.spec.ts`, `tests/e2e/set25-first-run-import.spec.ts`, `tests/e2e/workspace-setup-stepper.spec.ts`
@@ -201,11 +230,14 @@
 - **Details:** Both files have `await page.waitForTimeout(0)` inside `test.afterEach`. This is a no-op that suggests a previous attempt to fix a timing/race issue.
 - **Remediation:** Remove the no-op lines or replace with a proper `waitFor` condition if a timing issue genuinely exists.
 
-#### T5. FIX-09 Calendar Test is Flaky — **High**
+#### T5. FIX-09 Calendar Test Race — **High (resolved in PR #330)**
 - **File:** `tests/e2e/fix09-simulation-backend.spec.ts`
-- **Validation:** Confirmed (documented in memory)
-- **Details:** Stage-4 toggle click races with React state update. `aria-expanded` is not reliably `true` before the assertion runs. CI fails on first attempt, passes on retry.
-- **Remediation:** Navigate directly to the expanded state via URL parameter or use `page.evaluate()` to trigger the expand programmatically.
+- **Validation:** Confirmed as a test race, with the original component diagnosis rejected.
+- **Details:** The one-shot read/click/read sequence could inspect stale state even though
+  the component uses a functional state update. PR #330 deep-links Stage 4 and restores
+  auto-retrying `aria-expanded="true"` and stage-state assertions.
+- **Disposition:** Resolved in PR #330 / NFIX-19. The repaired case passed repeated local
+  stress and the required Chromium gate before merge; no component rewrite was needed.
 
 #### T6. Hardcoded `waitForTimeout` Values for Debounce Timing — **Medium**
 - **File:** `tests/e2e/gi04-address-validation.spec.ts` (lines 263, 334, 344, 352)
@@ -221,8 +253,12 @@
 #### T8. Upload Test Does Not Verify Retrieval — **Medium**
 - **File:** `tests/e2e/upload.spec.ts`
 - **Validation:** Confirmed
-- **Details:** The test POSTs a file and verifies the 201 response metadata, but never fetches the file back to confirm it was actually stored in R2.
-- **Remediation:** After upload, issue a GET to the file URL and verify the uploaded content is retrievable.
+- **Details:** The test POSTs a file and verifies the 201 response metadata, but never
+  reads the stored object from its fake R2 binding. The application exposes no public GET
+  upload route or file URL, so proposing one would widen product scope and authorization.
+- **Remediation:** Read the fake R2 object directly by the key returned from the POST and
+  compare the bytes exactly.
+- **Disposition:** NFIX-15.
 
 ---
 
@@ -266,17 +302,58 @@
 #### D8. Cloud Run Ingress Unrestricted with No WAF — **Low**
 - **File:** `infrastructure/google-cloud/modules/foundation/main.tf` (~line 740)
 - **Details:** `google_cloud_run_v2_service.application` uses `ingress = "INGRESS_TRAFFIC_ALL"`. No Cloud Armor or load balancer in front.
-- **Remediation:** Evaluate adding Cloud Armor with OWASP CRS, or restrict ingress to internal load balancer.
+- **Remediation:** Decide the production front-door topology (direct Cloud Run versus a
+  load balancer plus Cloud Armor) before granting public invoker access.
+- **Disposition:** Existing FIX-11 owner gate in
+  `docs/full-review-2026-07-21-findings.md`; do not file a duplicate packet.
 
-#### D9. PostgreSQL Migration Runner Lacks Down Migrations — **Medium**
+#### D9. PostgreSQL Migration Runner Lacks Down Migrations — **Rejected as an open gap**
 - **File:** `app/platform/postgres/production-schema-migrations.ts`
-- **Details:** The custom PostgreSQL migration runner only supports forward migrations. If a deployment applies migrations successfully but the app rollout fails, there is no automated rollback.
-- **Remediation:** Add down-migration support to the PostgreSQL runner, or document a manual operational rollback procedure.
+- **Validation:** The runner is forward-only, but the repository deliberately uses
+  forward-fix or restore-based rollback and already documents that procedure in
+  `docs/production-postgresql-foundation.md` and
+  `docs/runbooks/google-cloud/migration-cutover-and-recovery.md`.
+- **Disposition:** Already satisfied by the recorded operating model; no NFIX packet and
+  no down-migration machinery authorized.
 
 #### D10. No Dependency or Container Security Scanning — **Medium**
 - **Files:** `.github/workflows/ci.yml`, `.github/workflows/cloud-run-image.yml`
 - **Details:** Neither workflow runs `npm audit`, SAST, or container image vulnerability scanning.
 - **Remediation:** Add `npm audit --audit-level=moderate` to CI. Add container image scanning (Trivy, Snyk, Grype) to `cloud-run-image.yml` before push.
+
+---
+
+## Finding disposition and packet ownership
+
+Findings prose is not a dispatch surface. This table records every reviewed finding's
+single owner, duplicate, resolution, or rejection so nothing relies on an unclaimed report
+paragraph. Packet availability still comes only from status lines in
+`docs/agent-plan-architecture-workspace-and-setup.md`.
+
+| Findings | Disposition |
+|---|---|
+| S1 | NFIX-21. |
+| S2, S3 | Rejected in validation; no packet. |
+| F1 | DES-14 (PR #327) and DES-14b (PR #328) completed the record-view and overlay extractions measured by this review. |
+| F2 | DES-17; duplicate NFIX-11 is marked Superseded. |
+| F3 | Rejected: `useEffectEvent` is stable in the pinned React 19.2.6; no packet. |
+| F4 | NFIX-22 (`InboxView`) and NFIX-23 (`GoogleWorkspacePanel`). |
+| F5, F6 | NFIX-24, after DES-17. |
+| B1, B2 | NFIX-13. |
+| B3, B7 | NFIX-14. |
+| B4, B6 | NFIX-17 atomic D1 guards; any D1 FK rebuild remains a separate owner gate. |
+| B5 | Duplicate of S1; NFIX-21. |
+| B8 | NFIX-18. |
+| B9 | NFIX-25, blocked pending the owner-approved catalog bound. |
+| T1 | NFIX-12 (the two residual direct-route execution gaps). |
+| T2, T8 | NFIX-15. |
+| T3, T4, T6, T7 | NFIX-16. |
+| T5 | Resolved by PR #330; NFIX-19 records the resolution. |
+| D1, D2, D4, D5, D6, D7, D10 | NFIX-20. |
+| D3 | Rejected in validation; build stamps are a deployment responsibility. |
+| D8 | Existing FIX-11 production front-door topology owner gate. |
+| D9 | Rejected as an open gap; forward-fix/restore rollback is already documented. |
+| TypeScript candidates | All three rejected in adversarial validation; no packet. |
 
 ---
 
@@ -337,20 +414,23 @@ The `npm run build && npm run build:cloud-run && ...` test script is a developer
 ## Recommended Priority Order
 
 ### Wave 1 — Stability (this week)
-1. Fix T5 (flaky FIX-09 calendar test) — blocks CI reliability
-2. Add error boundaries (F2) — prevents complete app crashes
-3. Fix silent error swallowing in inbox analysis (B3) — enables production debugging
+1. Add error boundaries (F2 / DES-17) — prevents complete app crashes
+2. Fix silent error swallowing (B3/B7 / NFIX-14) — enables production debugging
+3. Add clients/projects pagination (B1/B2 / NFIX-13) — bounds the largest list reads
 
 ### Wave 2 — Architecture (next 2–4 weeks)
-4. Begin `FloorOpsApp.tsx` decomposition (F1) — extract nested components, custom hooks
-5. Add pagination to clients and projects lists (B1, B2)
-6. Replace `useEffectEvent` with stable patterns (F3)
+4. Decompose `InboxView` and `GoogleWorkspacePanel` (F4 / NFIX-22 and NFIX-23)
+5. Move residual shell state ownership and split major view chunks (F5/F6 / NFIX-24)
+6. Add atomic D1 task-reference guards (B4/B6 / NFIX-17)
 
 ### Wave 3 — Quality (next month)
-7. Add missing e2e tests for mutation routes (T1 gaps)
-8. Fix hardcoded `waitForTimeout` values in e2e tests (T6)
-9. Add `npm audit` and container scanning to CI (D10)
-10. Add FK constraints to D1 schema (B4)
+7. Execute the two residual route-coverage gaps (T1 / NFIX-12)
+8. Fix weak/timing-dependent e2e assertions and add the golden journey (T3/T4/T6/T7 / NFIX-16)
+9. Prove upload boundaries and stored-byte round trip (T2/T8 / NFIX-15)
+10. Add dependency and container scanning with the rest of the DevOps batch (D10 / NFIX-20)
+
+T5 is omitted because PR #330 resolved it. F3 is omitted because the underlying premise
+was rejected against the pinned stable React release.
 
 ---
 
