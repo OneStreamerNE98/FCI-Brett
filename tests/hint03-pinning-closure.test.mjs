@@ -16,11 +16,11 @@ const shippedHints = [
   ["app/settings/components/WorkspaceDefaultsPanel.tsx", "APPOINTMENT_REMINDER_HINT", "How many hours ahead a reminder is planned to go out. Saved now; reminder sending is not built yet."],
   ["app/settings/components/WorkspaceDefaultsPanel.tsx", "CLIENT_REMINDER_HINT", "Hours before a client appointment a reminder is planned to send. Saved as a default; sending is not built yet."],
   ["app/settings/components/WorkspaceDefaultsPanel.tsx", "CREW_REMINDER_HINT", "Hours before a scheduled field day a crew reminder is planned to send. Saved as a default; sending is not built yet."],
-  ["app/FloorOpsApp.tsx", "LEAD_ESTIMATED_VALUE_HINT", "Your rough estimate of the job's size before it's quoted. Feeds pipeline totals; it is not a committed contract amount."],
-  ["app/FloorOpsApp.tsx", "CLIENT_STATUS_HINT", "Active is a current working account, Prospect is not yet won, Inactive is dormant or closed."],
-  ["app/FloorOpsApp.tsx", "PROJECT_STATUS_HINT", "Planning is pre-work, Mobilizing is readying crews and materials, Installation is the active install, Closeout is punch list and wrap-up."],
-  ["app/FloorOpsApp.tsx", "PROJECT_FLOORING_CATEGORY_HINT", "The main material for this job. Use Specialty for niche products and Mixed when no single category dominates."],
-  ["app/FloorOpsApp.tsx", "PROJECT_ESTIMATED_VALUE_HINT", "Expected job value before booking. If a contract value is later recorded, reporting prefers that figure."],
+  ["app/leads/components/LeadModal.tsx", "LEAD_ESTIMATED_VALUE_HINT", "Your rough estimate of the job's size before it's quoted. Feeds pipeline totals; it is not a committed contract amount."],
+  ["app/clients/components/ClientModals.tsx", "CLIENT_STATUS_HINT", "Active is a current working account, Prospect is not yet won, Inactive is dormant or closed."],
+  ["app/projects/components/ProjectModals.tsx", "PROJECT_STATUS_HINT", "Planning is pre-work, Mobilizing is readying crews and materials, Installation is the active install, Closeout is punch list and wrap-up."],
+  ["app/projects/components/ProjectModals.tsx", "PROJECT_FLOORING_CATEGORY_HINT", "The main material for this job. Use Specialty for niche products and Mixed when no single category dominates."],
+  ["app/projects/components/ProjectModals.tsx", "PROJECT_ESTIMATED_VALUE_HINT", "Expected job value before booking. If a contract value is later recorded, reporting prefers that figure."],
 ];
 
 test("HINT-03 closes the forms-audit catalog at 12 of 20 with every shipped copy pinned", async () => {

@@ -14,12 +14,13 @@ function sourceSection(source, start, end, label) {
 }
 
 test("lead editor retains all 13 canonical fields, version, and changed-key conflict behavior", async () => {
-  const [app, recordTypes] = await Promise.all([
+  const [app, leadModalSource, recordTypes] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
+    read("app/leads/components/LeadModal.tsx"),
     read("app/lib/record-types.ts"),
   ]);
   const leadType = sourceSection(recordTypes, "export type Lead = {", "export type Client =", "Lead types");
-  const leadModal = sourceSection(app, "function LeadModal", "function ClientModal", "LeadModal");
+  const leadModal = leadModalSource;
   const saveLead = sourceSection(app, "async function saveLeadEdits", "async function addClient", "saveLeadEdits");
 
   for (const field of [
@@ -42,7 +43,7 @@ test("lead editor retains all 13 canonical fields, version, and changed-key conf
     assert.match(leadModal, new RegExp(`savedValue\\("${field}"\\)`), `${field} saved-value annotation`);
   }
   assert.match(leadType, /version\?: string/u);
-  assert.match(app, /mode: "edit";[\s\S]*initialValues: Lead;/u);
+  assert.match(leadModalSource, /mode: "edit";[\s\S]*initialValues: Lead;/u);
   assert.match(app, /version: normalizeRecordVersion\(record\.version\) \?\? undefined/u);
   assert.match(saveLead, /body: JSON\.stringify\(\{ \.\.\.patch, version \}\)/u);
   assert.match(saveLead, /throw new LeadEditConflictError/u);
@@ -57,10 +58,13 @@ test("lead editor retains all 13 canonical fields, version, and changed-key conf
 });
 
 test("create mode and the dedicated advanceLead fast path retain their established contracts", async () => {
-  const app = await read("app/FloorOpsApp.tsx");
+  const [app, leadModalSource] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
+    read("app/leads/components/LeadModal.tsx"),
+  ]);
   const addLead = sourceSection(app, "async function addLead", "async function saveLeadEdits", "addLead");
   const advanceLead = sourceSection(app, "async function advanceLead", "async function searchWorkspace", "advanceLead");
-  const leadModal = sourceSection(app, "function LeadModal", "function ClientModal", "LeadModal");
+  const leadModal = leadModalSource;
 
   for (const field of [
     ["contactEmail", "lead.contactEmail"],
@@ -114,7 +118,7 @@ test("lead PATCH checks the admin-only field before reads and scopes authorized 
 });
 
 test("LeadModal create mode accepts prefill and the edit surface keeps all terminal statuses", async () => {
-  const app = await read("app/FloorOpsApp.tsx");
+  const app = await read("app/leads/components/LeadModal.tsx");
   // AI-10 sub-PR (f)'s implement-once contract: create mode carries OPTIONAL
   // initialValues and the create-visible fields default from the shared seed, so
   // the email-derived lead proposal prefills THIS modal with no further rework

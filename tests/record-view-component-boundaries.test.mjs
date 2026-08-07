@@ -8,21 +8,21 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 const viewContracts = [
   {
     directory: "leads",
-    expectedFiles: ["LeadsView.tsx"],
+    expectedFiles: ["LeadDrawer.tsx", "LeadModal.tsx", "LeadsView.tsx"],
     file: "LeadsView.tsx",
     exportName: "LeadsView",
     recordTypes: ["Lead", "LiveDataState"],
   },
   {
     directory: "clients",
-    expectedFiles: ["ClientsView.tsx"],
+    expectedFiles: ["ClientDrawer.tsx", "ClientModals.tsx", "ClientsView.tsx"],
     file: "ClientsView.tsx",
     exportName: "ClientsView",
     recordTypes: ["Client", "LiveDataState"],
   },
   {
     directory: "projects",
-    expectedFiles: ["ProjectFilesPanel.tsx", "ProjectsView.tsx"],
+    expectedFiles: ["ProjectDrawer.tsx", "ProjectFilesPanel.tsx", "ProjectMeetings.tsx", "ProjectModals.tsx", "ProjectsView.tsx"],
     file: "ProjectsView.tsx",
     exportName: "ProjectsView",
     recordTypes: ["Project", "LiveDataState"],
@@ -36,11 +36,11 @@ const viewContracts = [
   },
 ];
 
-test("keeps each record-view component directory explicit", async () => {
+test("keeps each record-surface component directory explicit", async () => {
   for (const { directory, expectedFiles } of viewContracts) {
     const directoryUrl = new URL(`app/${directory}/components/`, root);
     const files = (await readdir(directoryUrl)).filter((file) => file.endsWith(".tsx")).sort();
-    assert.deepEqual(files, expectedFiles, `${directory} must keep its exact record-view component census`);
+    assert.deepEqual(files, expectedFiles, `${directory} must keep its exact record-surface component census`);
   }
 });
 

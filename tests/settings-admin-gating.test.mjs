@@ -61,7 +61,8 @@ test("uses one reconciled Administrator flag for shell and Settings content gate
   const workspaceNavigationItems = sourceSection(app, "const workspaceNavItems", "const managementNavItems", "Workspace navigation item catalog");
   const managementNavigationItems = sourceSection(app, "const managementNavItems", "function optionalRecordNumber", "Management navigation item catalog");
   const shell = sourceSection(app, "export function FloorOpsApp", "function Overview", "FloorOpsApp shell");
-  const settingsView = sourceSection(app, "function SettingsView", "function LeadModal", "SettingsView");
+  const settingsView = app.slice(app.indexOf("function SettingsView"));
+  assert.ok(settingsView.startsWith("function SettingsView"), "SettingsView start anchor");
 
   assert.match(shell, /const \[isAdmin, setIsAdmin\] = useState\(accessLabel === "Admin"\)/);
   assert.equal([...shell.matchAll(/accessLabel === "Admin"/g)].length, 1);

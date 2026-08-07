@@ -34,31 +34,34 @@ test("AI-10 lead capture stays review-first and reuses the existing lead and rev
 });
 
 test("ordinary Add lead exposes optional contact details while keeping its established defaults", async () => {
-  const app = await read("app/FloorOpsApp.tsx");
+  const [app, leadModal] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
+    read("app/leads/components/LeadModal.tsx"),
+  ]);
 
   assert.match(app, /onAdd=\{\(\) => setLeadModal\(\{\}\)\}/u);
   assert.match(
-    app,
+    leadModal,
     /const inboxPrefill = props\.mode === "create" && props\.initialValues !== undefined;/u,
   );
   assert.match(
-    app,
+    leadModal,
     /<label>Contact email <span className="optional-label">Optional<\/span><input name="contactEmail"[\s\S]+?<label>Contact phone <span className="optional-label">Optional<\/span><input name="contactPhone"/u,
     "DES-16 makes phone and email available on every create path",
   );
   assert.equal(
-    app.match(/\{\(editMode \|\| inboxPrefill\) && <div className="form-row">/gu)?.length,
+    leadModal.match(/\{\(editMode \|\| inboxPrefill\) && <div className="form-row">/gu)?.length,
     2,
     "only stage/status and next-action/owner remain conditional review rows",
   );
-  assert.match(app, /seed\?\.source \?\? "Website"/u);
-  assert.match(app, /seed\?\.stage \?\? "New inquiry"/u);
-  assert.match(app, /String\(form\.get\("status"\) \?\? "active"\)/u);
+  assert.match(leadModal, /seed\?\.source \?\? "Website"/u);
+  assert.match(leadModal, /seed\?\.stage \?\? "New inquiry"/u);
+  assert.match(leadModal, /String\(form\.get\("status"\) \?\? "active"\)/u);
   assert.match(
     app,
     /JSON\.stringify\(\{ company: lead\.company, contactName: lead\.contact, projectName: lead\.project, source: lead\.source, stage: lead\.stage, site: lead\.site, estimatedValue: lead\.estimatedValue, nextAction: lead\.next, status: "active",/u,
   );
-  assert.match(app, /ownerEmail: ownerEmail \|\| null/u);
+  assert.match(leadModal, /ownerEmail: ownerEmail \|\| null/u);
   assert.match(app, /contactEmail: lead\.contactEmail/u);
   assert.match(app, /contactPhone: lead\.contactPhone/u);
   assert.match(app, /nextActionAt: lead\.nextActionAt/u);
