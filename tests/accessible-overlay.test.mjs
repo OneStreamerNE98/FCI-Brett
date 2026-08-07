@@ -21,9 +21,16 @@ test("wraps focus at both overlay boundaries and recovers focus from outside", (
 });
 
 test("provides one nested-overlay-aware accessible interaction foundation", async () => {
-  const [overlay, app, projectFiles, assistantView, gmailReplyModal, inboxRules, googleWorkspace, css] = await Promise.all([
+  const [overlay, app, leadModal, leadDrawer, clientModals, clientDrawer, projectModals, projectDrawer, projectMeetings, projectFiles, assistantView, gmailReplyModal, inboxRules, googleWorkspace, css] = await Promise.all([
     read("app/components/AccessibleOverlay.tsx"),
     read("app/FloorOpsApp.tsx"),
+    read("app/leads/components/LeadModal.tsx"),
+    read("app/leads/components/LeadDrawer.tsx"),
+    read("app/clients/components/ClientModals.tsx"),
+    read("app/clients/components/ClientDrawer.tsx"),
+    read("app/projects/components/ProjectModals.tsx"),
+    read("app/projects/components/ProjectDrawer.tsx"),
+    read("app/projects/components/ProjectMeetings.tsx"),
     read("app/projects/components/ProjectFilesPanel.tsx"),
     read("app/assistant/components/AssistantView.tsx"),
     read("app/inbox/components/GmailReplyModal.tsx"),
@@ -31,7 +38,7 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/globals.css"),
   ]);
-  const overlayConsumers = [app, projectFiles, assistantView, gmailReplyModal, inboxRules, googleWorkspace].join("\n");
+  const overlayConsumers = [app, leadModal, leadDrawer, clientModals, clientDrawer, projectModals, projectDrawer, projectMeetings, projectFiles, assistantView, gmailReplyModal, inboxRules, googleWorkspace].join("\n");
 
   assert.match(overlay, /role="dialog"/);
   assert.match(overlay, /aria-label=\{ariaLabel\}/);

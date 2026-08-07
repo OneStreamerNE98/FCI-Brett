@@ -931,7 +931,10 @@ test("new editing routes expose no core-record DELETE and authenticate before pa
 });
 
 test("FloorOps composes create plus independent changed-key client and contact editors", async () => {
-  const app = await read("app/FloorOpsApp.tsx");
+  const [app, clientModals] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
+    read("app/clients/components/ClientModals.tsx"),
+  ]);
   assert.match(
     app,
     /function mapClientRecord[\s\S]*primary_contact_phone[\s\S]*primary_contact_role[\s\S]*primary_contact_version[\s\S]*normalizeRecordVersion\(record\.version\)/u,
@@ -948,15 +951,15 @@ test("FloorOps composes create plus independent changed-key client and contact e
     /primaryContact:\s*\{[\s\S]*name: client\.contact,[\s\S]*email: client\.email,[\s\S]*phone: client\.contactPhone,[\s\S]*role: client\.contactRole/u,
   );
   assert.match(
-    app,
+    clientModals,
     /<input name="phone" type="tel" maxLength=\{80\}[\s\S]*<input name="role" required maxLength=\{120\}[\s\S]*CLIENT_STATUSES\.map/u,
   );
   assert.match(
-    app,
+    clientModals,
     /function ClientEditModal[\s\S]*const patch: ClientEditPatch = \{\};[\s\S]*if \(name !== client\.name\) patch\.name = name;[\s\S]*if \(nextIndustry !== industry\) patch\.industry = nextIndustry;[\s\S]*if \(status !== client\.status\.toLowerCase\(\)\) patch\.status = status;/u,
   );
   assert.match(
-    app,
+    clientModals,
     /function ContactEditModal[\s\S]*const patch: ContactEditPatch = \{\};[\s\S]*if \(name !== client\.contact\) patch\.name = name;[\s\S]*if \(email !== \(client\.email \|\| null\)\) patch\.email = email;[\s\S]*if \(phone !== client\.contactPhone\) patch\.phone = phone;[\s\S]*if \(role !== client\.contactRole\) patch\.role = role;/u,
   );
   assert.match(
@@ -968,7 +971,7 @@ test("FloorOps composes create plus independent changed-key client and contact e
     /new ContactEditConflictError\([\s\S]*data\.currentVersion,[\s\S]*data\.currentValues \?\? \{\}/u,
   );
   assert.match(
-    app,
+    clientModals,
     /Saved value: \{displayValue\}[\s\S]*Saved value: \{value === null \|\| value === "" \? "Not set" : String\(value\)\}/u,
   );
   assert.match(

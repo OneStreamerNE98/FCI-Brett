@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 const appPath = new URL("../app/FloorOpsApp.tsx", import.meta.url);
+const projectMeetingsPath = new URL("../app/projects/components/ProjectMeetings.tsx", import.meta.url);
 const goldenPath = new URL("./e2e/page-layouts.spec.ts", import.meta.url);
 
 async function source(path) {
@@ -126,7 +127,7 @@ test("N7-7 fences every directory refresh outcome without merging AI-04 dashboar
 });
 
 test("N7-8 inserts saved meetings using the server's meetingAt then createdAt descending order", async () => {
-  const app = await source(appPath);
+  const app = await source(projectMeetingsPath);
   const comparator = sliceBetween(app, "function compareProjectMeetingsDescending", "async function fetchProjectMeetings");
   const savedMeeting = sliceBetween(app, "function savedMeeting(meeting: ProjectMeeting)", "return <section className=\"project-meetings\">");
 
