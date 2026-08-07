@@ -3787,6 +3787,19 @@ category (a) is named individually in the PR body with what it would have broken
 ### DES-14b · FloorOpsApp decomposition: the modal and drawer cluster (large, after DES-14)
 **Status:** In progress — `codex/des14b-modal-drawer-cluster`
 
+**Amendment (August 6, 2026, orchestrator):** the "~65KB" accept premise undercounted the
+retained shell. Measured at PR #328's head: the complete cluster moved out (78,089 bytes,
+41.9% of the 186,519-byte post-DES-14 file) and the file stands at 108,430 bytes — the
+shell function, Overview, Reports, Settings dispatch, and the record controller/data-fetch
+functions together exceed the target with not one modal line remaining. The size clause is
+adjudicated a premise error, not an implementer shortfall: reaching 65KB would have
+required moving ~43KB of non-cluster code, violating this packet's own move-only boundary
+and explicit exclusions. The AGENTS.md slot-law sentence in the same PR was likewise
+corrected during review to enumerate the actual remainder (Settings dispatch and the
+record controllers stay in the slot) instead of the instructed "shell, Overview and
+Reports" wording, which the build disproved. The shell remainder is follow-up work and
+does not block this extraction's merge.
+
 **Why:** filed August 5, 2026 after measuring the file rather than assuming it. DES-14 as 
 originally written claimed the four record views owned the modals and would therefore dissolve 
 the single-file bottleneck. Measured on main at `4b2c468`: the four views are 13,845 bytes — 

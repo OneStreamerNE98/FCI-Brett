@@ -79,7 +79,7 @@ test("HINT-02-B mounts only the five recommended modal hints with verbatim audit
     "the forms-audit initiative budget must stay at or below 20 new hints",
   );
   for (const modalSource of [leadSource, clientSource, projectSource]) {
-    assert.match(modalSource, /import \{ WorkspaceInfoHint \} from "[^"']*components\/WorkspaceInfoHint";/u);
+    assert.match(modalSource, /import \{ WorkspaceInfoHint \} from "\.\.\/\.\.\/components\/WorkspaceInfoHint";/u);
   }
 
   for (const hint of hints) {
