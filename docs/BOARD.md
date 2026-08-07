@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 51 not started · 2 in progress · 2 blocked · 129 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 50 not started · 3 in progress · 2 blocked · 129 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -123,7 +123,7 @@ row holds the full text. Packets without a status line are not started.
 | NFIX-06 | Tablet-band clipping and overlap fixes (small) | Complete — PR #267, July 31, 2026. | nightly-2026-07 |
 | NFIX-07 | Scanner false-signal classes, resilient scan method, and the three live August 3 defects (small) | Complete — PR #289, August 4, 2026. | nightly-2026-07 |
 | NFIX-08 | iPhone info-tooltips never display on tap (small) | — | nightly-2026-07 |
-| NFIX-09 | Every merge to main cancels the previous merge's verification (small; CI only) | — | agent-plan |
+| NFIX-09 | Every merge to main cancels the previous merge's verification (small; CI only) | In progress — `kimi/nfix09-main-concurrency` | agent-plan |
 | NFIX-10 | 256 type errors nobody runs (medium; quality gate) | — | agent-plan |
 | NFIX-11 | Error boundaries: one crash currently unmounts the whole app (medium; quality gate) | Superseded — absorbed into DES-17 | agent-plan |
 | NFIX-12 | Execute the remaining direct-route coverage gaps (small-medium) | — | agent-plan |
