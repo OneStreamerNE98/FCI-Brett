@@ -3680,7 +3680,7 @@ introduces one raw hex (negative test); every re-pointed pin enumerated in the P
 instead of inventing their own.
 
 ### DES-14 · FloorOpsApp decomposition: extract the four record views and their shared record contracts (large, after GI-04)
-**Status:** Complete — PR #327, August 5, 2026. Source-only and undeployed. The four record views, shared record contracts, and shared display helpers moved out of `app/FloorOpsApp.tsx` with byte-identical rendering; DES-14b now holds the slot for the modal/drawer extraction.
+**Status:** Complete — PR #327, August 5, 2026. Source-only and undeployed. The four record views, shared record contracts, and shared display helpers moved out of `app/FloorOpsApp.tsx` with byte-identical rendering; follow-on DES-14b completed in PR #328 and released the modal/drawer queue slot.
 
 **Why:** `app/FloorOpsApp.tsx` (~200KB) is the reason the single-file queue-slot law
 exists, and that law serialized four separate owner requests in one day (grid views,
@@ -3784,8 +3784,339 @@ mutation, then revert); the remaining count is recorded with its composition; ev
 category (a) is named individually in the PR body with what it would have broken.
 **Effort:** medium. **Cost:** $0.
 
+### NFIX-11 · Error boundaries: one crash currently unmounts the whole app (medium; quality gate)
+**Status:** Superseded — absorbed into DES-17
+
+**Why:** filed August 6, 2026 from the comprehensive code review
+(`docs/code-review-2026-08-06-findings.md`, F2, adversarially confirmed by direct
+inspection) — and **superseded the same day**: DES-17, filed August 4 from the usability
+review, already owns the error boundary (plus the toast queue and empty-state actions).
+The August 6 measurement independently re-confirmed DES-17's premise (zero
+`error.tsx` files, zero `ErrorBoundary` classes, `app/layout.tsx` renders `{children}`
+bare) and is recorded in DES-17's Why rather than competing with it. The body below is
+retained as the second measurement.
+
+**Why (original filing):** Zero `error.tsx` files exist under `app/`, and zero `ErrorBoundary` class
+components exist anywhere: `app/layout.tsx` renders `{children}` bare, and
+`FloorOpsApp.tsx` — the root client component — wraps nothing. A single unhandled render
+exception in any leaf (a malformed API payload reaching `InboxView`, a `Status` component
+handed an unexpected enum) propagates to the root and unmounts the entire shell to a
+blank white screen. NFIX-10's lesson applies: a failure mode nobody can see is the same
+class as a test that cannot fail.
+**Do:** add `app/error.tsx` (the App Router root error UI) with an honest message and a
+recovery action, and add one shared class-based `ErrorBoundary` wrapped around the major
+feature areas — Overview, Inbox, Assistant, Settings, Reports — so a crash is confined
+to its panel, names the failed area, and offers retry. The boundary adds no DOM nodes on
+the healthy path.
+**Constraints:** healthy-path rendering stays byte-identical — both page-layout golden
+hashes and their four pinning Node suites pass unmodified. No error-telemetry service;
+the boundary surfaces the failure in-app only.
+**Accept:** a test throws deliberately inside one feature boundary and proves the shell
+and sibling features stay mounted while the failed panel shows its recovery UI;
+`app/error.tsx` renders for a root-level throw; both golden constants byte-identical;
+`npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### NFIX-12 · Execute the remaining direct-route coverage gaps (small-medium)
+
+**Why:** filed August 6, 2026 from the review's corrected T1 census. The original NFIX-12
+premise was rejected during PR #329 review: `useEffectEvent` is a stable API in the
+repository's pinned React 19.2.6 and `@types/react` 19.2.14, so replacing the shared
+subscription layer would create risk without removing an unstable dependency. The useful
+packet number instead owns the two route handlers the review proved have no executing test:
+`GET app/api/v1/projects/[projectId]/meetings/route.ts` and
+`POST app/api/v1/integrations/google/gmail/messages/[messageId]/reply-draft/route.ts`.
+Meetings POST is already executed in `tests/task-foundation.test.mjs`; Gmail filing is
+already exercised by the FIX-03 simulation-parity coverage. Do not rebuild those tests.
+**Do:** add executing route tests for the two residual handlers using the existing
+simulation/route-harness patterns. Exercise authorization ahead of repository/provider
+work, request and response validation, the successful record/payload shape, and the
+not-found or provider-failure outcome each handler exposes. Source-text greps do not count
+as execution.
+**Constraints:** no route contract or production behavior change; no new endpoint; keep
+the Gmail reply-draft action human-triggered and no-send.
+**Accept:** a deliberate mutation in each handler is caught by its new executing test,
+then reverted; the tests prove the meetings GET and Workspace Gmail reply-draft POST each
+run through their real handler; `npm test`, `npm run test:e2e`, `npm run lint` named with
+outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
+### NFIX-13 · Paginate the clients and projects list endpoints (medium)
+
+**Why:** filed August 6, 2026 from the review (B1/B2, both validator-confirmed against
+source). `GET /api/v1/clients` runs a five-correlated-subquery join with no `LIMIT`;
+`GET /api/v1/projects` returns the full table the same way. Growth makes response size
+and Worker CPU linear and unbounded, and the SET-09 audit viewer already solved this
+class with opaque-cursor pagination (PR #308) — the pattern is in-repo.
+**Do:** add cursor-based pagination (the SET-09 pattern, not OFFSET) to both endpoints
+with a page size at or under 500, and teach the consuming views to accumulate pages.
+Land server and client atomically, or keep the response envelope backward compatible so
+an unpaginated consumer cannot silently truncate.
+**Constraints:** no schema change needed; the D1 routes and the Postgres production
+repositories gain the same contract in the same PR (the two-engine rule); golden hashes
+untouched.
+**Accept:** a test proves a dataset larger than the page size returns a first page plus
+an opaque cursor and that follow-up fetches complete the set exactly once; the views
+render the full dataset across pages; `npm test`, `npm run test:e2e`, `npm run lint`
+named with outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### NFIX-14 · AI/provider failure observability: the bare catch and the 503 that ate its error (small-medium)
+
+**Why:** filed August 6, 2026 from the review (B3/B7, both confirmed). This is the
+operator-side residual AI-12 (Complete — PR #287) deliberately left open: AI-12 shipped
+the user-visible half (failed analyses surface in the queue; "You're caught up" is
+qualified) and recorded the bare-catch errorCode collapse as an accepted gap. This packet
+owns that gap.
+`app/api/v1/inbox-analysis/route.ts` (lines ~972–982) wraps the OpenAI call in
+`catch { analysis = null; }` — the error variable is not even bound, so rate limits,
+auth failures, timeouts, and malformed responses are indistinguishable and unlogged;
+operators see only a generic `analysis_failed`. The same class lives in
+`app/lib/google-integration-error.ts`: any non-`GoogleIntegrationError` becomes a flat
+503 with a fallback string, discarding type and stack. Silent failure is how the FIX-09
+flake survived weeks — the app's instinct is to swallow.
+**Do:** log the caught error with context (message id, error class, retriable-vs-
+permanent classification) before the null fallback, and extend the integration-error
+mapper to record the original error class in the integration event stream before
+returning the generic response. No new telemetry service — the existing audit/event
+tables are the sink.
+**Constraints:** never widen the client-visible response beyond today's messages; no PII
+in logged context beyond what the event tables already carry.
+**Accept:** a test forces each failure class (timeout, rate limit, auth) through the
+inbox-analysis path and proves each is recorded distinctly; the mapper's generic-503
+path writes an event carrying the original error class; `npm test`, `npm run test:e2e`,
+`npm run lint` named with outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
+### NFIX-15 · Upload boundary and stored-byte round-trip coverage (small)
+
+**Why:** filed August 6, 2026 from the review (T2/T8, both confirmed and corrected in
+PR #329). `tests/e2e/upload.spec.ts` exercises 201/415/404, but every request carries a
+valid `Origin`, and the happy path trusts response metadata without proving the bytes
+reached R2. The upload surface is POST-only: there is no public download endpoint, so a
+test must not invent or authorize one merely to satisfy the round-trip assertion.
+**Do:** execute four separate boundary cases: missing `Origin` returns the exact 403;
+valid Origin plus an empty identity returns 401; valid Origin plus an authenticated
+outsider returns 403; and each denial occurs before schema or R2 access. For the success
+path, use the returned object key to read the object directly through the fake R2 binding
+or adapter in the test harness and compare the stored bytes exactly with the upload.
+**Constraints:** no GET/read route and no public object URL; keep CSRF, authentication,
+and authorization assertions separate so one denial cannot masquerade as another.
+**Accept:** deliberate removal of each guard and of the R2 write is caught by the
+corresponding assertion, then reverted; all three denial classes precede storage work;
+the successful POST round-trips exact bytes by returned key; `npm run test:e2e`,
+`npm test`, and `npm run lint` named with outcomes.
+**Effort:** small. **Cost:** $0.
+
+### NFIX-16 · E2E hygiene batch: assertions that cannot fail, waits that lie, and the missing golden path (medium)
+
+**Why:** filed August 6, 2026 from the review (T3/T4/T6/T7 cluster, each confirmed).
+Four specs assert `expect(descriptionId).toBeTruthy()` on aria hookups (hint02a, hint02b,
+set25, workspace-setup-stepper) — any wrong non-null value passes. `admin-access.spec.ts`
+and `admin-audit.spec.ts` carry unexplained `waitForTimeout(0)` no-ops in `afterEach`.
+`gi04-address-validation.spec.ts` hardcodes four 350 ms debounce sleeps,
+`set42-swr-doctrine.spec.ts` sleeps 100 ms, and `frontend-correctness.spec.ts` polls
+`Date.now()`. And no spec walks a full business journey end to end — the suite is
+feature-isolated.
+**Do:** replace truthiness assertions with exact values; delete or justify the
+zero-sleeps; replace fixed sleeps with request/predicate waits; add one unmocked
+golden-path spec (create a lead → see it on Overview → convert/edit → persists across
+reload) against the simulation backend.
+**Constraints:** the golden-path spec obeys the simulation-reset recovery law (AGENTS.md
+environment traps); total e2e wall time grows by no more than ~2 minutes.
+**Accept:** each touched assertion is shown to fail against its original defect shape
+(mutation, then revert); the golden-path spec passes against the real simulation flow;
+`npm run test:e2e` and `npm test` named with outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### NFIX-17 · Atomic D1 task-reference guards; defer the foreign-key rebuild (small-medium)
+
+**Why:** filed August 6, 2026 from the review (B4/B6), then corrected during PR #329
+review. D1's task create/update paths perform project/lead existence reads before their
+write statements, so those statements do not enforce the reference in the same atomic
+operation. PostgreSQL already has both task foreign keys. Adding them to existing D1
+tables requires SQLite table rebuilds and destructive DDL, which the development
+migration guard deliberately rejects; the product also exposes no lead/project delete
+route that makes the originally claimed race reachable today.
+**Do:** make the D1 task INSERT and UPDATE statements themselves conditional on the
+referenced project and lead existing (nullable references remain allowed), while retaining
+friendly post-failure rechecks that distinguish project-not-found, lead-not-found,
+task-not-found, and version-conflict outcomes. Cover both ordinary creation and the
+inbox-review acceptance batch so a failed guard cannot retire the review row or write its
+activity event.
+**Constraints:** no migration, `PRAGMA`, table rebuild, or destructive DDL in this packet;
+do not weaken PostgreSQL's existing constraints. A future D1 foreign-key rebuild requires
+an owner-approved preservation/migration design and is not silently authorized here.
+**Accept:** executing D1 tests prove dangling project and lead references produce their
+typed outcomes for create and update, the guarded statements write zero task/activity/
+review mutations, a valid nullable reference still succeeds, and source assertions pin
+the atomic `EXISTS` predicates; `npm test`, `npm run test:e2e`, `npm run lint` named with
+outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
+### NFIX-18 · Address review release is best-effort with no compensation (small-medium)
+
+**Why:** filed August 6, 2026 from the review (B8, confirmed).
+`releaseFailedAddressMutation` (`app/lib/address-mutation-sites.ts`, lines ~66–73)
+releases a consumed address-validation review when the subsequent create/update fails —
+but if the release itself throws, the claim leaks permanently: consumed, unapplied,
+invisible. There is no retry, no outbox, no reconciliation.
+**Do:** choose deliberately between (a) a bounded retry inside the mutation path and
+(b) an outbox row drained by the existing job machinery; record the choice in the PR
+body. If (a) is chosen, add a reconciliation read that surfaces leaked claims on the
+operations health card.
+**Accept:** a test kills the release call once and proves the claim is still released
+(retry) or is visible and re-releasable (outbox/reconciliation); `npm test`,
+`npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
+### NFIX-19 · FIX-09 stage-4 verification race (resolved)
+**Status:** Resolved in PR #330
+
+**Why:** filed August 6, 2026 from the review (T5) and resolved August 7. Adversarial
+reproduction showed the defect was the spec's one-shot read/click/read sequence, not the
+component: `GoogleWorkspacePanel` already uses a functional state update, while the test
+could inspect stale `aria-expanded` state before Playwright's retrying assertion model had
+a chance to observe the render.
+**Resolution:** PR #330 deep-links directly to Stage 4, restores an auto-retrying honest
+`aria-expanded="true"` assertion, and auto-retries the stage-state assertion. The repaired
+case passed 10/10 locally, the full local FIX-09 spec passed 4/4, and the required GitHub
+Chromium gate passed before merge. No component behavior or golden hash changed.
+
+### NFIX-20 · DevOps hygiene batch (medium)
+
+**Why:** filed August 6, 2026 from the review's DevOps cluster, validator-corrected.
+Confirmed: `vinext` is pinned at 0.0.50 while 1.0.0-beta.4 exists; `npm test` forces two
+full Vite builds before any unit test although no test imports build output; neither
+workflow runs `npm audit` or an image scan; the base `tsconfig.json` targets ES2017 under
+Node 22; there is no `.nvmrc`; `.env.example` ships the real `cherryhillfci.com` domain
+as a default; and the Cloud Run image builds twice with no layer cache. Rejected by
+validation: the build-stamp "gap" — `.env.example` documents those variables as the
+deploy step's responsibility (DOC-06), and the Cloud Run build never reads them — plus
+the claimed rollback-doc gap. The deliberate forward-fix/restore posture is already
+documented in `docs/production-postgresql-foundation.md` and
+`docs/runbooks/google-cloud/migration-cutover-and-recovery.md`; do not duplicate or
+reverse it here.
+**Do:** land each sub-item as its own commit: (a) evaluate the vinext upgrade or write
+the ADR pinning 0.0.50; (b) split `test:unit` (no builds) from `test:integration` and
+re-point CI's fast lane; (c) add `npm audit --audit-level=moderate` and an image scan to
+the workflows; (d) raise the base tsconfig target to ES2022; (e) add `.nvmrc` at
+22.13.0; (f) replace the real-domain default with `example.com` plus a comment; (g) add
+GHA layer caching to the image build.
+**Constraints:** the test-script split must not change what CI ultimately enforces (all
+three gates still named in PRs); NFIX-10's root-typecheck CI step is the neighbor this
+batch must not collide with — rebase over whichever lands first.
+**Accept:** each sub-item is verifiable independently (the audit gate fails on a seeded
+moderate finding, then revert; the image-scan output is archived; `npm run test:unit`
+completes without a build); `npm test`, `npm run test:e2e`, `npm run lint` named with
+outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### NFIX-21 · Worker-isolate rate limiter is a per-isolate limit (small; hardening)
+
+**Why:** filed August 6, 2026 from the review (S1, confirmed with the validator's
+scoping). The development limiter (`app/lib/development-request-rate-limit.ts`) keeps
+state in a module-scope `Map`, so Cloudflare isolates count independently — the intended
+10 requests/60 s is per isolate, not per user. The mitigations are real (it runs after
+`requireOfficeUser`, keys per user, and production Cloud Run has the token-bucket
+limiter), but the code comment oversells the guarantee.
+**Do:** either persist the fixed-window counters to D1 (a small windows table is enough
+at this scale) or narrow the contract in code and docs to "best-effort per isolate"
+deliberately. Pick one; both are honest.
+**Accept:** a test proves the chosen semantics (global counting across two simulated
+isolates, or the documented per-isolate contract asserted); `npm test` named with
+outcome.
+**Effort:** small. **Cost:** $0.
+
+### NFIX-22 · Decompose InboxView and centralize inbox contracts (medium-large)
+
+**Why:** filed August 7, 2026 from the August 6 review (F4). On current main,
+`InboxView.tsx` is 79,491 bytes / 1,976 lines and owns queue loading, Gmail loading,
+triage, filing, reply, typed accepts, filters, and modal state. It also imports
+`GmailFilingModal`, `WorkspaceMessage`, and `GmailFilingPreview` from the Settings-only
+`GoogleWorkspacePanel` module while redeclaring local notification/project shapes. AI-11(d)
+is currently using the inbox-file cluster; this packet must wait for that branch to merge
+and consume its final activity-attribution shape rather than racing it.
+**Do:** first move neutral inbox/filing contracts to one dependency-neutral module and move
+`GmailFilingModal` into the inbox surface. Then extract cohesive Gmail-list, review-queue,
+filing/reply, and typed-accept components/hooks while keeping one orchestration component.
+Enumerate every extracted component's props before moving it. Land structural moves first;
+any behavior change requires a separately named commit and acceptance evidence.
+**Constraints:** takes the inbox-file cluster; no `FloorOpsApp.tsx` queue slot; no new
+state-management dependency; preserve review-first filing, explicit human actions, DOM
+order, accessible names, and Gmail's action-gated reads.
+**Accept:** `InboxView.tsx` is materially smaller with no duplicate inbox contract shapes;
+component-boundary tests pin the new directory and imports; rendering and existing inbox
+Playwright specs pass unmodified unless a pin needs a path-only re-point; both golden hashes
+byte-identical; `npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium-large. **Cost:** $0. **Sequencing:** after AI-11(d), before NFIX-23.
+
+### NFIX-23 · Decompose GoogleWorkspacePanel and centralize Workspace contracts (medium-large, after NFIX-22)
+
+**Why:** filed August 7, 2026 from the August 6 review (F4).
+`GoogleWorkspacePanel.tsx` is 107,711 bytes / 1,999 lines and combines setup stages,
+connection health, blueprint editing, resource operations, and locally repeated Workspace
+contract shapes in one client module. That concentration makes the highest-risk Settings
+surface difficult to review and lets route/UI payload definitions drift.
+**Do:** consume NFIX-22's neutral Gmail contracts, then extract each setup stage,
+connection-health/tenant-reset flow, verification-action cluster, and its state hooks into
+the existing Settings component tree. Define the parent-owned state and each child's props
+first, then move one cohesive stage at a time without changing behavior or copy.
+**Constraints:** NFIX-22 lands first so the two packets never move `GmailFilingModal`
+concurrently; serialize with any other packet touching `GoogleWorkspacePanel.tsx`; no
+`FloorOpsApp.tsx` change or queue slot; no new dependency; preserve admin gating, setup
+provenance, action-triggered Gmail reads, focus behavior, and every existing stage anchor.
+**Accept:** the panel becomes an orchestrator rather than the implementation home for all
+stages; no duplicate Workspace contract declarations remain in the extracted cluster;
+boundary and mutation-sensitive tests pin the split; existing setup e2e passes unmodified
+apart from path-only source pins; golden hashes byte-identical; `npm test`,
+`npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium-large. **Cost:** $0.
+
+### NFIX-24 · FloorOps shell state ownership and major-view code splitting (large; FloorOpsApp queue)
+
+**Why:** filed August 7, 2026 from the August 6 review (F5/F6), after DES-14 and DES-14b
+moved the record views and overlay cluster out. The remaining file is 108,430 bytes / 1,810
+lines with 39 `useState` calls, still owns broad cross-surface state/data controllers, and
+eagerly imports the major views, so route changes carry unnecessary prop/state coupling and
+initial bundle cost.
+**Do:** measure the current client chunks; move cohesive directory/dashboard/settings
+state ownership into existing cache-backed hooks or narrowly scoped contexts; then lazy-load
+major route views at their current render boundaries with honest, accessible loading and
+error behavior. Split state and code loading in reviewable commits so attribution is clear.
+**Constraints:** takes the single `FloorOpsApp.tsx` queue slot and follows DES-17's shell
+boundary/toast work; zero new state-management framework or dependency; do not move server
+authorization into the client; no markup/copy change merely to facilitate extraction.
+**Accept:** prop chains and shell-owned state counts materially fall and are reported
+before/after; route chunks are separately emitted and navigation preserves state/focus;
+major-view loading/error states are tested; both golden hashes byte-identical unless a
+future owner-approved packet explicitly authorizes regeneration; `npm test`,
+`npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** large. **Cost:** $0. **Sequencing:** after DES-17.
+
+### NFIX-25 · Bound the filing-rule catalog on both engines (small-medium)
+**Status:** Blocked — awaiting owner-approved filing-rule catalog limit
+
+**Why:** filed August 7, 2026 from the August 6 review (B9). Both the D1 and PostgreSQL
+filing-rule repositories list the entire catalog with deterministic ordering and no bound.
+The current business catalog is small, but choosing a hard cap, pagination contract, and
+overflow behavior is a product decision; silently truncating rules could hide active filing
+behavior from administrators.
+**Owner decision required:** approve the maximum saved-row count and whether an over-limit
+legacy catalog is paged or shown as a complete diagnostic overflow. Existing rows must never
+be auto-deleted or hidden.
+**Do after the owner decision:** define one shared named maximum; enforce it atomically in
+both engines' create statements rather than list-then-create; apply the same list/continuation
+contract to both adapters, their port, the Settings consumer, and validation. Return a typed
+capacity outcome and make overflow visible and actionable; never drop enabled rules silently.
+**Accept:** datasets below, at, and above the approved limit behave identically on D1 and
+PostgreSQL; the UI exposes the complete contract or an honest overflow state; ordering is
+stable with no duplicates across pages if pagination is chosen; `npm test`,
+`npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
 ### DES-14b · FloorOpsApp decomposition: the modal and drawer cluster (large, after DES-14)
-**Status:** In progress — `codex/des14b-modal-drawer-cluster`
+**Status:** Complete — PR #328, August 7, 2026. Source-only and undeployed. The move-only extraction relocated the complete modal/drawer cluster (78,089 bytes) into per-surface modules, retained shared record-contract identity, kept both golden constants byte-identical, and passed all required GitHub gates after merging current main. The adjudicated retained shell is 108,430 bytes; the `FloorOpsApp.tsx` queue slot is released.
 
 **Amendment (August 6, 2026, orchestrator):** the "~65KB" accept premise undercounted the
 retained shell. Measured at PR #328's head: the complete cluster moved out (78,089 bytes,
@@ -3906,7 +4237,11 @@ boundaries (a render throw blanks the whole app); 53 of 54 error toasts offer no
 step and ~50 prefer raw `error.message` ("Failed to fetch") over their own authored
 fallback; the single toast slot overwrites rapid notifications (a suppression hack at
 the notify callback papers over one case); `OperationsEmptyState` has no action slot,
-which is the mechanical cause of 9 of 12 sampled empty-state dead ends.
+which is the mechanical cause of 9 of 12 sampled empty-state dead ends. Independently
+re-measured August 6, 2026 by the comprehensive code review
+(`docs/code-review-2026-08-06-findings.md`, F2 — zero `error.tsx` files, zero
+`ErrorBoundary` classes, `app/layout.tsx` renders `{children}` bare); that review's
+duplicate filing is recorded as NFIX-11, superseded into this packet.
 **Do:** (1) an app-shell error boundary plus route-level error surface that says what
 broke in plain words and offers Reload; (2) a short toast queue replacing the single
 slot (delete the suppression hack); (3) `action` affordances on every error toast with
@@ -5028,8 +5363,8 @@ queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-0
 DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI (in flight, PR #217/#221) →
 **EDIT-05** → **EDIT-04** → **AI-10 sub-PR (f)** → **EDIT-06** → **EDIT-07** →
 SET-26 UI (blocked on SET-23) → HINT-02-B.
-**Every named packet above is now merged. DES-14 completed in PR #327; DES-14b now holds
-the slot from the tail below.**
+**Every named packet above is now merged. DES-14 completed in PR #327 and DES-14b
+completed in PR #328, releasing the slot to the tail below.**
 
 **Tail added August 3, 2026 — five open packets were flagged for this slot and none of them
 were on the list.** A packet-assessment pass found that the claim list, which `AGENTS.md:54-58`
@@ -5040,7 +5375,7 @@ Adversarial review (August 3, 2026) then established that AI-12 takes no slot at
 its bullet — leaving four claimants; DES-14 and DES-12, filed August 3, 2026, then claimed
 in the tail, making six. Recommended claim order, most valuable first:
 
-**DES-14 (complete in PR #327) → DES-14b (in progress on `codex/des14b-modal-drawer-cluster`) →
+**DES-14 (complete in PR #327) → DES-14b (complete in PR #328) →
 GI-05 (if approved) → WS-20 (if approved) → DES-17 (shell scope,
 post-decomposition) → DES-10 (variants a/b only) → DES-12.**
 (DES-16 and DES-17 were added August 4, 2026 with the usability wave. DES-16 merged in
@@ -5076,9 +5411,9 @@ machinery that remains in `FloorOpsApp.tsx` after DES-14, so it follows the extr
 - **DES-14** — complete in PR #327. It moved the four record views, shared contracts, and
   shared display helpers out of `app/FloorOpsApp.tsx`; those record views permanently exit
   the queue.
-- **DES-14b** — **holds the slot on `codex/des14b-modal-drawer-cluster`.** It owns the
-  modal/drawer cluster that DES-14 deliberately left in `app/FloorOpsApp.tsx`; those
-  overlays permanently exit the queue in this branch.
+- **DES-14b** — complete in PR #328. It moved the modal/drawer cluster that DES-14
+  deliberately left in `app/FloorOpsApp.tsx`; those overlays permanently exit the queue,
+  and the slot is released until the next eligible packet claims it through its status line.
 - **DES-10** — only variants (a) and (b), which edit `app/FloorOpsApp.tsx:1701`. Variant (c)
   is CSS-only and takes no slot.
 - **DES-12** — editor chrome + resolved-preview rendering at the layout mount; also holds
