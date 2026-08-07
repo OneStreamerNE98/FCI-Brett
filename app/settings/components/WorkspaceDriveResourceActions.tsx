@@ -6,6 +6,7 @@ import { ChevronDown, ExternalLink, LockKeyhole } from "lucide-react";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { ClientDataNotice } from "../../components/ClientDataNotice";
 import { invalidateWorkspaceOperationsReadCache } from "../../lib/client-get-cache";
+import { notifyError } from "../../lib/notification-policy";
 import styles from "./WorkspaceDriveResourceActions.module.css";
 import { WorkspaceInfoHint } from "../../components/WorkspaceInfoHint";
 
@@ -235,7 +236,11 @@ function SharedDriveActions({
       notify("The Shared Drive was verified and saved as the app-managed Drive authority.", "success");
       await onChanged({ driveVerified: true });
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Shared Drive could not be adopted.", "error");
+      notifyError(notify, {
+        message: "The Shared Drive could not be adopted. Check the selected drive and try again.",
+        cause: error,
+        action: { label: "Refresh status", run: () => void onChanged({}) },
+      });
     } finally {
       setBusy(false);
     }
@@ -282,7 +287,11 @@ function EnsureFoldersAction({
       notify(`Drive roots checked: ${counts.created} created, ${counts.adopted} adopted, ${counts.found} found.`, "success");
       await onChanged({});
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Shared Drive root folders could not be ensured.", "error");
+      notifyError(notify, {
+        message: "The Shared Drive root folders could not be checked. Try the setup step again.",
+        cause: error,
+        action: { label: "Try again", run: () => void ensureRoots() },
+      });
     } finally {
       setBusy(false);
     }
@@ -332,7 +341,14 @@ function FolderRenameAction({
       notify(`${resource.name ?? resource.key} was renamed in Drive and the Workspace blueprint.`, "success");
       await onChanged({ blueprintChanged: true });
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Drive folder could not be renamed.", "error");
+      notifyError(notify, {
+        message: "The Drive folder name could not be saved. Refresh Workspace status before deciding whether to try again.",
+        cause: error,
+        action: {
+          label: "Refresh status",
+          run: () => void onChanged({ blueprintChanged: true }),
+        },
+      });
     } finally {
       setBusy(false);
     }
@@ -370,7 +386,11 @@ function EnsureSpreadsheetsAction({
       notify(`Spreadsheets checked: ${counts.created} created, ${counts.adopted} adopted, ${counts.found} found.`, "success");
       await onChanged({});
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Workspace spreadsheets could not be ensured.", "error");
+      notifyError(notify, {
+        message: "The Workspace spreadsheets could not be checked. Try the setup step again.",
+        cause: error,
+        action: { label: "Try again", run: () => void ensureSpreadsheets() },
+      });
     } finally {
       setBusy(false);
     }
@@ -406,7 +426,11 @@ function EnsureTemplatesAction({
       notify(`Templates checked: ${counts.created} created, ${counts.adopted} adopted, ${counts.found} found.`, "success");
       await onChanged({});
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Workspace templates could not be ensured.", "error");
+      notifyError(notify, {
+        message: "The Workspace templates could not be checked. Try the setup step again.",
+        cause: error,
+        action: { label: "Try again", run: () => void ensureTemplates() },
+      });
     } finally {
       setBusy(false);
     }

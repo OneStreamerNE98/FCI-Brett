@@ -17,6 +17,7 @@ import {
   useCachedGetSubscription,
   useClientLoadState,
 } from "../../lib/client-get-hooks";
+import { notifyError } from "../../lib/notification-policy";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 import styles from "./AiAssistantSettingsCard.module.css";
 
@@ -290,7 +291,14 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
       await loadLabels(true);
       notify(successMessage(isRecord(payload) ? payload : {}), "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "AI label could not be saved.", "error");
+      notifyError(notify, {
+        message: "AI label could not be saved.",
+        cause: error,
+        action: {
+          label: "Refresh labels",
+          run: () => void loadLabels(true),
+        },
+      });
     } finally {
       setLabelSaving(null);
     }
@@ -326,10 +334,14 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
       setModelDirty(false);
       notify("AI assistant settings saved", "success");
     } catch (error) {
-      notify(
-        error instanceof Error ? error.message : "AI assistant settings could not be saved.",
-        "error",
-      );
+      notifyError(notify, {
+        message: "AI assistant settings could not be saved.",
+        cause: error,
+        action: {
+          label: "Reload settings",
+          run: () => void loadConfig(true),
+        },
+      });
     } finally {
       setSaving(false);
     }

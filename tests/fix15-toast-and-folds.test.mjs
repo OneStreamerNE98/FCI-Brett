@@ -25,66 +25,29 @@ function assertOrdered(block, earlier, later, message) {
   assert.ok(earlierIndex < laterIndex, message);
 }
 
-test("FIX-15 keeps a fresh success toast ahead of immediate informational follow-ups", async () => {
+test("DES-17 preserves FIX-15 follow-up feedback in a bounded notification queue", async () => {
   const app = await source(appPath);
-  const notify = sliceBetween(app, "const notify = useCallback<Notify>", "useEffect(() => () => {");
+  const notifications = await source(new URL("../app/components/AppNotifications.tsx", import.meta.url));
 
-  assert.match(app, /const SUCCESS_INFO_SUPPRESSION_MS = 2_000;/u);
-  assert.match(app, /const activeToastRef = useRef<\{ kind: NotificationKind; shownAt: number \} \| null>\(null\);/u);
-  assert.match(notify, /kind === "info"[\s\S]+activeToast\?\.kind === "success"[\s\S]+shownAt - activeToast\.shownAt < SUCCESS_INFO_SUPPRESSION_MS[\s\S]+return;/u);
-  assert.ok(
-    notify.indexOf('if (kind === "info"') < notify.indexOf("window.clearTimeout(toastTimerRef.current)"),
-    "suppressed INFO notifications must not clear the success toast's intended timer",
-  );
-  assert.match(notify, /activeToastRef\.current = nextActiveToast;[\s\S]+setToast\(\{ message, kind, action \}\);/u);
-  assert.match(notify, /if \(activeToastRef\.current !== nextActiveToast\) return;[\s\S]+activeToastRef\.current = null;[\s\S]+setToast\(null\);/u);
+  assert.doesNotMatch(app, /SUCCESS_INFO_SUPPRESSION_MS|SUPPRESSIBLE_FOLLOW_UP_INFO|activeToastRef/u);
+  assert.match(app, /const \{ notifications, notify, dismissNotification \} = useNotificationQueue\(\);/u);
+  assert.match(app, /<AppNotifications notifications=\{notifications\} onDismiss=\{dismissNotification\} \/>/u);
+  assert.match(notifications, /const MAX_NOTIFICATION_QUEUE = 4;/u);
+  assert.match(notifications, /if \(next\.length > MAX_NOTIFICATION_QUEUE\)/u);
+  assert.match(notifications, /oldestOrdinaryIndex < 0 && notification\.kind !== "error"/u);
+  assert.match(notifications, /kind !== "error" && notificationQueueRef\.current\.some/u);
+  assert.doesNotMatch(notifications, /setNotificationQueue\(\(current\)/u);
+  assert.match(notifications, /notifications\.map\(\(notification\) => <div/u);
 });
 
-test("FIX-15 scopes success-window suppression to the two reload follow-up notices", async () => {
-  const app = await source(appPath);
-  const notify = sliceBetween(app, "const notify = useCallback<Notify>", "useEffect(() => () => {");
-
-  // The allowlist exists and gates the suppression early return.
-  assert.match(app, /const SUPPRESSIBLE_FOLLOW_UP_INFO: RegExp\[\] = \[/u);
-  assertOrdered(
-    notify,
-    "shownAt - activeToast.shownAt < SUCCESS_INFO_SUPPRESSION_MS",
-    "SUPPRESSIBLE_FOLLOW_UP_INFO.some((pattern) => pattern.test(message))",
-    "the early return must also require the info message to match the follow-up allowlist",
-  );
-  assertOrdered(
-    notify,
-    "SUPPRESSIBLE_FOLLOW_UP_INFO.some((pattern) => pattern.test(message))",
-    "return;",
-    "the allowlist gate must sit inside the suppression early return",
-  );
-
-  // Behavioral pin: reconstruct the allowlist from source and confirm it swallows the two real
-  // post-success reload notices but never an arbitrary info message.
-  const allowlistBlock = sliceBetween(app, "const SUPPRESSIBLE_FOLLOW_UP_INFO: RegExp[] = [", "];");
-  const patterns = [...allowlistBlock.matchAll(/\/(\^[\s\S]*?\$)\/([a-z]*)/gu)].map(
-    ([, body, flags]) => new RegExp(body, flags),
-  );
-  assert.equal(patterns.length, 2, "expected exactly two follow-up reload patterns");
-
-  const matchesAllowlist = (message) => patterns.some((pattern) => pattern.test(message));
-  assert.ok(
-    matchesAllowlist("Workspace readiness refreshed. Current status is shown above."),
-    "the workspace-readiness refresh notice must stay suppressible",
-  );
-  assert.ok(
-    matchesAllowlist("Loaded 1 message from Inbox."),
-    "the singular inbox reload notice must stay suppressible",
-  );
-  assert.ok(
-    matchesAllowlist("Loaded 12 messages from FCI/Needs Review."),
-    "the plural inbox reload notice must stay suppressible",
-  );
-  assert.equal(
-    matchesAllowlist("Steel City Flooring is already at the final pipeline stage"),
-    false,
-    "an arbitrary info message must never be swallowed by success-window suppression",
-  );
+test("DES-17 keeps independent lifetimes for rapid success and info notifications", async () => {
+  const notifications = await source(new URL("../app/components/AppNotifications.tsx", import.meta.url));
+  assert.match(notifications, /if \(notification\.kind === "warning"\) return 8_000;/u);
+  assert.match(notifications, /if \(notification\.kind === "info"\) return 5_000;/u);
+  assert.match(notifications, /return 3_200;/u);
+  assert.match(notifications, /new Map<number, number>\(\)/u);
+  assert.match(notifications, /window\.setTimeout\(\(\) => dismissNotification\(notification\.id\), duration\)/u);
+  assert.doesNotMatch(notifications, /Workspace readiness refreshed|Loaded \\d\+ messages/u);
 });
 
 test("N7-7 fences every directory refresh outcome without merging AI-04 dashboard arbitration", async () => {

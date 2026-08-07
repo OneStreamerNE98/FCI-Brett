@@ -19,6 +19,7 @@ import {
   invalidateCachedGet,
   invalidateWorkspaceOperationsReadCache,
 } from "../../../lib/client-get-cache";
+import { notifyError } from "../../../lib/notification-policy";
 import styles from "./WorkspaceReconcileCard.module.css";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
@@ -183,7 +184,13 @@ export function WorkspaceReconcileCard({
         : detail;
       setError({ message, noMutation: !afterMutation });
       setState("error");
-      notify(message, "error");
+      notifyError(notify, {
+        message: afterMutation
+          ? "The action completed, but Workspace drift could not be refreshed. Check again before making another change."
+          : "Workspace drift could not be checked. Try the check again.",
+        cause: caught,
+        action: { label: "Check again", run: () => void checkForDrift({ announce: true }) },
+      });
     }
   }
 
@@ -196,7 +203,11 @@ export function WorkspaceReconcileCard({
       setResult(null);
       setError({ message, noMutation: false });
       setState("error");
-      notify(message, "error");
+      notifyError(notify, {
+        message: "The action completed, but Workspace status could not be refreshed. Check for drift before making another change.",
+        cause: caught,
+        action: { label: "Check drift", run: () => void checkForDrift({ announce: true }) },
+      });
       return;
     }
     await checkForDrift({ announce: false, afterMutation: true });
@@ -232,7 +243,11 @@ export function WorkspaceReconcileCard({
       notify(`${item.expectedName ?? item.label} was reviewed and the matching setup ensure action completed.`, "success");
       await refreshAfterMutation({});
     } catch (caught) {
-      notify(caught instanceof Error ? caught.message : "The missing Workspace resource could not be created.", "error");
+      notifyError(notify, {
+        message: "The missing Workspace resource could not be created. Try this reviewed setup action again.",
+        cause: caught,
+        action: { label: "Try again", run: () => void ensureMissing(item, action) },
+      });
     } finally {
       setWorkingId(null);
     }
@@ -259,7 +274,11 @@ export function WorkspaceReconcileCard({
       notify(`Google Drive now uses the blueprint name “${item.expectedName}”.`, "success");
       await refreshAfterMutation({});
     } catch (caught) {
-      notify(caught instanceof Error ? caught.message : "The Drive folder name could not be reconciled.", "error");
+      notifyError(notify, {
+        message: "The Drive folder name could not be reconciled. Check drift before deciding whether to try again.",
+        cause: caught,
+        action: { label: "Check drift", run: () => void checkForDrift({ announce: true }) },
+      });
     } finally {
       setWorkingId(null);
     }
@@ -306,7 +325,11 @@ export function WorkspaceReconcileCard({
       notify(`The blueprint now uses the reviewed Drive name “${item.actualName}”.`, "success");
       await refreshAfterMutation({ blueprintChanged: true });
     } catch (caught) {
-      notify(caught instanceof Error ? caught.message : "The Drive name could not be adopted into the blueprint.", "error");
+      notifyError(notify, {
+        message: "The reviewed Drive name could not be adopted into the blueprint. Check drift before deciding whether to try again.",
+        cause: caught,
+        action: { label: "Check drift", run: () => void checkForDrift({ announce: true }) },
+      });
     } finally {
       setWorkingId(null);
     }

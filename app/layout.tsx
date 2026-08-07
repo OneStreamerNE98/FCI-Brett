@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { ClientDataFreshnessBoundary } from "./components/ClientDataFreshnessBoundary";
 import { resolveAppEnvironment } from "./lib/app-environment";
 import "./globals.css";
@@ -35,8 +36,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <ClientDataFreshnessBoundary />
-        {children}
+        <AppErrorBoundary>
+          <ClientDataFreshnessBoundary />
+          {children}
+        </AppErrorBoundary>
       </body>
     </html>
   );

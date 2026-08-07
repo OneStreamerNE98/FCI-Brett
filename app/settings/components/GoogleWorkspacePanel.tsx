@@ -17,6 +17,7 @@ import {
   isTerminalCachedGetError,
 } from "../../lib/client-get-cache";
 import { useCachedGetSubscription, useClientLifecycleRefresh } from "../../lib/client-get-hooks";
+import { notifyError } from "../../lib/notification-policy";
 import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "../../lib/sheet-mirror-status";
 import panelStyles from "./GoogleWorkspacePanel.module.css";
 import { WorkspaceBlueprintEditor } from "./WorkspaceBlueprintEditor";
@@ -683,7 +684,13 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
           setGmailVerificationState("error");
           setCalendarVerificationState("error");
         }
-        if (!silent) notify("Workspace readiness could not be checked. Confirm the app is running and try again.", "error");
+        if (!silent) {
+          notifyError(notify, {
+            message: "Workspace readiness could not be checked. Reload this page to try again.",
+            cause: error,
+            action: { label: "Reload", run: () => window.location.reload() },
+          });
+        }
       }
     } finally {
       if (!silent) setChecking(false);
@@ -917,7 +924,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       if (!response.ok || !data.authorizationUrl) throw new Error(data.error ?? "Google Workspace could not be authorized.");
       window.location.assign(data.authorizationUrl);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Google Workspace could not be authorized.", "error");
+      notifyError(notify, {
+        message: "Google Workspace authorization could not be started.",
+        cause: error,
+        action: { label: "Try again", run: () => { void connectGoogleDrive(); } },
+      });
       setWorking(false);
     }
   }
@@ -933,7 +944,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       invalidateCachedGet("/api/v1/google-workspace");
       await checkSetup(true);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Drive workspace could not be verified.", "error");
+      notifyError(notify, {
+        message: "The active Drive workspace could not be verified.",
+        cause: error,
+        action: { label: "Try again", run: () => { void verifyGoogleDrive(); } },
+      });
     } finally {
       invalidateWorkspaceOperationsReadCache();
       setWorking(false);
@@ -976,7 +991,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       invalidateCachedGet("/api/v1/integrations/google/sheets/status");
       await refreshWorkspaceSetup(true);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Google connection could not be removed.", "error");
+      notifyError(notify, {
+        message: "The Google connection result could not be confirmed. Refresh its status before trying again.",
+        cause: error,
+        action: { label: "Refresh status", run: () => { void refreshWorkspaceSetup(true); } },
+      });
     } finally {
       invalidateWorkspaceOperationsReadCache();
       setWorking(false);
@@ -1011,7 +1030,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setGmailLabelsReady(true);
       notify("FCI Gmail labels are ready. No messages were moved or archived.", "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Gmail labels could not be prepared.", "error");
+      notifyError(notify, {
+        message: "FCI Gmail labels could not be prepared.",
+        cause: error,
+        action: { label: "Try again", run: () => { void prepareTestGmailLabels(); } },
+      });
     } finally {
       setGmailWorking(false);
     }
@@ -1024,7 +1047,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setGmailMessages(data.messages ?? []);
       notify(`Loaded ${data.messages?.length ?? 0} Workspace inbox message(s).`, "info");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The test inbox could not be loaded.", "error");
+      notifyError(notify, {
+        message: "The test inbox could not be loaded.",
+        cause: error,
+        action: { label: "Try again", run: () => { void refreshTestGmail(); } },
+      });
     } finally {
       setGmailWorking(false);
     }
@@ -1042,7 +1069,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setGmailTestEmailPassed(true);
       notify(workspace?.simulation ? "A sample email was added to the simulated Workspace inbox." : "A test email was sent only to the configured Workspace mailbox.", "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The self-test email could not be sent.", "error");
+      notifyError(notify, {
+        message: "The self-test email result could not be confirmed. Check the inbox before trying again.",
+        cause: error,
+        action: { label: "Check inbox", run: () => { void refreshTestGmail(); } },
+      });
     } finally {
       setGmailWorking(false);
     }
@@ -1073,7 +1104,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       notify(`Ready to review the Drive filing for ${data.project.number}. Nothing has been copied yet.`, "info");
     } catch (error) {
       setFilingPreview(null);
-      notify(error instanceof Error ? error.message : "The Gmail filing preview could not be loaded.", "error");
+      notifyError(notify, {
+        message: "The Gmail filing preview could not be loaded.",
+        cause: error,
+        action: { label: "Try again", run: () => { void previewGmailFiling(); } },
+      });
     } finally {
       setFilingLoading(false);
     }
@@ -1095,7 +1130,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       invalidateGmailFilingReadCaches({ includeOperations: false });
       await refreshTestGmail();
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Gmail filing could not be completed.", "error");
+      notifyError(notify, {
+        message: "The Gmail filing result could not be confirmed. Check the inbox before filing again.",
+        cause: error,
+        action: { label: "Check inbox", run: () => { void refreshTestGmail(); } },
+      });
     } finally {
       setFilingSubmitting(false);
     }
@@ -1110,7 +1149,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       invalidateCachedGet("/api/v1/integrations/google/calendar/events?verification=status", { notify: false });
       notify(`Loaded ${data.events?.length ?? 0} upcoming Workspace Calendar event(s).`, "info");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Workspace Calendar could not be loaded.", "error");
+      notifyError(notify, {
+        message: "The Workspace Calendar could not be loaded.",
+        cause: error,
+        action: { label: "Try again", run: () => { void refreshTestCalendar(); } },
+      });
     } finally {
       // The action-gated provider read records calendar.events_listed.
       invalidateWorkspaceOperationsReadCache();
@@ -1130,7 +1173,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       notify(workspace?.simulation ? "A 30-minute hold was added to the simulated Workspace calendar." : "A private 30-minute Workspace test hold was created with no attendees or notifications.", "success");
       await refreshTestCalendar();
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The test calendar hold could not be created.", "error");
+      notifyError(notify, {
+        message: "The test calendar hold result could not be confirmed. Refresh the calendar before trying again.",
+        cause: error,
+        action: { label: "Refresh calendar", run: () => { void refreshTestCalendar(); } },
+      });
     } finally {
       setCalendarWorking(false);
     }
@@ -1145,9 +1192,13 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setSheetsVerificationPassed((current) => current || sheetMirrorFullySynced(mirror));
       setSheetsStatusError(null);
       notify("Google Sheets mirror status was refreshed.", "info");
-    } catch {
+    } catch (error) {
       setSheetsStatusError("Mirror status could not be loaded. Try again from this error state.");
-      notify("Google Sheets mirror status could not be loaded.", "error");
+      notifyError(notify, {
+        message: "Google Sheets mirror status could not be loaded.",
+        cause: error,
+        action: { label: "Try again", run: () => { void refreshSheetsStatus(); } },
+      });
     } finally {
       setSheetsWorking(false);
     }
@@ -1164,7 +1215,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       invalidateCachedGet("/api/v1/integrations/google/sheets/status");
       notify("The Client Directory and Project Register mirror finished syncing.", "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Google Sheets could not complete the directory sync.", "error");
+      notifyError(notify, {
+        message: "The Google Sheets sync result could not be confirmed. Refresh mirror status before syncing again.",
+        cause: error,
+        action: { label: "Refresh status", run: () => { void refreshSheetsStatus(); } },
+      });
     } finally {
       setSheetsWorking(false);
     }
@@ -1185,7 +1240,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       await checkSetup(true);
       notify(`Drive provisioning ${enabled ? "enabled" : "disabled"} in app settings.`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Drive provisioning could not be saved.", "error");
+      notifyError(notify, {
+        message: "The Drive provisioning change could not be confirmed. Refresh Workspace status before trying again.",
+        cause: error,
+        action: { label: "Refresh status", run: () => { void refreshWorkspaceSetup(true); } },
+      });
     } finally {
       setRuntimeConfigurationWorking(null);
     }
@@ -1215,7 +1274,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       await refreshWorkspaceSetup(true);
       notify("The Gmail intake mailbox selection was saved.", "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Gmail intake mailbox could not be saved.", "error");
+      notifyError(notify, {
+        message: "The Gmail intake mailbox change could not be confirmed. Refresh Workspace status before trying again.",
+        cause: error,
+        action: { label: "Refresh status", run: () => { void refreshWorkspaceSetup(true); } },
+      });
     } finally {
       setRuntimeConfigurationWorking(null);
     }
@@ -1254,7 +1317,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         "success",
       );
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The spreadsheet could not be verified.", "error");
+      notifyError(notify, {
+        message: "The spreadsheet verification result could not be confirmed. Refresh Workspace status before trying again.",
+        cause: error,
+        action: { label: "Refresh status", run: () => { void refreshWorkspaceSetup(true); } },
+      });
     } finally {
       setRuntimeConfigurationWorking(null);
     }
@@ -1280,7 +1347,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       await refreshWorkspaceSetup(true);
       setSheetsVerificationPassed(false);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Workspace simulation could not be reset.", "error");
+      notifyError(notify, {
+        message: "The Workspace simulation reset result could not be confirmed. Refresh status before trying again.",
+        cause: error,
+        action: { label: "Refresh status", run: () => { void refreshWorkspaceSetup(true); } },
+      });
     } finally {
       setWorking(false);
     }
@@ -1314,7 +1385,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       invalidateCachedGet("/api/v1/integrations/google/sheets/status");
       await refreshWorkspaceSetup(true);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The saved Workspace tenant could not be reset.", "error");
+      notifyError(notify, {
+        message: "The tenant reset result could not be confirmed. Refresh status before trying again.",
+        cause: error,
+        action: { label: "Refresh status", run: () => { void refreshWorkspaceSetup(true); } },
+      });
     } finally {
       setTenantResetWorking(false);
     }
