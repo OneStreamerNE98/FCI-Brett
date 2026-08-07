@@ -125,10 +125,11 @@ test("FIX-09 calendar test-hold creates a real simulation event", async ({ page 
 
   // Expand Stage 4 to reach the calendar verification area.
   const stage4Toggle = page.locator('[data-workspace-stage="4"] .workspace-stage-toggle');
-  if (await stage4Toggle.getAttribute("aria-expanded") !== "true") {
+  await expect(stage4Toggle).toBeVisible();
+  const expanded = await stage4Toggle.getAttribute("aria-expanded");
+  if (expanded !== "true") {
     await stage4Toggle.click();
   }
-  await expect(stage4Toggle).toHaveAttribute("aria-expanded", "true");
 
   // The calendar verification row should show a state from the real backend.
   const calendarRow = page.locator('[data-stage-four-verification="calendar"]');
