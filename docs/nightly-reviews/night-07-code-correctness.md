@@ -25,7 +25,7 @@ P3s filed:
 | ID | Sev | Finding | Disposition |
 |---|---|---|---|
 | N7-1 | P3 | filing-rules mutations office-gated while every sibling settings route requires admin (core confirmed; severity-refuted from P2 — API-only, trusted insiders, review-first impact) | NFIX-05 |
-| N7-2 | P3 | Revenue-per-sq-ft is an average of per-project ratios, not aggregate ÷ aggregate | Verified intentional — `docs/flooring-kpis.md` defines exactly this formula |
+| N7-2 | P3 | Revenue-per-sq-ft is an average of per-project ratios, not aggregate ÷ aggregate | Verified intentional — `docs/specs/flooring-kpis.md` defines exactly this formula |
 | N7-3 | P3 | Booked value/count + average job value include cancelled projects | Verified intentional — matches the documented booking/average definitions |
 | N7-4 | P3 | Win-rate-by-source splits rows on raw casing while status is normalized in the same loop | NFIX-05 |
 | N7-5 | P3 | DirectorySyncPanel renders "Last synced" as raw epoch milliseconds | NFIX-05 |
@@ -42,7 +42,7 @@ loadedBucket guard.
 
 NFIX-05 is dispatchable immediately (zone clear of all open lanes); its
 win-rate normalization is a formula refinement, so the packet carries the
-`docs/flooring-kpis.md` definition update + pure-helper tests in the same PR
+`docs/specs/flooring-kpis.md` definition update + pure-helper tests in the same PR
 per that document's rule. N7-2/N7-3 resolved as documented intended behavior
 (the KPI source of truth defines both formulas exactly as coded) — mention to
 the owner only as "revisit the definitions if you ever want different

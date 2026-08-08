@@ -200,7 +200,7 @@ When the sidebar is collapsed, the icon shouldn't have a box/border around it.
 **This is an inconsistency, not just a preference.** The brand logo already renders with
 no card and no border in the collapsed rail — and that is the owner-approved rule in the
 design authority: *"the transparent logo sits directly on the cream sidebar — no card, no
-border"* (`docs/dashboard-design-spec.md:67-68`). The workspace card keeps its border,
+border"* (`docs/specs/dashboard-design-spec.md:67-68`). The workspace card keeps its border,
 fill and 10px radius, so the two neighbouring elements follow different rules in the same
 rail.
 

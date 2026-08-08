@@ -107,7 +107,7 @@ test("production limiter refuses invalid injected config and propagates audit fa
 
 test("documents the closed production policy and the exact development cost routes", async () => {
   const document = await readFile(
-    new URL("../docs/request-rate-limiting.md", import.meta.url),
+    new URL("../docs/specs/request-rate-limiting.md", import.meta.url),
     "utf8",
   );
 

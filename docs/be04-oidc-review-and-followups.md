@@ -93,12 +93,12 @@ only fail if the `__Host-fci_oidc_attempt` cookie itself is absent or unparseabl
 attempt single-use, prefer the low-cost mitigation: shorten the attempt lifetime is already
 10 min — additionally bind and check a one-time server marker if a session/identity store
 is cheaply available; **otherwise** document explicitly (in
-`docs/authorization-simulation.md` and a code comment) that single-use relies on
+`docs/specs/authorization-simulation.md` and a code comment) that single-use relies on
 authorization-code single-use at Google plus the clear-cookie header, and that the 10-minute
 attempt window is the accepted bound. Pick one and note the decision. Do not weaken the
 existing AAD binding, timing-safe comparisons, or expiry math.
 **Files:** `app/platform/google-cloud/employee-oidc.ts`, `tests/employee-oidc.test.mjs`,
-and (if the documentation route is chosen) `docs/authorization-simulation.md`.
+and (if the documentation route is chosen) `docs/specs/authorization-simulation.md`.
 **Accept:** array/non-string `iss` rejected in a test; a valid attempt cookie succeeds when
 an unrelated malformed cookie is also present; the attempt-reuse decision is implemented or
 explicitly documented with a test or comment; `npm test` green. **Effort:** small.
@@ -149,7 +149,7 @@ its own
 tracking rules (`AGENTS.md` and the plan doc require behavior changes to update their docs
 in the same PR). Confirmed: sequencing and handoff passages still assign already-merged
 PRs; and
-`docs/authorization-simulation.md` still describes login/session issuance as not-yet-existing
+`docs/specs/authorization-simulation.md` still describes login/session issuance as not-yet-existing
 in places even though `employee-request-router.ts` now issues `__Host-fci_session`. The
 root `README.md` likewise still places employee OIDC/session issuance outside the source
 boundary, and the complete architecture audit still assigns removal or typing of the
@@ -157,8 +157,8 @@ already-removed `/api/v1/records` route. Before this packet,
 `tests/task-tracking-docs.test.mjs` only format-checked BE-01/WS-03/TRK-01, so it did not
 catch this.
 **Do:** (1) Reconcile every merged packet status and the sequencing/handoff mentions in
-the plan, `docs/codex-to-codex-handoff.md`, and the owner-facing checklist summary.
-(2) Reconcile `docs/authorization-simulation.md`: keep the approved-policy content, but
+the plan, `docs/guides/codex-to-codex-handoff.md`, and the owner-facing checklist summary.
+(2) Reconcile `docs/specs/authorization-simulation.md`: keep the approved-policy content, but
 correct any statement that a login/session-issuance route does not exist to reflect the
 merged source (note what is now implemented vs still deferred — sliding idle renewal remains
 deferred). (3) Extend `tests/task-tracking-docs.test.mjs` so a merged packet whose status
@@ -168,9 +168,9 @@ a packet merges. (4) Reconcile the root README's production/launch boundary and 
 architecture audit's generic-records action resolved in source without weakening the
 separate upload warning or assistant records-only assertion.
 **Files:** `README.md`, `docs/agent-plan-architecture-workspace-and-setup.md`,
-`docs/authorization-simulation.md`, `docs/codex-to-codex-handoff.md`,
+`docs/specs/authorization-simulation.md`, `docs/guides/codex-to-codex-handoff.md`,
 `docs/task-checklists/README.md`,
-`docs/complete-product-and-google-cloud-architecture-audit.md`, this follow-up ledger,
+`docs/reviews/complete-product-and-google-cloud-architecture-audit.md`, this follow-up ledger,
 affected architecture/checklist status surfaces, and `tests/task-tracking-docs.test.mjs`.
 **Accept:** no tracking doc assigns an already-merged PR for review;
 `authorization-simulation.md` matches merged source; the explicit offline merged-packet
@@ -191,7 +191,7 @@ application's metric-card visual convention.
 **Resolution:** Keep the valid shared styling and scope the old regression locator to the
 existing summary row with `.metrics-grid > .metric-card`. The focused legacy Reports test
 and all 22 KPI-focused Playwright cases pass together; the pinned formulas in
-`docs/flooring-kpis.md` and the direct `isAdmin` gate on dollar KPIs are unchanged.
+`docs/specs/flooring-kpis.md` and the direct `isAdmin` gate on dollar KPIs are unchanged.
 **Files:** `tests/e2e/floor-ops.spec.ts`. No visual or production behavior changed.
 
 ---

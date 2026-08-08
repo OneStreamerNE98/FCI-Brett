@@ -245,7 +245,7 @@ test("packet headings, status markers, and stale-reference detection stay struct
 test("task-tracking surfaces expose the authoritative ledger topology without duplicate lists", () => {
   const readme = read("README.md");
   const checklists = read("docs/task-checklists/README.md");
-  const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
+  const audit = read("docs/reviews/complete-product-and-google-cloud-architecture-audit.md");
   const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
 
   const rootTracking = section(readme, "## Prioritized next work", "## Google Workspace development validation");
@@ -254,7 +254,7 @@ test("task-tracking surfaces expose the authoritative ledger topology without du
     "docs/agent-plan-architecture-workspace-and-setup.md",
     "docs/design-critique-fix-plan.md",
     "docs/task-checklists/README.md",
-    "docs/complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap",
+    "docs/reviews/complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap",
   ]) {
     assert.ok(rootTargets.has(target), `README tracking section omits ${target}`);
   }
@@ -264,7 +264,7 @@ test("task-tracking surfaces expose the authoritative ledger topology without du
   for (const target of [
     "../agent-plan-architecture-workspace-and-setup.md",
     "../design-critique-fix-plan.md",
-    "../complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap",
+    "../reviews/complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap",
     "../../README.md#prioritized-next-work",
   ]) {
     assert.ok(checklistTargets.has(target), `Checklist dashboard omits ${target}`);
@@ -310,19 +310,19 @@ test("known merged packets map to their PRs and cannot regress to review-only wo
 
   const trackingFiles = [
     "README.md",
-    "docs/20-user-product-and-architecture-review.md",
+    "docs/reviews/20-user-product-and-architecture-review.md",
     "docs/agent-plan-architecture-workspace-and-setup.md",
-    "docs/architecture-decision-production-platform.md",
-    "docs/authorization-simulation.md",
+    "docs/specs/architecture-decision-production-platform.md",
+    "docs/specs/authorization-simulation.md",
     "docs/be04-oidc-review-and-followups.md",
-    "docs/codex-to-codex-handoff.md",
-    "docs/complete-product-and-google-cloud-architecture-audit.md",
+    "docs/guides/codex-to-codex-handoff.md",
+    "docs/reviews/complete-product-and-google-cloud-architecture-audit.md",
     "docs/design-critique-fix-plan.md",
     "docs/full-review-2026-07-21-findings.md",
-    "docs/google-cloud-runtime-foundation.md",
-    "docs/google-workspace-rollout-guide.md",
+    "docs/specs/google-cloud-runtime-foundation.md",
+    "docs/guides/google-workspace-rollout-guide.md",
     "docs/archive/pre-workspace-development-plan.md",
-    "docs/production-persistence-boundary.md",
+    "docs/specs/production-persistence-boundary.md",
     "docs/task-checklists/04-staff-login-and-permissions.md",
     "docs/task-checklists/07-production-foundation-and-migration.md",
     "docs/task-checklists/README.md",
@@ -358,7 +358,7 @@ test("the frozen GitHub review snapshot is a structurally valid merged-source ta
 });
 
 test("every open architecture-roadmap row has a structural tracking owner", () => {
-  const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
+  const audit = read("docs/reviews/complete-product-and-google-cloud-architecture-audit.md");
   const roadmap = section(audit, "## Ordered branch-sized implementation roadmap", "## Owner decisions that prevent architectural rework");
   const rows = markdownTableRows(roadmap);
   const expectedOwnerTokens = new Map([
@@ -384,8 +384,8 @@ test("every open architecture-roadmap row has a structural tracking owner", () =
 
 test("deployment and source-only history is coupled by semantic paragraphs, not verbatim prose", () => {
   const statusFiles = [
-    "docs/codex-to-codex-handoff.md",
-    "docs/complete-product-and-google-cloud-architecture-audit.md",
+    "docs/guides/codex-to-codex-handoff.md",
+    "docs/reviews/complete-product-and-google-cloud-architecture-audit.md",
     "docs/design-critique-fix-plan.md",
     "docs/task-checklists/README.md",
     "docs/task-checklists/09-frontend-and-multi-user-hardening.md",
@@ -419,7 +419,7 @@ test("deployment and source-only history is coupled by semantic paragraphs, not 
     assertNoStaleMergedPrReferences(path, settingsLines.join("\n"), [35]);
   }
 
-  const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
+  const audit = read("docs/reviews/complete-product-and-google-cloud-architecture-audit.md");
   assertIncludesTokens(
     paragraphContaining(audit, "Production PostgreSQL migrations"),
     ["source", "none", "Cloud SQL"],
@@ -443,7 +443,7 @@ test("deployment and source-only history is coupled by semantic paragraphs, not 
 
 test("Workspace setup documents enforce an environment-owned allowlist and selected-account Gmail boundary", () => {
   const envExample = read(".env.example");
-  const rollout = read("docs/google-workspace-rollout-guide.md");
+  const rollout = read("docs/guides/google-workspace-rollout-guide.md");
   const hostedChecklist = read("docs/task-checklists/03-hosted-development-connection.md");
   const readme = read("README.md");
 
@@ -459,7 +459,7 @@ test("Workspace setup documents enforce an environment-owned allowlist and selec
     ["GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS", "select one", "connected", "readiness fails closed"],
     "Hosted checklist selected-account boundary",
   );
-  assert.ok(markdownLinkTargets(readme).some((target) => target.includes("docs/google-workspace-organization.md")));
+  assert.ok(markdownLinkTargets(readme).some((target) => target.includes("docs/guides/google-workspace-organization.md")));
   assert.match(readme, /ChatGPT Sites project's runtime environment settings/);
 });
 

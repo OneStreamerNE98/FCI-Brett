@@ -63,7 +63,7 @@ test("SET-11 renders recorded sync timestamps readably and errors verbatim throu
 test("SET-11 unconfigured guidance names only the fallback key and deep-links to Workspace Stage 3", async () => {
   const [panel, guide] = await Promise.all([
     read("app/settings/components/DirectorySyncPanel.tsx"),
-    read("docs/settings-guide.md"),
+    read("docs/guides/settings-guide.md"),
   ]);
 
   assert.match(panel, /const CLIENT_DIRECTORY_SHEET_KEY = EFFECTIVE_WORKSPACE_RESOURCE_SPECS\.clientDirectorySheet\.envVar/);

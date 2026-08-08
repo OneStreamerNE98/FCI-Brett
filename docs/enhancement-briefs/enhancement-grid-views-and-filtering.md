@@ -71,7 +71,7 @@ board, which is genuinely good for a pipeline. The actual defect is that Leads o
 expensive and throws away work that is already owner-approved.
 
 **b) There is an owner-approved design authority, and it is specific.**
-`docs/dashboard-design-spec.md` pins interaction rules that a redesign would have to
+`docs/specs/dashboard-design-spec.md` pins interaction rules that a redesign would have to
 re-litigate: one interaction rule per element (an interactive card is a whole-card link,
 never nested buttons inside a clickable card); interactive vs static cards visibly
 different; a fixed radius and shadow scale (`--radius-card:10px`, `--shadow-card`); and
@@ -165,7 +165,7 @@ recorded owner decision. Do not build selection until there is something safe to
   run in parallel with GI-04 or the other queue holders.
 - **Do not regenerate the Overview or Reports golden hashes.** This work should not touch
   either page.
-- **Follow the existing design authority** (`docs/dashboard-design-spec.md`) or amend it
+- **Follow the existing design authority** (`docs/specs/dashboard-design-spec.md`) or amend it
   deliberately in the same PR — not silently.
 - **44px minimum touch targets** are already the rule and must survive a denser layout.
   This is the main tension in "dense" plus "iOS", and it is where the design will be won or

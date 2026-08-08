@@ -404,8 +404,8 @@ test("source pins the authorization order, SELECT-only route, Settings surface, 
     read("app/api/v1/integrations/google/operations/route.ts"),
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/settings/components/workspace-operations/WorkspaceOperationsHealthCard.tsx"),
-    read("docs/google-workspace-rollout-guide.md"),
-    read("docs/settings-guide.md"),
+    read("docs/guides/google-workspace-rollout-guide.md"),
+    read("docs/guides/settings-guide.md"),
   ]);
 
   const authIndex = routeSource.indexOf("requireOfficeUser(request, { admin: true })");

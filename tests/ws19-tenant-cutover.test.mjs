@@ -584,7 +584,7 @@ test("tenant reset has the inverse simulation gate and leaves the simulation res
 test("Settings exposes stored-email typed confirmation and the guide states filed-evidence loss", async () => {
   const [panel, guide, callback, resetRoute, resetHelper] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
-    read("docs/settings-guide.md"),
+    read("docs/guides/settings-guide.md"),
     read("app/api/v1/integrations/google/callback/route.ts"),
     read("app/api/v1/integrations/google/tenant/reset/route.ts"),
     read("app/adapters/d1/google-tenant-reset.ts"),

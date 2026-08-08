@@ -113,7 +113,7 @@ The source work reduces implementation risk but does not change the no-go decisi
 
 ## Recommended administration-page sequence
 
-The owner-facing design is intentionally small for a roughly 20-person company. Read the canonical [Administration and Access plan](specs/administration-and-access-plan.md). Role permissions, invitation/session lifetimes, and the domain rule are fixed read-only policy; the first page does not expose a capability matrix or per-user exceptions.
+The owner-facing design is intentionally small for a roughly 20-person company. Read the canonical [Administration and Access plan](administration-and-access-plan.md). Role permissions, invitation/session lifetimes, and the domain rule are fixed read-only policy; the first page does not expose a capability matrix or per-user exceptions.
 
 1. `codex/admin-access-core` — implemented in source, unapplied: fixed schema/catalog and command APIs for invite, revoke invitation, change one role or Project Manager assignments, disable access, and sign out everywhere, with reasons, CSRF, optimistic concurrency, transactionally coupled audit, session invalidation, and concurrent final-Administrator protection.
 2. `codex/admin-access-page` — merged in source: bounded Administrator read projection and Management → People & Access with one people/invitation list, a read-only role guide, the five workflows, and direct-route, responsive, accessibility, and rendered browser evidence. Production employee-session/CSRF composition remains deferred.

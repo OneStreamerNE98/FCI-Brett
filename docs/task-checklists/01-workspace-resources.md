@@ -53,4 +53,4 @@ remains valid.
 
 This action is complete when the operations account can access the Shared Drive, spreadsheet, and both calendars, and their non-secret IDs are ready for hosted configuration.
 
-For click-by-click administrator instructions, see [the full rollout guide](../google-workspace-rollout-guide.md#part-1-set-up-the-google-workspace-organization).
+For click-by-click administrator instructions, see [the full rollout guide](../guides/google-workspace-rollout-guide.md#part-1-set-up-the-google-workspace-organization).

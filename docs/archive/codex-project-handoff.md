@@ -1,12 +1,12 @@
 # Moving this work into the Floor Coverings International Codex project
-> **Archived August 2026** — superseded by [codex-to-codex-handoff.md](../codex-to-codex-handoff.md); retained for history.
+> **Archived August 2026** — superseded by [codex-to-codex-handoff.md](../guides/codex-to-codex-handoff.md); retained for history.
 
 > **Historical record — July 2026** (banner added July 24, 2026). This documented a
 > one-time move of the work into a local Codex project on the owner's machine. Live
-> agent onboarding lives in [codex-to-codex-handoff.md](../codex-to-codex-handoff.md);
+> agent onboarding lives in [codex-to-codex-handoff.md](../guides/codex-to-codex-handoff.md);
 > current status lives in the [agent plan](../agent-plan-architecture-workspace-and-setup.md).
 
-For handing the repository from one person's Codex installation to a coworker's Codex installation, use [`codex-to-codex-handoff.md`](../codex-to-codex-handoff.md). That guide covers GitHub access, cloning, adding the local Codex project, onboarding verification, branch workflow, prompts, and handback requirements.
+For handing the repository from one person's Codex installation to a coworker's Codex installation, use [`codex-to-codex-handoff.md`](../guides/codex-to-codex-handoff.md). That guide covers GitHub access, cloning, adding the local Codex project, onboarding verification, branch workflow, prompts, and handback requirements.
 
 ## What “moving the task” means
 

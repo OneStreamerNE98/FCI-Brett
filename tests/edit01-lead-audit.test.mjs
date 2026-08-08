@@ -902,7 +902,7 @@ async function routeFiles(directory) {
 test("development API authorization gap is documented and the lead PATCH stays free of decorative capability checks", async () => {
   const [leadItemRoute, authorizationDoc, files] = await Promise.all([
     read("app/api/v1/leads/[leadId]/route.ts"),
-    read("docs/authorization-simulation.md"),
+    read("docs/specs/authorization-simulation.md"),
     routeFiles(join(rootPath, "app", "api", "v1")),
   ]);
   assert.doesNotMatch(leadItemRoute, /\bcreationAuthorizationFor\s*\(/u);

@@ -8,7 +8,7 @@ Reviewed: July 19, 2026
 > Gmail watches, Pub/Sub topics/subscriptions, Calendar notification channels, Cloud
 > Tasks queues, Cloud Scheduler jobs, webhooks, or provider credentials. It does not
 > change hosted configuration or deployment. Live activation remains blocked by the
-> [production-foundation gates](task-checklists/07-production-foundation-and-migration.md).
+> [production-foundation gates](../task-checklists/07-production-foundation-and-migration.md).
 
 ## Decision summary
 
@@ -28,16 +28,16 @@ reply, or copy an attachment without the existing explicit exact-project approva
 
 The source-only boundary consists of:
 
-- [`DurableJobRepository`](../app/ports/durable-job.ts), which defines idempotent
+- [`DurableJobRepository`](../../app/ports/durable-job.ts), which defines idempotent
   enqueue, ordered lease claims, version-fenced completion/failure, bounded retry,
   terminal failure listing, expired-lease recovery, and reasoned replay evidence;
-- [`IntegrationSyncStateRepository`](../app/ports/integration-sync-state.ts), which
+- [`IntegrationSyncStateRepository`](../../app/ports/integration-sync-state.ts), which
   defines active encrypted cursor saves, transient failure evidence, resync-required
   clearing, disablement, and expiration queries for `gmail_history`,
   `calendar_sync_token`, and separately registered `calendar_channel_token` state;
-- local-only memory adapters under [`app/adapters/memory`](../app/adapters/memory); and
+- local-only memory adapters under [`app/adapters/memory`](../../app/adapters/memory); and
 - focused behavior tests in
-  [`tests/workspace-sync-contracts.test.mjs`](../tests/workspace-sync-contracts.test.mjs).
+  [`tests/workspace-sync-contracts.test.mjs`](../../tests/workspace-sync-contracts.test.mjs).
 
 The adapters call no provider and create no infrastructure. They exist to settle state
 semantics before a migration, live adapter, or task handler is reviewed.
