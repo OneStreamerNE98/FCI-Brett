@@ -2,7 +2,7 @@
 
 Owner-approved July 23, 2026; reconciled against merged source July 26, 2026
 by AI-09. This document is the design authority for the
-AI-01…AI-09 packets in `docs/agent-plan-architecture-workspace-and-setup.md`
+AI-01…AI-09 packets in `docs/ledger/agent-plan-architecture-workspace-and-setup.md`
 (Workstream G) and for the gated Tier-2 designs (§8). Where a packet and this
 spec disagree, this spec wins; changes to this spec require an owner decision
 recorded in the ledger.

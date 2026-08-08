@@ -7,7 +7,7 @@ Audience: Business owner, Google Workspace administrator, product owner, and dev
 > model, and architecture sections remain load-bearing and this document is still
 > maintained for those. Page-level UI detail predates the Workstream F design wave
 > (DES-01…07) and the four-stage Workspace settings redesign (SET-29…34) — treat that
-> detail as historical; the [agent plan](../agent-plan-architecture-workspace-and-setup.md)
+> detail as historical; the [agent plan](../ledger/agent-plan-architecture-workspace-and-setup.md)
 > owns current status.
 
 ## Executive decision
@@ -139,4 +139,4 @@ The owner-approved application role and sensitive-action policy now permits loca
 | Store real client or employee data | No-go until production platform, restore, audit, and retention controls pass, plus quarantine/scanning when untrusted uploads or Gmail attachments are accepted |
 | Build scheduling or outbound messaging | No-go until platform, permissions, and background-job controls are accepted |
 
-Owner setup and acceptance work is tracked in the [Task Checklists](../task-checklists/README.md). Active backend, Workspace, and Settings implementation status is tracked in the [agent execution plan](../agent-plan-architecture-workspace-and-setup.md), with UI remediation tracked in the [design-critique ledger](../design-critique-fix-plan.md).
+Owner setup and acceptance work is tracked in the [Task Checklists](../task-checklists/README.md). Active backend, Workspace, and Settings implementation status is tracked in the [agent execution plan](../ledger/agent-plan-architecture-workspace-and-setup.md), with UI remediation tracked in the [design-critique ledger](../ledger/design-critique-fix-plan.md).

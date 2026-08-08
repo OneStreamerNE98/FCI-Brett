@@ -232,11 +232,11 @@ test("packet headings, status markers, and stale-reference detection stay struct
   );
 
   for (const path of [
-    "docs/agent-plan-architecture-workspace-and-setup.md",
-    "docs/be04-oidc-review-and-followups.md",
-    "docs/full-review-2026-07-21-findings.md",
-    "docs/full-review-2026-07-24-findings.md",
-    "docs/nightly-review-2026-07-findings.md",
+    "docs/ledger/agent-plan-architecture-workspace-and-setup.md",
+    "docs/ledger/be04-oidc-review-and-followups.md",
+    "docs/ledger/full-review-2026-07-21-findings.md",
+    "docs/ledger/full-review-2026-07-24-findings.md",
+    "docs/ledger/nightly-review-2026-07-findings.md",
   ]) {
     assertPacketDocumentStructure(path, read(path));
   }
@@ -246,13 +246,13 @@ test("task-tracking surfaces expose the authoritative ledger topology without du
   const readme = read("README.md");
   const checklists = read("docs/task-checklists/README.md");
   const audit = read("docs/reviews/complete-product-and-google-cloud-architecture-audit.md");
-  const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
+  const plan = read("docs/ledger/agent-plan-architecture-workspace-and-setup.md");
 
   const rootTracking = section(readme, "## Prioritized next work", "## Google Workspace development validation");
   const rootTargets = new Set(markdownLinkTargets(rootTracking));
   for (const target of [
-    "docs/agent-plan-architecture-workspace-and-setup.md",
-    "docs/design-critique-fix-plan.md",
+    "docs/ledger/agent-plan-architecture-workspace-and-setup.md",
+    "docs/ledger/design-critique-fix-plan.md",
     "docs/task-checklists/README.md",
     "docs/reviews/complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap",
   ]) {
@@ -262,8 +262,8 @@ test("task-tracking surfaces expose the authoritative ledger topology without du
 
   const checklistTargets = new Set(markdownLinkTargets(checklists));
   for (const target of [
-    "../agent-plan-architecture-workspace-and-setup.md",
-    "../design-critique-fix-plan.md",
+    "../ledger/agent-plan-architecture-workspace-and-setup.md",
+    "../ledger/design-critique-fix-plan.md",
     "../reviews/complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap",
     "../../README.md#prioritized-next-work",
   ]) {
@@ -284,9 +284,9 @@ test("task-tracking surfaces expose the authoritative ledger topology without du
 });
 
 test("known merged packets map to their PRs and cannot regress to review-only wording", () => {
-  const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
-  const oidc = read("docs/be04-oidc-review-and-followups.md");
-  const findings = read("docs/full-review-2026-07-21-findings.md");
+  const plan = read("docs/ledger/agent-plan-architecture-workspace-and-setup.md");
+  const oidc = read("docs/ledger/be04-oidc-review-and-followups.md");
+  const findings = read("docs/ledger/full-review-2026-07-21-findings.md");
   const mergedPlanPackets = new Map([
     ["BE-01", 32], ["BE-02", 36], ["BE-03", 46], ["BE-04", 38], ["BE-05", 40],
     ["BE-06", 42], ["BE-08", 45], ["BE-09", 51], ["BE-10", 82], ["BE-11", 47],
@@ -311,14 +311,14 @@ test("known merged packets map to their PRs and cannot regress to review-only wo
   const trackingFiles = [
     "README.md",
     "docs/reviews/20-user-product-and-architecture-review.md",
-    "docs/agent-plan-architecture-workspace-and-setup.md",
+    "docs/ledger/agent-plan-architecture-workspace-and-setup.md",
     "docs/specs/architecture-decision-production-platform.md",
     "docs/specs/authorization-simulation.md",
-    "docs/be04-oidc-review-and-followups.md",
+    "docs/ledger/be04-oidc-review-and-followups.md",
     "docs/guides/codex-to-codex-handoff.md",
     "docs/reviews/complete-product-and-google-cloud-architecture-audit.md",
-    "docs/design-critique-fix-plan.md",
-    "docs/full-review-2026-07-21-findings.md",
+    "docs/ledger/design-critique-fix-plan.md",
+    "docs/ledger/full-review-2026-07-21-findings.md",
     "docs/specs/google-cloud-runtime-foundation.md",
     "docs/guides/google-workspace-rollout-guide.md",
     "docs/archive/pre-workspace-development-plan.md",
@@ -353,8 +353,8 @@ test("the frozen GitHub review snapshot is a structurally valid merged-source ta
   }
 
   const currentStatusTargets = new Set(markdownLinkTargets(reviewSnapshot));
-  assert.ok(currentStatusTargets.has("../agent-plan-architecture-workspace-and-setup.md"));
-  assert.ok(currentStatusTargets.has("../full-review-2026-07-21-findings.md"));
+  assert.ok(currentStatusTargets.has("../ledger/agent-plan-architecture-workspace-and-setup.md"));
+  assert.ok(currentStatusTargets.has("../ledger/full-review-2026-07-21-findings.md"));
 });
 
 test("every open architecture-roadmap row has a structural tracking owner", () => {
@@ -386,7 +386,7 @@ test("deployment and source-only history is coupled by semantic paragraphs, not 
   const statusFiles = [
     "docs/guides/codex-to-codex-handoff.md",
     "docs/reviews/complete-product-and-google-cloud-architecture-audit.md",
-    "docs/design-critique-fix-plan.md",
+    "docs/ledger/design-critique-fix-plan.md",
     "docs/task-checklists/README.md",
     "docs/task-checklists/09-frontend-and-multi-user-hardening.md",
     "docs/task-checklists/10-complete-product-and-integration-architecture.md",
@@ -410,7 +410,7 @@ test("deployment and source-only history is coupled by semantic paragraphs, not 
     assertNoStaleMergedPrReferences(path, actionableLines.join("\n"), [33]);
   }
 
-  for (const path of [...statusFiles, "docs/agent-plan-architecture-workspace-and-setup.md", "docs/archive/pre-workspace-development-plan.md"]) {
+  for (const path of [...statusFiles, "docs/ledger/agent-plan-architecture-workspace-and-setup.md", "docs/archive/pre-workspace-development-plan.md"]) {
     const settingsLines = read(path).split(/\r?\n/).filter((line) => line.includes("codex/settings-panel-extraction"));
     assert.ok(
       settingsLines.some((line) => /PR #35/i.test(line) && /source/i.test(line) && /not deployed|not been deployed|undeployed|no deployment/i.test(line)),
@@ -426,7 +426,7 @@ test("deployment and source-only history is coupled by semantic paragraphs, not 
     "Production migration paragraph",
   );
 
-  const design = read("docs/design-critique-fix-plan.md");
+  const design = read("docs/ledger/design-critique-fix-plan.md");
   const actionableEvidence = section(
     design,
     "### Actionable-list slice evidence — complete in PR #33",

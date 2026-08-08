@@ -31,18 +31,18 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 
 - [independent-audit-2026-07-30-self-reviewed-changes.md](reviews/independent-audit-2026-07-30-self-reviewed-changes.md) — independent source audit of five self-reviewed behavior changes and their ledger claims.
 - [code-review-2026-08-06-findings.md](reviews/code-review-2026-08-06-findings.md) — the August-6 comprehensive webapp review, adversarial dispositions, and NFIX follow-up ownership.
-- [full-review-2026-07-21-findings.md](full-review-2026-07-21-findings.md) — the July-21 full-codebase review (F-findings, FIX-01…12).
-- [full-review-2026-07-24-findings.md](full-review-2026-07-24-findings.md) — the July-23/24 holistic post-wave review (H-findings, FIX-13…19).
-- [nightly-review-2026-07-findings.md](nightly-review-2026-07-findings.md) — the rolling nightly-program ledger (N-findings, NFIX packets).
+- [full-review-2026-07-21-findings.md](ledger/full-review-2026-07-21-findings.md) — the July-21 full-codebase review (F-findings, FIX-01…12).
+- [full-review-2026-07-24-findings.md](ledger/full-review-2026-07-24-findings.md) — the July-23/24 holistic post-wave review (H-findings, FIX-13…19).
+- [nightly-review-2026-07-findings.md](ledger/nightly-review-2026-07-findings.md) — the rolling nightly-program ledger (N-findings, NFIX packets).
 - [infohint-audit-2026-07-24.md](reviews/infohint-audit-2026-07-24.md) — the curated forms-only (i)-hint table (Workstream H authority).
-- [design-critique-fix-plan.md](design-critique-fix-plan.md) — the earlier design-critique ledger (phases A/B).
+- [design-critique-fix-plan.md](ledger/design-critique-fix-plan.md) — the earlier design-critique ledger (phases A/B).
 - [ui-and-product-readiness-review.md](archive/ui-and-product-readiness-review.md) · [development-section-audit.md](archive/development-section-audit.md) · [pr-51-57-fable-review-findings.md](archive/pr-51-57-fable-review-findings.md) — earlier review artifacts.
 
 ## Agent operations (the packet system)
 
 - [../AGENTS.md](../AGENTS.md) — the repository operating contract for every agent and human contributor: roles, required workflow, and multi-agent coordination rules. (Added to the index July 24, 2026.)
-- [agent-plan-architecture-workspace-and-setup.md](agent-plan-architecture-workspace-and-setup.md) — THE ledger: every workstream, packet, status, and sequencing rule.
-- [be04-oidc-review-and-followups.md](be04-oidc-review-and-followups.md) — the OIDC packet series.
+- [agent-plan-architecture-workspace-and-setup.md](ledger/agent-plan-architecture-workspace-and-setup.md) — THE ledger: every workstream, packet, status, and sequencing rule.
+- [be04-oidc-review-and-followups.md](ledger/be04-oidc-review-and-followups.md) — the OIDC packet series.
 - [codex-project-handoff.md](archive/codex-project-handoff.md) · [codex-to-codex-handoff.md](guides/codex-to-codex-handoff.md) · [pr-51-57-claude-fable-review-handoff.md](archive/pr-51-57-claude-fable-review-handoff.md) — agent handoff records.
 
 ## Architecture & platform (developer reference)

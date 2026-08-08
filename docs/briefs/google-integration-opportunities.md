@@ -10,7 +10,7 @@ gates. Effort tiers assume the app's existing OAuth + API plumbing.
 > spend. The adopted set below is expected to cost **~$0–10/month actual** (Maps usage
 > within free tiers at current volume); WS-15 sets a billing budget alert well under
 > the ceiling. **Adopted build packets:** GI-01…GI-07 (Workstream E in the
-> [agent execution plan](../agent-plan-architecture-workspace-and-setup.md)) plus the
+> [agent execution plan](../ledger/agent-plan-architecture-workspace-and-setup.md)) plus the
 > WS-15/WS-16 owner rows and SET-17's Docs-merge amendment. Items marked "skip" below
 > are recorded decisions, not open questions.
 

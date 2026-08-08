@@ -7,8 +7,8 @@ Source baseline: `main` at `f589ee61db58d93827563982e880adc23a829183`
 
 > **Snapshot scope:** This document records the review state observed on July 20,
 > 2026. It is not an authoritative task-status ledger. For current sequencing and
-> status, use the [agent execution plan](../agent-plan-architecture-workspace-and-setup.md),
-> the [OIDC follow-up ledger](../be04-oidc-review-and-followups.md), and the linked GitHub
+> status, use the [agent execution plan](../ledger/agent-plan-architecture-workspace-and-setup.md),
+> the [OIDC follow-up ledger](../ledger/be04-oidc-review-and-followups.md), and the linked GitHub
 > pull-request pages.
 
 ## Reviewer assignment

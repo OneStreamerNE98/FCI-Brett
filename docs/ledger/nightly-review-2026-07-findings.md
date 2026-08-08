@@ -1,7 +1,7 @@
 # Nightly Review Program — findings ledger (July 2026)
 
 > **Sibling reviews:** all findings ledgers are grouped under
-> [docs/README.md → Findings & reviews](README.md#findings--reviews). (Added July 24, 2026.)
+> [docs/README.md → Findings & reviews](../README.md#findings--reviews). (Added July 24, 2026.)
 
 **Target:** `origin/main`, re-synced at each night's kickoff. **Method:** per
 night — automated scans (viewport capture matrix; overlap / overflow /
@@ -9,7 +9,7 @@ touch-target / control-gap / mid-word-wrap detectors with WCAG 2.2 SC 2.5.8
 geometry as the violation threshold) followed by 2–3 focused review lenses,
 adversarial verification of every P1/P2 candidate, and dedup-first filing
 against the open packet backlog and all prior nights. Program index:
-[`nightly-reviews/README.md`](nightly-reviews/README.md).
+[`nightly-reviews/README.md`](../nightly-reviews/README.md).
 
 **Grammar note:** findings use four-hash headings `#### N<night>-<seq> ·
 <title> (P<sev>)` (outside the tracking guard's packet-structure assertions);
@@ -26,7 +26,7 @@ guard's tracked-document list in the same PR that files the first NFIX packet.
 Static review of `origin/main` (post-#180): three Opus lenses (boundaries,
 duplication with the 3+-instances rule, dead code), adversarial verification on
 every P1/P2. Summary page:
-[`nightly-reviews/night-06-architecture-duplication.md`](nightly-reviews/night-06-architecture-duplication.md).
+[`nightly-reviews/night-06-architecture-duplication.md`](../nightly-reviews/night-06-architecture-duplication.md).
 
 #### N6-1 · Application read-path bypasses the ports architecture (P2, verified)
 Five `app/application` read services (search-records, dashboard-data,
@@ -75,7 +75,7 @@ the house testability convention were deliberately not filed.
 Static review of the live (non-simulation) Google paths: three Opus lenses
 (idempotency/partial-failure, quota/backoff/degradation, token/scope hygiene),
 adversarial verification on every P1/P2. Summary page:
-[`nightly-reviews/night-08-google-integration-depth.md`](nightly-reviews/night-08-google-integration-depth.md).
+[`nightly-reviews/night-08-google-integration-depth.md`](../nightly-reviews/night-08-google-integration-depth.md).
 
 #### N8-1 · Client Directory sheet sync has no lease (P2, verified)
 `syncClientDirectory` reads sheet rows then blind-appends new clients with no
@@ -135,7 +135,7 @@ against the seeded e2e server (populated test data), 114 deduped probe
 findings (93 touch-target, 10 wrap, 7 gap, 3 container-overflow, 1 overlap),
 then three Opus lenses (targets/gaps, overflow/wrap + visual screenshot pass,
 synthesis) and adversarial verification per P1/P2. Summary page:
-[`nightly-reviews/night-01-phone-viewports.md`](nightly-reviews/night-01-phone-viewports.md).
+[`nightly-reviews/night-01-phone-viewports.md`](../nightly-reviews/night-01-phone-viewports.md).
 
 #### N1-1 · Testing & launch forces page-level horizontal scroll on phones (P2, verified)
 Two causes, one symptom — the app's only page-level horizontal overflow
@@ -190,7 +190,7 @@ Static review: three Opus lenses (domain/application computation, API route
 correctness, client-state + synthesis), adversarial verification with
 executed-proof preference per P1/P2. **Zero P1/P2 survived verification** —
 the computation core held up; eight P3s filed. Summary page:
-[`nightly-reviews/night-07-code-correctness.md`](nightly-reviews/night-07-code-correctness.md).
+[`nightly-reviews/night-07-code-correctness.md`](../nightly-reviews/night-07-code-correctness.md).
 
 #### N7-1 · filing-rules mutations are office-gated; every sibling settings config route requires admin (P3, verified core, severity-refuted from P2)
 POST/PATCH/DELETE call `requireOfficeUser` without `{admin:true}` — confirmed
@@ -254,9 +254,9 @@ cards, features/maps, and repo internals were not read by any lens.
 
 Scan-first over `origin/main` at `c0f7b47`: 102 page-views (17 routes ×
 768/834/1024/600/720/900) against the seeded e2e server using the newly
-committed scanner [`tools/nightly/layout-scan.mjs`](../tools/nightly/layout-scan.mjs),
+committed scanner [`tools/nightly/layout-scan.mjs`](../../tools/nightly/layout-scan.mjs),
 then live `elementFromPoint` hit-testing of every candidate. Summary page:
-[`nightly-reviews/night-02-tablet-awkward-middles.md`](nightly-reviews/night-02-tablet-awkward-middles.md).
+[`nightly-reviews/night-02-tablet-awkward-middles.md`](../nightly-reviews/night-02-tablet-awkward-middles.md).
 **Two of three scan passes were discarded as invalid** — see that page's
 coverage-honesty section, which is the substantive part of this night.
 

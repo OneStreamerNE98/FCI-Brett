@@ -305,7 +305,7 @@
 - **Remediation:** Decide the production front-door topology (direct Cloud Run versus a
   load balancer plus Cloud Armor) before granting public invoker access.
 - **Disposition:** Existing FIX-11 owner gate in
-  `docs/full-review-2026-07-21-findings.md`; do not file a duplicate packet.
+  `docs/ledger/full-review-2026-07-21-findings.md`; do not file a duplicate packet.
 
 #### D9. PostgreSQL Migration Runner Lacks Down Migrations — **Rejected as an open gap**
 - **File:** `app/platform/postgres/production-schema-migrations.ts`
@@ -328,7 +328,7 @@
 Findings prose is not a dispatch surface. This table records every reviewed finding's
 single owner, duplicate, resolution, or rejection so nothing relies on an unclaimed report
 paragraph. Packet availability still comes only from status lines in
-`docs/agent-plan-architecture-workspace-and-setup.md`.
+`docs/ledger/agent-plan-architecture-workspace-and-setup.md`.
 
 | Findings | Disposition |
 |---|---|

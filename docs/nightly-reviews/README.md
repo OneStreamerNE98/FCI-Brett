@@ -6,7 +6,7 @@ elastic: skip, repeat, or pause freely). Each night: automated layout/static
 scans gather measured evidence first, then 2–3 focused review lenses
 adjudicate it, every substantive finding is adversarially verified, and the
 night ends with a summary page here plus ready-to-fire fix tasks for the
-morning. Findings ledger: [`../nightly-review-2026-07-findings.md`](../nightly-review-2026-07-findings.md).
+morning. Findings ledger: [`../nightly-review-2026-07-findings.md`](../ledger/nightly-review-2026-07-findings.md).
 
 **Specs for the six un-run nights (2–5, 9, 10) are in
 [`SPECS.md`](SPECS.md)** — enshrined July 30, 2026 on the owner's decision.

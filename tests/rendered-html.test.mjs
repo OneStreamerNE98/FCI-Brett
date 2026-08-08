@@ -923,7 +923,7 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
     read("app/FloorOpsApp.tsx"),
     read("app/components/operations/OperationsPrimitives.tsx"),
     read("app/globals.css"),
-    read("docs/full-review-2026-07-21-findings.md"),
+    read("docs/ledger/full-review-2026-07-21-findings.md"),
   ]);
   const overview = sourceSection(app, "function Overview", "function ReportBarRow", "Overview metric section");
   const reports = sourceSection(app, "function ReportsView", "function SettingsView", "Reports metric section");

@@ -44,7 +44,7 @@ on the "undeployed" label below).
 
 For the ordered owner procedure — including the build stamp, issue-comment template, and
 on-screen verification — use the
-[`deployment runbook`](runbooks/deployment.md). This ledger explains what is true; the
+[`deployment runbook`](../runbooks/deployment.md). This ledger explains what is true; the
 runbook explains what to do.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
@@ -82,7 +82,7 @@ below, which also covers the state of GitHub itself (issues/PRs).
   `AI-*` AI assistant & automation · `EDIT-*` record editing (see
   [`# Record editing (EDIT)`](#record-editing-edit)) · `HINT-*` in-app guidance ·
   `OIDC-*` BE-04 post-merge security follow-ups (in
-  [`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md)).
+  [`docs/ledger/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md)).
   Dependencies are listed per item.
 
 ## Global guardrails (include in every packet)
@@ -150,7 +150,7 @@ below, which also covers the state of GitHub itself (issues/PRs).
    authority model only — the hashes, the pinned selectors, and the three-suite
    requirement are unchanged. Never paste a new digest in to make a suite pass.
 8. Visual/design remediation through PR #30 is included in private Sites development
-   version 40 and is tracked in `docs/design-critique-fix-plan.md`. The source-only
+   version 40 and is tracked in `docs/ledger/design-critique-fix-plan.md`. The source-only
    `codex/actionable-lists` Phase 3 slice is complete in PR #33 and is not deployed.
    The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed.
    SET-02 is complete in PR #37, KPI-01 is complete in PR #41, and SET-03/SET-04 are
@@ -323,7 +323,7 @@ this route. Do NOT touch `db/schema.ts` or drizzle history; record
 infrastructure, sessions, and user admission remain unapplied. **Post-merge security review
 found a launch-blocking callback issue that PR #48 resolved, plus remaining hardening,
 test, and documentation gaps — see
-[`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md) (packets
+[`docs/ledger/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md) (packets
 OIDC-02..OIDC-04).**
 
 **Why (at packet start):** The single largest production gap was that the Cloud Run image
@@ -471,7 +471,7 @@ Retry-After + security-audit event; configurable via production-config, fail-clo
 defaults. Dev: light fixed-window per office user on the four cost routes. Document.
 **Accept:** threshold tests (429 + audit event); under-threshold byte-identical.
 
-**Implementation record:** [Request rate limiting](specs/request-rate-limiting.md) pins the
+**Implementation record:** [Request rate limiting](../specs/request-rate-limiting.md) pins the
 two surface contracts, production configuration bounds, audit evidence, and per-instance
 deployment limitation.
 
@@ -658,7 +658,7 @@ shipped through at least one surface.
 unbuildable: EDIT-05 deferred project `status` to a who-may-edit answer that did not exist, and
 EDIT-06's Accept criterion cited an archive-only decision that had never been made. Also recorded
 as owner-decision rows in
-[`task-checklists/06-20-user-operating-model-and-access.md`](task-checklists/06-20-user-operating-model-and-access.md).
+[`task-checklists/06-20-user-operating-model-and-access.md`](../task-checklists/06-20-user-operating-model-and-access.md).
 
 1. **Who may edit — everyone edits; money and status are Administrator-only.** Any office user may
    change descriptive fields (names, sites, contacts, next actions, notes). **Administrator-only on
@@ -1339,7 +1339,7 @@ appProperties) vs discardable (oauth attempts, sync state).
 (`calendars.insert`/`calendarList.list`), which the current consent does not hold
 (`calendar.events` only). Adding it is a consent-surface expansion the owner must
 approve under checklist-02 scope-review discipline; the app never widens consent
-silently. See [dashboard workspace setup design](specs/dashboard-workspace-setup-design.md).
+silently. See [dashboard workspace setup design](../specs/dashboard-workspace-setup-design.md).
 **Do (owner, guided):** Review the scope-addition rationale (calendar creation and
 listing from the setup dashboard); confirm the connector OAuth client's consent screen
 lists the calendar scope (the two OAuth clients are never merged); set
@@ -1354,7 +1354,7 @@ reauthorization pair; no other scope changed; checklist-02 row checked with a da
 autocomplete) use API keys, not the connector OAuth account, and require a billing
 account on the Google Cloud project. The owner budget is ≤$50/month; expected actual
 usage is ~$0–10/month inside free tiers, and a budget alert enforces the ceiling. See
-[Google integration opportunities](briefs/google-integration-opportunities.md) — this file
+[Google integration opportunities](../briefs/google-integration-opportunities.md) — this file
 lives at `docs/`, adjust the relative link if moved.
 **Do (owner, guided):** Attach a company-controlled Cloud Billing account to the
 verified development project (checklist 02); enable Maps Embed API, Address Validation
@@ -1914,7 +1914,7 @@ card's sentence may say so.
 ### SET-13 · Workspace resource registry + effective-config layer + resources card (large, after completed SET-03+04+10) — FIRST in the dashboard-setup feature
 **Status:** Complete — PR #76, July 21, 2026. Source-only and undeployed; migration 0013 has not been applied to Sites.
 
-**Why:** Owner-approved direction ([design doc](specs/dashboard-workspace-setup-design.md)):
+**Why:** Owner-approved direction ([design doc](../specs/dashboard-workspace-setup-design.md)):
 dashboard-created resource IDs persist app-side and become runtime-authoritative with
 env fallback and a visible source badge. Today `authorize` gates on `oauthReady`, which
 requires resource-ID env vars — so nothing can be created from the dashboard because
@@ -2916,7 +2916,7 @@ format). Effort: small.
 
 Goal: tighten the app's integration with Google products the company already pays for,
 selected from the adopted
-[Google integration opportunities](briefs/google-integration-opportunities.md) research
+[Google integration opportunities](../briefs/google-integration-opportunities.md) research
 (owner budget ≤$50/month; the whole workstream is expected to cost ~$0–10/month
 actual). Every packet is source-only, simulation-testable, and owner-gated for any new
 scope, API key, or billing attachment. GI packets follow the same guardrails, status
@@ -3118,7 +3118,7 @@ packets that are merged, including PRs #51, #53, and #66, are undeployed. Delive
 not become a separate task source of truth.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
-`docs/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
+`docs/ledger/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
 
 1. Items without a status line remain **Open**. When an agent starts an item it adds a status
    line in its own PR and updates that line on merge.
@@ -3155,7 +3155,7 @@ not become a separate task source of truth.
 | Surface | Role | Rule |
 |---|---|---|
 | This document | Active agent work for architecture / Workspace / Setup-UI | Status lines updated per PR (rules above) |
-| `docs/design-critique-fix-plan.md` | UI remediation ledger (PRs #24–#30) | Already canonical; SET work updates the relevant Phase 3/4 entries |
+| `docs/ledger/design-critique-fix-plan.md` | UI remediation ledger (PRs #24–#30) | Already canonical; SET work updates the relevant Phase 3/4 entries |
 | `docs/task-checklists/*` | **Owner-facing** setup, connection, acceptance, and operations checkboxes | Owners check boxes; agents only fix stale facts (BE-01) or add evidence templates (WS-11) |
 | `docs/reviews/complete-product-and-google-cloud-architecture-audit.md` roadmap | Architecture branch history and gates | TRK-01 cross-references its open items to BE/WS ids |
 | `README.md` "Prioritized next work" | Entry point / pointer | BE-01 fixes its content; TRK-01 makes it point to the ledgers instead of duplicating them |
@@ -3398,9 +3398,9 @@ executes, and leave one truth.
 **Do (narrowed August 3, 2026 — two sub-items struck as already delivered: the
 editor-editing-state axe extension exists twice, `tests/e2e/page-layouts.spec.ts:176`
 and `:701`, and the findings-ledger FIX-08 disposition is already recorded,
-`docs/full-review-2026-07-21-findings.md:301-302`):** commit the approved 1280/390
+`docs/ledger/full-review-2026-07-21-findings.md:301-302`):** commit the approved 1280/390
 reference screenshots of the durable routes on the post-series frame; add one
-notifications-popover axe assertion; update `docs/design-critique-fix-plan.md`
+notifications-popover axe assertion; update `docs/ledger/design-critique-fix-plan.md`
 (Phase 3/4 closed with PR references); reconcile all DES statuses. Residue is the
 reference screenshots plus the one notifications-popover axe assertion only.
 **Accept:** ledgers agree with reality; screenshots committed; guard suite
@@ -4286,7 +4286,7 @@ so it dispatches after AI-11(c) merges.
 ### The August 4 responsive-layout audit series (DES-19…DES-24)
 
 Filed from the owner-commissioned Opus audit committed verbatim at
-[`docs/design-reviews/2026-08-04-responsive-layout-audit.md`](design-reviews/2026-08-04-responsive-layout-audit.md)
+[`docs/design-reviews/2026-08-04-responsive-layout-audit.md`](../design-reviews/2026-08-04-responsive-layout-audit.md)
 (Figma evidence board linked there). Each packet cites its audit section rather than
 duplicating it — the audit is the evidence record; these packets are the work orders.
 All six honor the usability acceptance lens and the Apple direction recorded under
@@ -4714,7 +4714,7 @@ handler) — mutation-tested with a synthetic send call. Reconcile
 update `docs/briefs/meeting-notes-and-otter.md` for the phone-call type, flip all AI
 statuses, and update Sequencing at a glance + the FloorOpsApp queue appendix.
 **Files:** `tests/ai-outbound-guard.test.mjs`, `docs/specs/ai-assistant-spec.md`,
-`docs/agent-plan-architecture-workspace-and-setup.md`,
+`docs/ledger/agent-plan-architecture-workspace-and-setup.md`,
 `docs/briefs/meeting-notes-and-otter.md`.
 **Accept:** guard fails on a synthetic send-call injection; ledgers agree
 with reality; every Tier-2 entry names its gate; `npm test` green.
@@ -5304,7 +5304,7 @@ paragraph.**
 **Design-remediation wave order (approved July 21, 2026 — anti-rework):** the
 full-codebase review and the settings redesign run in four waves so nothing is built
 twice. **R1** — full-review foundation fix packets (FIX-01…FIX-06 plus FIX-10 in
-`docs/full-review-2026-07-21-findings.md`) that touch shared primitives, config
+`docs/ledger/full-review-2026-07-21-findings.md`) that touch shared primitives, config
 layering, or test infrastructure. **R1 completed July 22, 2026 (PRs #95–#112,
 reviewed and flipped), so R2 is unblocked and active.**
 **R2** — the SET-29 → SET-34 stage-shell series (design authority:
@@ -5480,7 +5480,7 @@ FloorOpsApp queue ships it, and the later one consumes it and records that it di
 ## Enhancement & follow-up backlog (single home — added July 28, 2026, owner request)
 
 The owner's product-level roadmap remains
-[`docs/archive/ui-and-product-readiness-review.md`](archive/ui-and-product-readiness-review.md) (steps 1–13,
+[`docs/archive/ui-and-product-readiness-review.md`](../archive/ui-and-product-readiness-review.md) (steps 1–13,
 "Next: lead-to-closeout operations", "Later: automation and intelligence") — this section does
 NOT copy it. It is the single home for **review-born and research-born items that would
 otherwise be owned by nobody**. Rules: each item is ONE line + a pointer; when an item gains a
@@ -5508,7 +5508,7 @@ remain the only dispatch authority).
 - Client-status semantics (archived clients selectable in pickers; status is display-only
   everywhere) — enhancement candidate from the EDIT-05 review.
 - Gmail Workspace Add-on ("the flagship",
-  [`docs/briefs/google-integration-opportunities.md`](briefs/google-integration-opportunities.md)) — filing
+  [`docs/briefs/google-integration-opportunities.md`](../briefs/google-integration-opportunities.md)) — filing
   where staff already read mail; strategic option, not scheduled.
 
 **Orchestrator to-dos (not Codex):**

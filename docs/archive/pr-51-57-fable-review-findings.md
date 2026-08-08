@@ -1,5 +1,5 @@
 # Fable review findings: pull requests #51–#57
-> **Archived August 2026** — review complete; canonical status in [be04-oidc-review-and-followups.md](../be04-oidc-review-and-followups.md) and [the agent plan](../agent-plan-architecture-workspace-and-setup.md); retained for history.
+> **Archived August 2026** — review complete; canonical status in [be04-oidc-review-and-followups.md](../ledger/be04-oidc-review-and-followups.md) and [the agent plan](../ledger/agent-plan-architecture-workspace-and-setup.md); retained for history.
 
 Review date: July 20, 2026 · Reviewer: Claude Fable (multi-agent, adversarially
 verified) · Input: [PR #51–#57 review handoff](pr-51-57-claude-fable-review-handoff.md) ·
@@ -7,8 +7,8 @@ Baseline: `main` after PR #58 (`c955d91`) · Follow-ups section revised July 20,
 after a completeness audit of the review record.
 
 > **Snapshot scope:** review record and follow-up instructions, not a status ledger.
-> Canonical status lives in the [agent execution plan](../agent-plan-architecture-workspace-and-setup.md)
-> and the [OIDC follow-up ledger](../be04-oidc-review-and-followups.md).
+> Canonical status lives in the [agent execution plan](../ledger/agent-plan-architecture-workspace-and-setup.md)
+> and the [OIDC follow-up ledger](../ledger/be04-oidc-review-and-followups.md).
 
 ## Verdict
 
