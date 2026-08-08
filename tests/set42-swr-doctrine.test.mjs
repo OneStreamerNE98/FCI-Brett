@@ -427,10 +427,11 @@ test("the scheduler law is enforced across every client-reachable module, not ju
       // so an open tab stops calling yesterday "today" is UI correctness, not a
       // scheduler.
       { label: "app/assistant/components/TodayPanel.tsx", functionName: "TodayPanel", timer: "setTimeout" },
+      // Toast-queue auto-dismiss: removes rendered messages independently and
+      // issues no request. DES-17 moved this timer out of the app shell.
+      { label: "app/components/AppNotifications.tsx", functionName: "useNotificationQueue", timer: "setTimeout" },
       // Typeahead debounce: delays a keystroke-driven request the user started.
       { label: "app/features/address-validation/AddressValidationField.tsx", functionName: "AddressValidationField", timer: "setTimeout" },
-      // Toast auto-dismiss: removes a rendered message, issues no request.
-      { label: "app/FloorOpsApp.tsx", functionName: "FloorOpsApp", timer: "setTimeout" },
       // Wall-clock display tick: re-renders a shown time, issues no request.
       { label: "app/FloorOpsApp.tsx", functionName: "Overview", timer: "setInterval" },
       // Day-rollover refresh for the dashboard snapshot; same ruling as above.
@@ -513,9 +514,10 @@ test("terminal authorization failures clear every custom materialized privileged
 });
 
 test("mutation invalidations refresh dependent projections and explicit retries bypass cached failures", async () => {
-  const [cache, app, directory, inbox, google, driveActions, reconcile, tasks, today, importCard, blueprint, access, activity] = await Promise.all([
+  const [cache, app, projectMeetings, directory, inbox, google, driveActions, reconcile, tasks, today, importCard, blueprint, access, activity] = await Promise.all([
     read("app/lib/client-get-cache.ts"),
     read("app/FloorOpsApp.tsx"),
+    read("app/projects/components/ProjectMeetings.tsx"),
     read("app/settings/components/DirectorySyncPanel.tsx"),
     read("app/inbox/components/InboxView.tsx"),
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
@@ -536,7 +538,7 @@ test("mutation invalidations refresh dependent projections and explicit retries 
   assert.match(today, /load\(\{ force: true \}\)/u);
   assert.match(importCard, /loadStatus\(undefined, false, true\)/u);
   assert.match(app, /refreshDirectoryData\(false, true\)/u);
-  assert.match(app, /loadMeetings\(false, true\)/u);
+  assert.match(projectMeetings, /loadMeetings\(false, true\)/u);
   assert.match(blueprint, /loadBlueprint\(true\) : saveBlueprint\(\)/u);
   assert.match(
     blueprint,
@@ -585,10 +587,11 @@ test("mutation invalidations refresh dependent projections and explicit retries 
 });
 
 test("sliding audit windows, stage verification readers, and editor snapshots stay explicit", async () => {
-  const [activity, google, app] = await Promise.all([
+  const [activity, google, projectDrawer, clientDrawer] = await Promise.all([
     read("app/management/access/AdminActivityPanel.tsx"),
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
-    read("app/FloorOpsApp.tsx"),
+    read("app/projects/components/ProjectDrawer.tsx"),
+    read("app/clients/components/ClientDrawer.tsx"),
   ]);
   assert.match(activity, /useClientLifecycleRefresh\([\s\S]{0,600}requestFor\(appliedFilters\)[\s\S]{0,400}loadPage\(nextRequest, null, false, appliedFilters, false, loadedPageCount\.current\)/u);
   // A background revalidation refreshes the window the administrator has open.
@@ -601,9 +604,9 @@ test("sliding audit windows, stage verification readers, and editor snapshots st
   // lifecycle refetch — the enrollment rule itself is pinned repo-wide below.
   assert.match(google, /readStageFourVerification<\{ labelReady\?: boolean; testEmailPassed\?: boolean \}>\(\s*"\/api\/v1\/integrations\/google\/gmail\/messages\?label=needs-review&verification=status",/u);
   assert.match(google, /\/calendar\/events\?verification=status/u);
-  assert.match(app, /editingSnapshot && <ProjectEditModal project=\{editingSnapshot\}/u);
-  assert.match(app, /editingClientSnapshot && <ClientEditModal client=\{editingClientSnapshot\}/u);
-  assert.match(app, /editingContactSnapshot && <ContactEditModal client=\{editingContactSnapshot\}/u);
+  assert.match(projectDrawer, /editingSnapshot && <ProjectEditModal project=\{editingSnapshot\}/u);
+  assert.match(clientDrawer, /editingClientSnapshot && <ClientEditModal client=\{editingClientSnapshot\}/u);
+  assert.match(clientDrawer, /editingContactSnapshot && <ContactEditModal client=\{editingContactSnapshot\}/u);
 });
 
 test("failure-recovery reads converge on the shared notice primitive", async () => {
@@ -618,7 +621,7 @@ test("failure-recovery reads converge on the shared notice primitive", async () 
     { name: "Google Sheets status", path: "app/settings/components/GoogleWorkspacePanel.tsx", pattern: /sheetsStatusError[\s\S]{0,220}<ClientDataNotice\b/u },
     { name: "Workspace resources", path: "app/settings/components/WorkspaceDriveResourceActions.tsx", pattern: /resourcesError && <ClientDataNotice\b/u },
     { name: "live directory", path: "app/FloorOpsApp.tsx", pattern: /function LiveDataBanner[\s\S]{0,500}return <ClientDataNotice\b/u },
-    { name: "project meetings", path: "app/FloorOpsApp.tsx", pattern: /function ProjectMeetings[\s\S]{0,3000}error \? <ClientDataNotice\b/u },
+    { name: "project meetings", path: "app/projects/components/ProjectMeetings.tsx", pattern: /function ProjectMeetings[\s\S]{0,3000}error \? <ClientDataNotice\b/u },
     { name: "Inbox connection", path: "app/inbox/components/InboxView.tsx", pattern: /error && <ClientDataNotice[\s\S]{0,500}retryLabel="Retry connection"/u },
   ];
   assert.equal(recoverySurfaces.length, 12, "the original twelve recovery surfaces must stay explicit");
@@ -631,9 +634,10 @@ test("failure-recovery reads converge on the shared notice primitive", async () 
   }
 
   const app = sourceByPath.get("app/FloorOpsApp.tsx") ?? "";
+  const projectMeetings = sourceByPath.get("app/projects/components/ProjectMeetings.tsx") ?? "";
   const inbox = sourceByPath.get("app/inbox/components/InboxView.tsx") ?? "";
   assert.doesNotMatch(app, /function LiveDataBanner[\s\S]{0,500}<section[\s\S]{0,300}>Try again</u);
-  assert.doesNotMatch(app, /error \? <OperationsEmptyState[^>]+tone="error"[\s\S]{0,300}>Try again</u);
+  assert.doesNotMatch(projectMeetings, /error \? <OperationsEmptyState[^>]+tone="error"[\s\S]{0,300}>Try again</u);
   assert.doesNotMatch(inbox, /error && <button[\s\S]{0,220}Retry connection/u);
   assert.doesNotMatch(inbox, /error && <p className="workspace-missing">\{error\}<\/p>/u);
 

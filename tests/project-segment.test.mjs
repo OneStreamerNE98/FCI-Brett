@@ -44,9 +44,10 @@ test("the D1 route strips the private industry join and resolves every public se
 });
 
 test("the optional creation tap stays closed and leaving it untouched reaches server defaulting", async () => {
-  const [selector, app] = await Promise.all([
+  const [selector, app, projectModals] = await Promise.all([
     read("app/features/projects/ProjectSegmentSelector.tsx"),
     read("app/FloorOpsApp.tsx"),
+    read("app/projects/components/ProjectModals.tsx"),
   ]);
 
   assert.match(selector, /PROJECT_SEGMENTS\.map/u);
@@ -55,5 +56,5 @@ test("the optional creation tap stays closed and leaving it untouched reaches se
   assert.equal(selector.match(/name="segment"/gu)?.length, 2);
   assert.doesNotMatch(selector, /\brequired\b|\bdefaultChecked\b/u);
   assert.match(app, /segment: project\.segment \?\? undefined/u);
-  assert.match(app, /const segment = normalizeProjectSegment\(form\.get\("segment"\)\)/u);
+  assert.match(projectModals, /const segment = normalizeProjectSegment\(form\.get\("segment"\)\)/u);
 });

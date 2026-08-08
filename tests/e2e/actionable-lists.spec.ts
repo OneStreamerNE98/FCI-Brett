@@ -199,10 +199,14 @@ test("empty record responses keep messages outside empty actionable lists", asyn
   await expect(page.getByRole("list", { name: "Lead pipeline records" })).toHaveCount(0);
 
   await page.goto("/clients");
-  await expect(page.getByText("No clients yet. Add the first client to create the live directory.", { exact: true })).toBeVisible();
+  const emptyClients = page.locator(".client-directory .empty-table");
+  await expect(emptyClients).toContainText("No clients yet. Add the first client to create the live directory.");
+  await expect(emptyClients.getByRole("button", { name: "Add client", exact: true })).toBeVisible();
   await expect(page.getByRole("list", { name: "Client directory" }).getByRole("button")).toHaveCount(0);
 
   await page.goto("/projects");
-  await expect(page.getByText("No active projects yet.", { exact: true })).toBeVisible();
+  const emptyProjects = page.locator(".projects-table .empty-table");
+  await expect(emptyProjects).toContainText("No active projects yet.");
+  await expect(emptyProjects.getByRole("button", { name: "New project", exact: true })).toBeVisible();
   await expect(page.getByRole("list", { name: "Projects" }).getByRole("button")).toHaveCount(0);
 });

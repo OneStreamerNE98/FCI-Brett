@@ -58,11 +58,16 @@ function sourceSection(source, startName, endName) {
 }
 
 test("HINT-02-B mounts only the five recommended modal hints with verbatim audited copy", async () => {
-  const source = await read("app/FloorOpsApp.tsx");
+  const [leadSource, clientSource, projectSource] = await Promise.all([
+    read("app/leads/components/LeadModal.tsx"),
+    read("app/clients/components/ClientModals.tsx"),
+    read("app/projects/components/ProjectModals.tsx"),
+  ]);
+  const source = `${leadSource}\n${clientSource}\n${projectSource}`;
   const sections = new Map([
-    ["LeadModal", sourceSection(source, "LeadModal", "ClientModal")],
-    ["ClientModal", sourceSection(source, "ClientModal", "ClientEditModal")],
-    ["NewProjectModal", sourceSection(source, "NewProjectModal", "LeadDrawer")],
+    ["LeadModal", leadSource],
+    ["ClientModal", sourceSection(clientSource, "ClientModal", "ClientEditModal")],
+    ["NewProjectModal", sourceSection(projectSource, "NewProjectModal", "ProjectEditModal")],
   ]);
   const previousFormsAuditHintCount = 7;
   const formsAuditHintBudget = 20;
@@ -73,7 +78,9 @@ test("HINT-02-B mounts only the five recommended modal hints with verbatim audit
     previousFormsAuditHintCount + hints.length <= formsAuditHintBudget,
     "the forms-audit initiative budget must stay at or below 20 new hints",
   );
-  assert.match(source, /import \{ WorkspaceInfoHint \} from "\.\/components\/WorkspaceInfoHint";/u);
+  for (const modalSource of [leadSource, clientSource, projectSource]) {
+    assert.match(modalSource, /import \{ WorkspaceInfoHint \} from "\.\.\/\.\.\/components\/WorkspaceInfoHint";/u);
+  }
 
   for (const hint of hints) {
     assert.match(
@@ -105,11 +112,14 @@ test("HINT-02-B mounts only the five recommended modal hints with verbatim audit
 });
 
 test("optional, rejected, and label-fix rows remain outside HINT-02-B", async () => {
-  const source = await read("app/FloorOpsApp.tsx");
-  const leadModal = sourceSection(source, "LeadModal", "ClientModal");
-  const clientModal = sourceSection(source, "ClientModal", "ClientEditModal");
-  const newProjectModal = sourceSection(source, "NewProjectModal", "LeadDrawer");
-  const followUpResultModal = sourceSection(source, "FollowUpResultModal", "MeetingModal");
+  const [leadModal, clientSource, projectSource] = await Promise.all([
+    read("app/leads/components/LeadModal.tsx"),
+    read("app/clients/components/ClientModals.tsx"),
+    read("app/projects/components/ProjectModals.tsx"),
+  ]);
+  const clientModal = sourceSection(clientSource, "ClientModal", "ClientEditModal");
+  const newProjectModal = sourceSection(projectSource, "NewProjectModal", "ProjectEditModal");
+  const followUpResultModal = projectSource.slice(projectSource.indexOf("export function FollowUpResultModal"));
 
   assert.doesNotMatch(leadModal, /About lead source|About next action/u);
   assert.doesNotMatch(clientModal, /About industry/u);

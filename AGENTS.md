@@ -152,10 +152,11 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   `app/FloorOpsApp.tsx` single-file queue rule is the canonical example, and its queue
   order appendix is the claim list — a packet that adds a `FloorOpsApp.tsx` change must
   add itself there in the same PR. That slot scopes only what remains in the file: the
-  app shell and navigation, Overview, Reports, Settings dispatch, and the modal/drawer
-  cluster until DES-14b lands. Extracted record views (`LeadsView`, `ClientsView`,
-  `ProjectsView`, and `ScheduleView`) exit the queue permanently; work confined to those
-  modules does not claim the `FloorOpsApp.tsx` slot.
+  app shell and navigation, Overview, Reports, Settings dispatch, and the record
+  controller/data-fetch functions until a later extraction moves them. Modal/drawer
+  overlays and all extracted record surfaces (`LeadsView`, `ClientsView`, `ProjectsView`,
+  and `ScheduleView`) exit the queue permanently; work confined to those modules does not
+  claim the `app/FloorOpsApp.tsx` slot.
 - **A packet is available if and only if it has no status line.** Prose lists of
   "unclaimed packets" are historical narrative and have gone stale repeatedly; the status
   lines are the only dispatch authority. (The ledger guard also enforces heading grammar

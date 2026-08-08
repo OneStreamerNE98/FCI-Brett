@@ -50,6 +50,6 @@ export function ClientsView({ clients, state, projectCounts, onAdd, onClient, on
         <span className="client-project-count"><b>{projectCount}</b><small>{projectCount === 1 ? "project" : "projects"}</small></span>
         <ChevronRight size={17} aria-hidden="true" />
       </OperationsActionableListItem>})}
-    </OperationsActionableList>{clients.length === 0 && state === "ready" ? <OperationsEmptyState variant="table">No clients yet. Add the first client to create the live directory.</OperationsEmptyState> : visibleClients.length === 0 && state === "ready" ? <OperationsEmptyState variant="table">No clients match “{clientFilter.trim()}”.</OperationsEmptyState> : null}</div>
+    </OperationsActionableList>{clients.length === 0 && state === "ready" ? <OperationsEmptyState variant="table" action={<button className="primary-button" type="button" onClick={onAdd}><Plus size={16} /> Add client</button>}>No clients yet. Add the first client to create the live directory.</OperationsEmptyState> : visibleClients.length === 0 && state === "ready" ? <OperationsEmptyState variant="table" action={<button className="soft-button" type="button" onClick={() => setClientFilter("")}>Clear search</button>}>No clients match “{clientFilter.trim()}”.</OperationsEmptyState> : null}</div>
   </>;
 }

@@ -21,11 +21,18 @@ const appSurfacePaths = [
   "app/assistant/components/TaskManagementPanel.tsx",
   "app/assistant/components/AssistantView.tsx",
   "app/assistant/components/TodayPanel.tsx",
+  "app/clients/components/ClientDrawer.tsx",
+  "app/clients/components/ClientModals.tsx",
   "app/clients/components/ClientsView.tsx",
   "app/inbox/components/GmailReplyModal.tsx",
   "app/inbox/components/InboxView.tsx",
+  "app/leads/components/LeadDrawer.tsx",
+  "app/leads/components/LeadModal.tsx",
   "app/leads/components/LeadsView.tsx",
+  "app/projects/components/ProjectDrawer.tsx",
   "app/projects/components/ProjectFilesPanel.tsx",
+  "app/projects/components/ProjectMeetings.tsx",
+  "app/projects/components/ProjectModals.tsx",
   "app/projects/components/ProjectsView.tsx",
   "app/schedule/components/ScheduleView.tsx",
   "app/settings/components/AiAssistantSettingsCard.tsx",
@@ -161,7 +168,7 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(layout, /fci-app-icon-master\.svg/);
   assert.match(layout, /fci-app-icon-master\.png/);
   assert.match(layout, /shortcut: "\/fci-app-icon-master\.svg"/);
-  assert.match(layout, /<body>\s*<ClientDataFreshnessBoundary \/>/u);
+  assert.match(layout, /<body>\s*<AppErrorBoundary>\s*<ClientDataFreshnessBoundary \/>\s*\{children\}\s*<\/AppErrorBoundary>/u);
   assert.doesNotMatch(layout, /next\/font|DM_Sans|Manrope|--font-body|--font-display/u);
   assert.match(app, /Leads & opportunities/);
   assert.match(app, /Schedule & crews/);
@@ -978,7 +985,7 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
 // DES-07 keeps these structure-level pins separate from neighboring packet guards.
 test("DES-07 unifies operation metrics, empty states, and pill aliases", async () => {
   const [app, recordViews, assistantView, inboxView, primitives, businessKpis, featureStateBadge, css, appComponents] = await Promise.all([
-    read("app/FloorOpsApp.tsx"),
+    readAppSurface(),
     Promise.all([
       read("app/leads/components/LeadsView.tsx"),
       read("app/clients/components/ClientsView.tsx"),
@@ -1127,7 +1134,7 @@ test("captures durable project meetings and bounded Otter evidence", async () =>
 
 test("SET-22 provides an office-safe Project Files tab with honest catalog states and focused success", async () => {
   const [app, projectFiles, projectFilesRoute, projectFilesCss, editor, resourcesRoute, workspaceStepper] = await Promise.all([
-    read("app/FloorOpsApp.tsx"),
+    read("app/projects/components/ProjectDrawer.tsx"),
     read("app/projects/components/ProjectFilesPanel.tsx"),
     read("app/api/v1/projects/[projectId]/drive/files/route.ts"),
     read("app/projects/components/ProjectFilesPanel.module.css"),
@@ -1136,7 +1143,7 @@ test("SET-22 provides an office-safe Project Files tab with honest catalog state
     read("tests/e2e/workspace-setup-stepper.spec.ts"),
   ]);
 
-  assert.match(app, /import \{ ProjectFileCreationModal, ProjectFilesPanel, useProjectFilesController \} from "\.\/projects\/components\/ProjectFilesPanel"/);
+  assert.match(app, /import \{ ProjectFileCreationModal, ProjectFilesPanel, useProjectFilesController \} from "\.\/ProjectFilesPanel"/);
   assert.match(app, /\(\["Overview", "Files", "Meetings"\] as const\)/);
   assert.match(app, /tab === "Files"[\s\S]*?<ProjectFilesPanel controller=\{projectFiles\} newDocumentTriggerRef=\{projectFilesTriggerRef\}/);
   assert.match(app, /<ProjectFileCreationModal catalog=\{projectFiles\.catalogState\.catalog\}/);
