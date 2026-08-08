@@ -1,4 +1,5 @@
 # Moving this work into the Floor Coverings International Codex project
+> **Archived August 2026** — superseded by [codex-to-codex-handoff.md](../codex-to-codex-handoff.md); retained for history.
 
 > **Historical record — July 2026** (banner added July 24, 2026). This documented a
 > one-time move of the work into a local Codex project on the owner's machine. Live

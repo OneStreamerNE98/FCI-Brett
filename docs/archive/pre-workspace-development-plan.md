@@ -1,4 +1,5 @@
 # Pre-Workspace development plan
+> **Archived August 2026** — superseded by [the agent plan](../agent-plan-architecture-workspace-and-setup.md) and [task-checklists](../task-checklists/); retained for history.
 
 Reviewed: July 14, 2026
 Audience: Business owner, Workspace administrator, product owner, and developers

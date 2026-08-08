@@ -1,4 +1,5 @@
 # FCI Operations UI and product-readiness review
+> **Archived August 2026** — historical review; current status lives in [the agent plan](../agent-plan-architecture-workspace-and-setup.md); retained for history.
 
 Reviewed: July 2026
 

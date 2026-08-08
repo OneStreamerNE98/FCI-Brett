@@ -1,4 +1,5 @@
 # Claude/Fable review handoff: pull requests #51–#57
+> **Archived August 2026** — completed one-shot assignment; outcome in [pr-51-57-fable-review-findings.md](pr-51-57-fable-review-findings.md); retained for history.
 
 Snapshot date: July 20, 2026  
 Repository: [`OneStreamerNE98/FCI-Brett`](https://github.com/OneStreamerNE98/FCI-Brett)  
