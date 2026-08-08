@@ -36,14 +36,14 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 - [nightly-review-2026-07-findings.md](nightly-review-2026-07-findings.md) — the rolling nightly-program ledger (N-findings, NFIX packets).
 - [infohint-audit-2026-07-24.md](infohint-audit-2026-07-24.md) — the curated forms-only (i)-hint table (Workstream H authority).
 - [design-critique-fix-plan.md](design-critique-fix-plan.md) — the earlier design-critique ledger (phases A/B).
-- [ui-and-product-readiness-review.md](ui-and-product-readiness-review.md) · [development-section-audit.md](development-section-audit.md) · [pr-51-57-fable-review-findings.md](pr-51-57-fable-review-findings.md) — earlier review artifacts.
+- [ui-and-product-readiness-review.md](archive/ui-and-product-readiness-review.md) · [development-section-audit.md](archive/development-section-audit.md) · [pr-51-57-fable-review-findings.md](archive/pr-51-57-fable-review-findings.md) — earlier review artifacts.
 
 ## Agent operations (the packet system)
 
 - [../AGENTS.md](../AGENTS.md) — the repository operating contract for every agent and human contributor: roles, required workflow, and multi-agent coordination rules. (Added to the index July 24, 2026.)
 - [agent-plan-architecture-workspace-and-setup.md](agent-plan-architecture-workspace-and-setup.md) — THE ledger: every workstream, packet, status, and sequencing rule.
 - [be04-oidc-review-and-followups.md](be04-oidc-review-and-followups.md) — the OIDC packet series.
-- [codex-project-handoff.md](codex-project-handoff.md) · [codex-to-codex-handoff.md](codex-to-codex-handoff.md) · [pr-51-57-claude-fable-review-handoff.md](pr-51-57-claude-fable-review-handoff.md) — agent handoff records.
+- [codex-project-handoff.md](archive/codex-project-handoff.md) · [codex-to-codex-handoff.md](codex-to-codex-handoff.md) · [pr-51-57-claude-fable-review-handoff.md](archive/pr-51-57-claude-fable-review-handoff.md) — agent handoff records.
 
 ## Architecture & platform (developer reference)
 
@@ -53,7 +53,7 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 - [google-cloud-runtime-foundation.md](google-cloud-runtime-foundation.md) — the fail-closed Cloud Run image, private Cloud SQL connector, one-off migration command, and bounded core rehearsal. (Added to the index July 24, 2026.)
 - [google-workspace-organization.md](google-workspace-organization.md) · [google-workspace-watch-and-queue-design.md](google-workspace-watch-and-queue-design.md) · [google-chat-notifications.md](google-chat-notifications.md) · [google-integration-opportunities.md](google-integration-opportunities.md) — Google integration design.
 - [flooring-kpis.md](flooring-kpis.md) — the authoritative KPI definitions.
-- [request-rate-limiting.md](request-rate-limiting.md) · [authorization-simulation.md](authorization-simulation.md) · [administration-and-access-plan.md](administration-and-access-plan.md) · [collaboration-and-sharing.md](collaboration-and-sharing.md) · [portable-record-creation.md](portable-record-creation.md) · [pre-workspace-development-plan.md](pre-workspace-development-plan.md) — subsystem references.
+- [request-rate-limiting.md](request-rate-limiting.md) · [authorization-simulation.md](authorization-simulation.md) · [administration-and-access-plan.md](administration-and-access-plan.md) · [collaboration-and-sharing.md](collaboration-and-sharing.md) · [portable-record-creation.md](archive/portable-record-creation.md) · [pre-workspace-development-plan.md](archive/pre-workspace-development-plan.md) — subsystem references.
 
 ## Runbooks (operators)
 

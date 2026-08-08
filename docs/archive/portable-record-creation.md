@@ -1,4 +1,5 @@
 # Portable client and project creation
+> **Archived August 2026** — completed-slice record; superseded by [production-postgresql-foundation.md](../production-postgresql-foundation.md) and [production-postgresql-repositories.md](../production-postgresql-repositories.md); retained for history.
 
 Reviewed: July 13, 2026
 

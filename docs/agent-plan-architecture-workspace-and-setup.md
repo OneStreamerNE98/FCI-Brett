@@ -625,8 +625,8 @@ fields on every other record — cannot be changed once created. Research
 settled it as an **unbuilt gap, not a design boundary**: no repo document
 states a read-only or immutability principle, record editing appears under no
 "Deliberately omitted" list, and it is documented as missing in eight-plus
-docs (`docs/ui-and-product-readiness-review.md:111` carries it as prioritized
-step 7; `docs/development-section-audit.md:24` rates projects **Critical**,
+docs (`docs/archive/ui-and-product-readiness-review.md:112` carries it as prioritized
+step 7; `docs/archive/development-section-audit.md:25` rates projects **Critical**,
 leads and clients **High**). KPI-03 says it outright — the audited,
 admin-only "Assign to me" drawer action is named an **interim pattern**, not
 a policy. The only roadmap owner is row 17 of
@@ -692,7 +692,7 @@ as owner-decision rows in
 4. **Sequencing (owner decision, July 27, 2026): projects before leads.**
    EDIT-05 ships before EDIT-04. The previous cheapest-first order optimized
    for implementation cost; the owner's original report was project fields,
-   and `docs/development-section-audit.md` rates projects Critical vs leads
+   and `docs/archive/development-section-audit.md` rates projects Critical vs leads
    High. The FloorOpsApp queue appendix carries the full reordered claim
    order.
 
@@ -928,7 +928,7 @@ update validator, and there is **no contacts route of any kind** — so a
 client rename or an address correction is impossible after creation. Three
 fields are additionally unreachable even at create time:
 `primaryContact.phone`, `primaryContact.role`, and `status: "archived"`.
-`docs/development-section-audit.md:24` rates clients **High**.
+`docs/archive/development-section-audit.md:25` rates clients **High**.
 **Do:** add a per-client PATCH route and a contacts route, both fenced by
 `version` and validated by an EDIT-03-style patch validator; make the three
 unreachable fields reachable on both the create and the edit path so the two
@@ -3160,7 +3160,7 @@ not become a separate task source of truth.
 | `docs/complete-product-and-google-cloud-architecture-audit.md` roadmap | Architecture branch history and gates | TRK-01 cross-references its open items to BE/WS ids |
 | `README.md` "Prioritized next work" | Entry point / pointer | BE-01 fixes its content; TRK-01 makes it point to the ledgers instead of duplicating them |
 | `docs/administration-and-access-plan.md` | **Approved first-release access design** (fixed roles, five admin workflows, initial Administrators `admincrm@`/`brett@cherryhillfci.com`) | BE-04 and any access work must conform to it; do not re-open its decisions |
-| `docs/pre-workspace-development-plan.md` | What can start now vs. must wait for Workspace/credentials | Consistent with this plan's owner gate; TRK-01 cross-links it |
+| `docs/archive/pre-workspace-development-plan.md` | What can start now vs. must wait for Workspace/credentials | Consistent with this plan's owner gate; TRK-01 cross-links it |
 | `docs/20-user-product-and-architecture-review.md` | P0/P1/P2 findings, corrected delivery order, go/no-go gates | The gates govern second-user/real-data admission; BE/WS items map onto its delivery order |
 
 **Alignment rule:** `docs/task-checklists/README.md` remains an owner-facing dashboard and
@@ -5480,7 +5480,7 @@ FloorOpsApp queue ships it, and the later one consumes it and records that it di
 ## Enhancement & follow-up backlog (single home — added July 28, 2026, owner request)
 
 The owner's product-level roadmap remains
-[`docs/ui-and-product-readiness-review.md`](ui-and-product-readiness-review.md) (steps 1–13,
+[`docs/archive/ui-and-product-readiness-review.md`](archive/ui-and-product-readiness-review.md) (steps 1–13,
 "Next: lead-to-closeout operations", "Later: automation and intelligence") — this section does
 NOT copy it. It is the single home for **review-born and research-born items that would
 otherwise be owned by nobody**. Rules: each item is ONE line + a pointer; when an item gains a

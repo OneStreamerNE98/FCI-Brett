@@ -1,4 +1,5 @@
 # Development section audit
+> **Archived August 2026** — point-in-time audit (July 12, 2026); current status lives in [the agent plan](../agent-plan-architecture-workspace-and-setup.md); retained for history.
 
 Audit date: July 12, 2026
 Remediation pass: July 12, 2026

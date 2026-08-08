@@ -13,7 +13,7 @@ Start with [`docs/README.md`](docs/README.md), the audience-grouped index of eve
 5. `docs/agent-plan-architecture-workspace-and-setup.md`
 6. `docs/complete-product-and-google-cloud-architecture-audit.md`
 7. `docs/google-cloud-runtime-foundation.md`
-8. `docs/ui-and-product-readiness-review.md`
+8. `docs/archive/ui-and-product-readiness-review.md`
 9. `docs/google-workspace-rollout-guide.md`
 10. `docs/task-checklists/README.md`
 11. `docs/collaboration-and-sharing.md`
