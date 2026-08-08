@@ -1220,3 +1220,28 @@ test("AI-11(c) mounts the administrator label catalog inside the existing AI car
   assert.match(card, /Remove label/u);
   assert.doesNotMatch(floorOps, /assistant-label-catalog|ASSISTANT_LABELS_URL/u);
 });
+
+test("AI-11(d) mounts database-only review activity in the administrator AI card", async () => {
+  const [card, route, floorOps] = await Promise.all([
+    read("app/settings/components/AiAssistantSettingsCard.tsx"),
+    read("app/api/v1/inbox-analysis/activity/route.ts"),
+    read("app/FloorOpsApp.tsx"),
+  ]);
+  assert.match(card, /const ASSISTANT_ACTIVITY_URL = "\/api\/v1\/inbox-analysis\/activity"/u);
+  assert.match(card, /cachedGetJson<unknown>\(ASSISTANT_ACTIVITY_URL/u);
+  assert.match(card, /useCachedGetSubscription\(\s*\[ASSISTANT_ACTIVITY_URL\]/u);
+  assert.match(card, /if \(!isAdmin\) return Promise\.resolve\(undefined\)/u);
+  assert.match(card, /<h3 id="assistant-activity-title">Review activity<\/h3>/u);
+  assert.match(card, /Reviewed by <strong>\{row\.reviewedBy \?\? "not recorded"\}<\/strong>/u);
+  assert.match(card, /Some saved classification details are unavailable\./u);
+  assert.match(card, /No review activity yet/u);
+  assert.match(card, /Accepted totals use the category chosen\./u);
+  assert.doesNotMatch(card, /reviewed_by|mail item/u);
+  assert.doesNotMatch(card, />Label-definition version</u);
+  assert.doesNotMatch(card, /title=\{`Saved category:/u);
+  assert.match(route, /requireOfficeUser\(request, \{ admin: true \}\)/u);
+  assert.match(route, /repository\.listReviewActivity\(connectionKey, ACTIVITY_PAGE_LIMIT\)/u);
+  assert.match(route, /repository\.listReviewActivityLabelCounts/u);
+  assert.doesNotMatch(route, /getWorkspaceGmailClient|OpenAIResponsesProvider|globalThis\.fetch/u);
+  assert.doesNotMatch(floorOps, /ASSISTANT_ACTIVITY_URL|assistant-activity-title/u);
+});

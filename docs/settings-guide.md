@@ -391,6 +391,8 @@ The section also states what Inbox analysis saves: the email subject, sender, re
 
 Administrators can also manage the **Inbox analysis labels** in this section. Add a plain-language description and the app creates an opaque identifier; identifiers cannot be typed, edited, or reused. Descriptions remain editable. Removing an unused label deletes it, while removing a label already present in saved analysis retires it so older queue rows remain understandable. The catalog is capped at 20 labels, with 300 characters per description. Label text is treated as untrusted data and cannot contain the analysis prompt's section headings or code/JSON fences.
 
+The **Review activity** area reads saved app data only; opening it never contacts Gmail. It shows the newest accepted and dismissed suggestions, who made each decision, and whether the current or an earlier saved label set was used. Older rows without attribution say **not recorded**, and incomplete historical analysis stays visible with an unavailable-details notice instead of disappearing. Accepted totals use the one category the person chose. Dismissed totals count each distinct category suggested on a dismissed message. Rows without both recorded attribution and a catalog category remain visible in the history but are excluded from those per-category totals.
+
 ### 8. Data & security
 
 A plain-language summary of the safeguards already in place: review-first email filing, one administrator-approved Workspace connection (consumer Gmail accounts are rejected in live mode), isolated local simulation that never contacts Google, and the installable web app. It also includes phone-install guidance.

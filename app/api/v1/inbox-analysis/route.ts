@@ -1,7 +1,6 @@
 import { env } from "cloudflare:workers";
 import { NextRequest } from "next/server";
 import type { D1Database } from "../../../adapters/d1/d1-database";
-import { createD1AssistantLabelRepository } from "../../../adapters/d1/assistant-label-repository";
 import { createD1MailItemRepository } from "../../../adapters/d1/mail-item-repository";
 import {
   acquireWorkspaceSetupLease,
@@ -13,7 +12,6 @@ import { OpenAIResponsesProvider } from "../../../adapters/openai/responses-prov
 import {
   analyzeInboxMessage,
   eligibleInboxAnalysisProjects,
-  inboxAnalysisLabelDefinitionVersion,
   parseAssistantInboxAnalysis,
   type InboxAnalysis,
   type InboxAnalysisMessage,
@@ -48,6 +46,7 @@ import {
   getWorkspaceGmailClient,
   gmailErrorResponse,
 } from "../integrations/google/gmail/_route-helpers";
+import { readAssistantLabelCatalog } from "./_label-catalog";
 
 export const MAX_INBOX_ANALYSIS_BODY_BYTES = 8_000;
 export const MAX_INBOX_ANALYSIS_PAGES = 5;
@@ -125,40 +124,11 @@ type NeedsReviewNotification = Readonly<{
   count: number;
 }>;
 
-type AssistantLabelCatalog = Readonly<{
-  definitions: readonly InboxAnalysisLabelDefinition[];
-  labels: readonly Readonly<{
-    slug: string;
-    description: string;
-    retired: boolean;
-  }>[];
-  knownSlugs: ReadonlySet<string>;
-  version: string;
-}>;
-
 class InboxAnalysisLabelCatalogChangedError extends Error {
   constructor() {
     super("Inbox analysis label catalog changed during classification.");
     this.name = "InboxAnalysisLabelCatalogChangedError";
   }
-}
-
-async function readAssistantLabelCatalog(
-  database: D1Database,
-): Promise<AssistantLabelCatalog> {
-  const rows = await createD1AssistantLabelRepository(database).list();
-  const definitions = Object.freeze(rows
-    .filter(({ retired }) => !retired)
-    .map(({ slug, description }) => Object.freeze({ slug, description })));
-  const labels = Object.freeze(rows.map(({ slug, description, retired }) =>
-    Object.freeze({ slug, description, retired })
-  ));
-  return Object.freeze({
-    definitions,
-    labels,
-    knownSlugs: new Set(labels.map(({ slug }) => slug)),
-    version: inboxAnalysisLabelDefinitionVersion(definitions),
-  });
 }
 
 /** Newest subject first, then the remainder as a count, inside the notifier's
@@ -1558,6 +1528,7 @@ export async function PATCH(request: NextRequest) {
       Date.now(),
       auth.user.email,
       update.outcome,
+      update.outcome === "accepted" ? "lead" : undefined,
     );
     if (!dismissed) {
       return noStoreJson({ error: "Inbox review row not found." }, 404);

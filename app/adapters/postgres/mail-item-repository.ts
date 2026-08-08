@@ -1,4 +1,5 @@
 import {
+  MAX_ASSISTANT_LABEL_ROWS,
   MAX_ASSISTANT_LABELS,
   normalizeAssistantLabelSlug,
 } from "../../domain/assistant-label-definition";
@@ -14,6 +15,7 @@ import {
 } from "../../domain/mail-item";
 import type {
   MailItemRepository,
+  MailItemReviewActivityLabelCount,
   MailItemUpsertResult,
 } from "../../ports/mail-item-repository";
 import {
@@ -110,6 +112,23 @@ function nullablePostgresTimestamp(value: unknown, label: string) {
   return value === null ? null : parsePostgresTimestamp(value, label);
 }
 
+function reviewActivityLabelCount(
+  row: Readonly<Record<string, unknown>>,
+): MailItemReviewActivityLabelCount {
+  const slug = normalizeAssistantLabelSlug(row.slug);
+  const acceptedCount = Number(row.accepted_count);
+  const dismissedCount = Number(row.dismissed_count);
+  if (
+    !Number.isSafeInteger(acceptedCount)
+    || acceptedCount < 0
+    || !Number.isSafeInteger(dismissedCount)
+    || dismissedCount < 0
+  ) {
+    throw new Error("PostgreSQL mail item review activity count was invalid");
+  }
+  return Object.freeze({ slug, acceptedCount, dismissedCount });
+}
+
 function mailItemFromPostgres(row: MailItemDatabaseRow) {
   const createdAt = parsePostgresTimestamp(
     row.created_at,
@@ -123,12 +142,17 @@ function mailItemFromPostgres(row: MailItemDatabaseRow) {
     row.received_at,
     "PostgreSQL mail item received_at",
   );
+  const reviewedAt = nullablePostgresTimestamp(
+    row.reviewed_at,
+    "PostgreSQL mail item reviewed_at",
+  );
   return normalizeStoredMailItem({
     ...row,
     client_id: row.client_id,
     suggested_project_id: row.suggested_project_id,
     approved_project_id: row.approved_project_id,
     received_at: receivedAt,
+    reviewed_at: reviewedAt,
     created_at: createdAt,
     updated_at: updatedAt,
   });
@@ -224,6 +248,17 @@ function normalizedIntentSlugs(intentSlugs: readonly string[]) {
   const normalized = intentSlugs.map(normalizeAssistantLabelSlug);
   if (new Set(normalized).size !== normalized.length) {
     throw new TypeError("Mail item analysis intents must be unique");
+  }
+  return normalized;
+}
+
+function normalizedActivityLabelSlugs(labelSlugs: readonly string[]) {
+  if (!Array.isArray(labelSlugs) || labelSlugs.length > MAX_ASSISTANT_LABEL_ROWS) {
+    throw new TypeError("Mail item review activity label catalog is invalid");
+  }
+  const normalized = labelSlugs.map(normalizeAssistantLabelSlug);
+  if (new Set(normalized).size !== normalized.length) {
+    throw new TypeError("Mail item review activity labels must be unique");
   }
   return normalized;
 }
@@ -337,6 +372,82 @@ LIMIT $3`,
             items: result.rows.map(mailItemFromPostgres),
             totalCount,
           });
+        },
+      );
+    },
+
+    async listReviewActivity(connectionKey, limit) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      return withPostgresTransaction(
+        pool,
+        { ...transactionOptions, readOnly: true },
+        async (client) => {
+          const result = await client.query<
+            MailItemDatabaseRow & { total_count: unknown }
+          >(
+            `SELECT page.*, COUNT(*) OVER ()::text AS total_count
+FROM (
+  ${MAIL_ITEM_SELECT}
+  WHERE connection_key = $1 AND status IN ('accepted', 'dismissed')
+) AS page
+ORDER BY page.updated_at DESC, page.id
+LIMIT $2`,
+            [normalizedConnectionKey, boundedLimit(limit)],
+          );
+          const totalCount = Number(result.rows[0]?.total_count ?? 0);
+          if (!Number.isSafeInteger(totalCount) || totalCount < 0) {
+            throw new Error("PostgreSQL mail item review activity count was invalid");
+          }
+          return Object.freeze({
+            items: result.rows.map(mailItemFromPostgres),
+            totalCount,
+          });
+        },
+      );
+    },
+
+    async listReviewActivityLabelCounts(connectionKey, labelSlugs) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const normalizedSlugs = normalizedActivityLabelSlugs(labelSlugs);
+      if (normalizedSlugs.length === 0) return [];
+      return withPostgresTransaction(
+        pool,
+        { ...transactionOptions, readOnly: true },
+        async (client) => {
+          const result = await client.query<Record<string, unknown>>(
+            `WITH attributed_outcomes AS (
+  SELECT id, accepted_intent AS slug, 1::bigint AS accepted_count, 0::bigint AS dismissed_count
+  FROM mail_items
+  WHERE connection_key = $1
+    AND status = 'accepted'
+    AND reviewed_by IS NOT NULL
+    AND reviewed_at IS NOT NULL
+    AND accepted_intent = ANY($2::text[])
+  UNION ALL
+  SELECT DISTINCT item.id, proposed.intent AS slug, 0::bigint AS accepted_count, 1::bigint AS dismissed_count
+  FROM mail_items AS item
+  CROSS JOIN LATERAL jsonb_array_elements_text(
+    CASE
+      WHEN jsonb_typeof(item.analysis_payload -> 'intents') = 'array'
+        THEN item.analysis_payload -> 'intents'
+      ELSE '[]'::jsonb
+    END
+  ) AS proposed(intent)
+  WHERE item.connection_key = $1
+    AND item.status = 'dismissed'
+    AND item.reviewed_by IS NOT NULL
+    AND item.reviewed_at IS NOT NULL
+    AND proposed.intent = ANY($2::text[])
+)
+SELECT slug,
+       SUM(accepted_count)::text AS accepted_count,
+       SUM(dismissed_count)::text AS dismissed_count
+FROM attributed_outcomes
+GROUP BY slug
+ORDER BY slug`,
+            [normalizedConnectionKey, normalizedSlugs],
+          );
+          return result.rows.map(reviewActivityLabelCount);
         },
       );
     },
@@ -478,6 +589,13 @@ WHERE connection_key = $1 AND coverage_complete = false`,
       // Mirrors the D1 adapter exactly: the outcome is BOUND, never interpolated, and
       // re-guarded here so a future caller cannot widen it into an arbitrary status.
       if (outcome !== "accepted" && outcome !== "dismissed") return false;
+      const normalizedAcceptedIntent = acceptedIntent === undefined
+        ? null
+        : normalizeAssistantLabelSlug(acceptedIntent);
+      if (
+        (outcome === "accepted" && normalizedAcceptedIntent === null)
+        || (outcome === "dismissed" && normalizedAcceptedIntent !== null)
+      ) return false;
       const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
         const result = await client.query(
@@ -492,12 +610,26 @@ SET status = $1,
     updated_at = $5
 WHERE id = $6
   AND connection_key = $7
-  AND status = 'needs-review'`,
+  AND status = 'needs-review'
+  AND (
+    $1 = 'dismissed'
+    OR EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements_text(
+        CASE
+          WHEN jsonb_typeof(analysis_payload -> 'intents') = 'array'
+            THEN analysis_payload -> 'intents'
+          ELSE '[]'::jsonb
+        END
+      ) AS proposed(intent)
+      WHERE proposed.intent = $4
+    )
+  )`,
           [
             outcome,
             reviewedBy,
             persistenceDate(updatedAt, "PostgreSQL mail item reviewed_at"),
-            acceptedIntent,
+            normalizedAcceptedIntent,
             persistenceDate(updatedAt, "PostgreSQL mail item updated_at"),
             id,
             normalizedConnectionKey,
