@@ -127,7 +127,7 @@ The owner completed the flagged hosted project-manager correction on July 18, 20
 6. SET-10/#56 is complete in merged source and remains undeployed; it exposes no live provider-health claim, and SET-13 is now assignable.
 7. Logo refresh/#57 is complete in merged source and remains undeployed. The reviewed PR #51–#57 merge train is complete; the other unclaimed independent packets remain coordinated BE-07+SET-05, SET-11, SET-09+WS-10, and WS-13. Next per the agent plan's wave text: SET-13 starts the dashboard-setup track, and the Workstream E Google-native integration starters run in parallel as their dependencies allow.
 
-The dated [Claude/Fable review handoff for PRs #51–#57](pr-51-57-claude-fable-review-handoff.md)
+The dated [Claude/Fable review handoff for PRs #51–#57](archive/pr-51-57-claude-fable-review-handoff.md)
 remains the review record for the exact reviewed heads, outcomes, tests, dependencies,
 impact boundaries, documentation follow-ups, and reviewer questions. It is a snapshot,
 not a live status ledger. No item in that review packet authorizes a merge, deployment,

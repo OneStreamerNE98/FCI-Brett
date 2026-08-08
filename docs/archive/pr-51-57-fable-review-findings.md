@@ -1,4 +1,5 @@
 # Fable review findings: pull requests #51–#57
+> **Archived August 2026** — review complete; canonical status in [be04-oidc-review-and-followups.md](../be04-oidc-review-and-followups.md) and [the agent plan](../agent-plan-architecture-workspace-and-setup.md); retained for history.
 
 Review date: July 20, 2026 · Reviewer: Claude Fable (multi-agent, adversarially
 verified) · Input: [PR #51–#57 review handoff](pr-51-57-claude-fable-review-handoff.md) ·

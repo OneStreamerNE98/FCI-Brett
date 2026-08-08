@@ -321,14 +321,14 @@ test("known merged packets map to their PRs and cannot regress to review-only wo
     "docs/full-review-2026-07-21-findings.md",
     "docs/google-cloud-runtime-foundation.md",
     "docs/google-workspace-rollout-guide.md",
-    "docs/pre-workspace-development-plan.md",
+    "docs/archive/pre-workspace-development-plan.md",
     "docs/production-persistence-boundary.md",
     "docs/task-checklists/04-staff-login-and-permissions.md",
     "docs/task-checklists/07-production-foundation-and-migration.md",
     "docs/task-checklists/README.md",
     "docs/task-checklists/09-frontend-and-multi-user-hardening.md",
     "docs/task-checklists/10-complete-product-and-integration-architecture.md",
-    "docs/ui-and-product-readiness-review.md",
+    "docs/archive/ui-and-product-readiness-review.md",
   ];
   const mergedPrs = [...new Set([
     ...mergedPlanPackets.values(),
@@ -390,7 +390,7 @@ test("deployment and source-only history is coupled by semantic paragraphs, not 
     "docs/task-checklists/README.md",
     "docs/task-checklists/09-frontend-and-multi-user-hardening.md",
     "docs/task-checklists/10-complete-product-and-integration-architecture.md",
-    "docs/ui-and-product-readiness-review.md",
+    "docs/archive/ui-and-product-readiness-review.md",
   ];
 
   for (const path of statusFiles) {
@@ -410,7 +410,7 @@ test("deployment and source-only history is coupled by semantic paragraphs, not 
     assertNoStaleMergedPrReferences(path, actionableLines.join("\n"), [33]);
   }
 
-  for (const path of [...statusFiles, "docs/agent-plan-architecture-workspace-and-setup.md", "docs/pre-workspace-development-plan.md"]) {
+  for (const path of [...statusFiles, "docs/agent-plan-architecture-workspace-and-setup.md", "docs/archive/pre-workspace-development-plan.md"]) {
     const settingsLines = read(path).split(/\r?\n/).filter((line) => line.includes("codex/settings-panel-extraction"));
     assert.ok(
       settingsLines.some((line) => /PR #35/i.test(line) && /source/i.test(line) && /not deployed|not been deployed|undeployed|no deployment/i.test(line)),
