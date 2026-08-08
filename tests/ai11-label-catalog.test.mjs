@@ -1190,8 +1190,22 @@ test("the labels route is the ONLY writer of assistant_label_definitions", async
     }],
     "only the administrator label route may write the catalog",
   );
-  // The analysis route reads the catalog and must stay a reader.
-  assert.deepEqual(labelReaders, ["app/api/v1/inbox-analysis/route.ts"]);
+  // AI-11(d) centralized the catalog read so both the queue and activity GETs
+  // resolve active and retired labels identically. Route files must no longer
+  // import storage directly; the shared helper is the one read-only boundary.
+  assert.deepEqual(labelReaders, []);
+  const [catalogReader, analysisRoute, activityRoute] = await Promise.all([
+    readFile(join(rootPath, "app/api/v1/inbox-analysis/_label-catalog.ts"), "utf8"),
+    readFile(join(rootPath, "app/api/v1/inbox-analysis/route.ts"), "utf8"),
+    readFile(join(rootPath, "app/api/v1/inbox-analysis/activity/route.ts"), "utf8"),
+  ]);
+  assert.match(catalogReader, /createD1AssistantLabelRepository\(database\)\.list\(\)/u);
+  assert.doesNotMatch(
+    catalogReader,
+    /\.\s*(?:insert|updateDescription|removeOrRetire)\s*\(/u,
+  );
+  assert.match(analysisRoute, /readAssistantLabelCatalog\(database\)/u);
+  assert.match(activityRoute, /readAssistantLabelCatalog\(database\)/u);
 
   // The application layer composes the prompt and must touch no storage at all.
   const applicationSource = await readFile(

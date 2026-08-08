@@ -1525,8 +1525,14 @@ test("AI-10 writer placement, request bounds, and Gmail read-only surface stay m
     ).replaceAll("\\", "/");
     const writesRawMailItems =
       /\b(?:insert\s+into|update|delete\s+from)\s+mail_items\b/iu.test(source);
-    const mutatesThroughRepository =
+    // Importing the mail-item repository is not itself a write: AI-11(d)'s
+    // activity route owns bounded read projections through the same port. Keep
+    // this census pinned to every mutating MailItemRepository method so a new
+    // route cannot become a writer merely by hiding behind the adapter.
+    const mutatesThroughRepository = (
       /mail-item-repository/iu.test(source)
+      && /\.\s*(?:saveAnalysisIfLabelsActive|upsert|insertIfAbsent|resetExhaustedAnalysisFailures|markCoverageComplete|dismissNeedsReview)\s*\(/u.test(source)
+    )
       || /\b(?:mailItems|mailItemRepository|mailItemRepo)\s*\.\s*(?:upsert|create|update|delete)\s*\(/iu.test(source);
     if (writesRawMailItems || mutatesThroughRepository) {
       analysisWriters.push({
