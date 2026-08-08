@@ -4,7 +4,7 @@ Status: Accepted
 
 Decision date: July 14, 2026
 
-Amends: [Production platform decision](architecture-decision-production-platform.md)
+Amends: [Production platform decision](../architecture-decision-production-platform.md)
 
 ## Relationship to the production platform decision
 

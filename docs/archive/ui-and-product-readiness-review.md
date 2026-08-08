@@ -10,9 +10,9 @@ Reviewed: July 2026
 > (EDIT-05 / PR #228) and lead editing including won/lost/archived outcomes (EDIT-04 /
 > PR #231) — the "Add lead editing…" and "Add project editing…" next-step cells below are
 > now partly done.** Current status lives in the
-> [agent plan](agent-plan-architecture-workspace-and-setup.md).
+> [agent plan](../agent-plan-architecture-workspace-and-setup.md).
 
-For the current company-size verdict, role/access model, live desktop walkthrough findings, production topology, and corrected delivery order, read the [20-user product and architecture review](20-user-product-and-architecture-review.md). This page remains the detailed section-by-section UI inventory.
+For the current company-size verdict, role/access model, live desktop walkthrough findings, production topology, and corrected delivery order, read the [20-user product and architecture review](../20-user-product-and-architecture-review.md). This page remains the detailed section-by-section UI inventory.
 
 ## What this review covers
 
@@ -76,7 +76,7 @@ These are larger structural changes and should be scheduled separately:
 - Selected-project assistant evidence with citations and a records-only fallback.
 - A guarded file-upload API and an installable PWA manifest.
 
-Separately, the production source boundary now includes the [approved authorization and employee-route work](authorization-simulation.md): granular Administrator/Office/Project Manager ceilings, exact-one-role and session-denial rules, project-scoped PostgreSQL reads, financial redaction, fixed-operation provider gates, append-only audit evidence, and a narrow Cloud Run dashboard/search/project/client/lead/meeting read/write boundary. File/Gmail/Calendar routes are authorization-gated but provider-unavailable. These production controls are not wired into the hosted Workers/D1 application; the private People/Activity presentation adapter uses development-only fixtures and is not production session/database composition.
+Separately, the production source boundary now includes the [approved authorization and employee-route work](../authorization-simulation.md): granular Administrator/Office/Project Manager ceilings, exact-one-role and session-denial rules, project-scoped PostgreSQL reads, financial redaction, fixed-operation provider gates, append-only audit evidence, and a narrow Cloud Run dashboard/search/project/client/lead/meeting read/write boundary. File/Gmail/Calendar routes are authorization-gated but provider-unavailable. These production controls are not wired into the hosted Workers/D1 application; the private People/Activity presentation adapter uses development-only fixtures and is not production session/database composition.
 
 ## What is still in development or a placeholder
 
@@ -98,7 +98,7 @@ The production system will use the approved small-company Google Cloud architect
 
 The migration will happen before scheduling, messaging, and AI indexing are built. Those modules depend on durable jobs, relational transactions, retries, and permission-filtered retrieval; moving now avoids implementing and migrating those foundations twice.
 
-See [`architecture-decision-production-platform.md`](architecture-decision-production-platform.md) for the production boundary and the [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md) for the provisioning and cost gates.
+See [`architecture-decision-production-platform.md`](../architecture-decision-production-platform.md) for the production boundary and the [Workspace-first, cost-controlled rollout](../specs/architecture-decision-workspace-first-cost-controlled-rollout.md) for the provisioning and cost gates.
 
 ## Prioritized next steps
 

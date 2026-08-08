@@ -7,7 +7,7 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 
 - [settings-guide.md](settings-guide.md) — the plain-English manual: using the app (everyone) + administering it, panel by panel.
 - [task-checklists/](task-checklists/README.md) — the owner's setup/readiness status board (checklists 00–11).
-- [brett-handoff.md](brett-handoff.md) — the one-page read-only-first Google inventory handoff for Brett.
+- [brett-handoff.md](briefs/brett-handoff.md) — the one-page read-only-first Google inventory handoff for Brett.
 - [nightly-reviews/](nightly-reviews/README.md) — the nightly review program: what ran each night, findings, recommendations. Specs for the six un-run nights live in [nightly-reviews/SPECS.md](nightly-reviews/SPECS.md).
 - [20-user-product-and-architecture-review.md](20-user-product-and-architecture-review.md) — how the app serves a ~20-person org.
 - [enhancement-briefs/](enhancement-briefs/README.md) — owner planning briefs (not packets: no status lines, ignored by the dispatch law; packets are filed from them at wave start, and the ledger wins on conflict).
@@ -22,15 +22,15 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 ## Design authorities (specs that govern the UI)
 
 - [dashboard-design-spec.md](dashboard-design-spec.md) — tokens, affordance grammar, brand/nav (+ [mockup](dashboard-design-mockup.html)).
-- [settings-redesign-spec.md](settings-redesign-spec.md) — the four-stage Google Workspace settings design (+ [wireframe](settings-redesign-wireframe.html)).
+- [settings-redesign-spec.md](specs/settings-redesign-spec.md) — the four-stage Google Workspace settings design (+ [wireframe](settings-redesign-wireframe.html)).
 - [ai-assistant-spec.md](ai-assistant-spec.md) — the AI layer: architecture, tool registry, safety model, canonical copy, Tier-2 gates.
-- [dashboard-workspace-setup-design.md](dashboard-workspace-setup-design.md) — the setup-dashboard design decision record.
+- [dashboard-workspace-setup-design.md](specs/dashboard-workspace-setup-design.md) — the setup-dashboard design decision record.
 - [design-baseline/](design-baseline/) · [design-evidence/](design-evidence/) — screenshot baselines and per-packet visual evidence.
 
 ## Findings & reviews
 
-- [independent-audit-2026-07-30-self-reviewed-changes.md](independent-audit-2026-07-30-self-reviewed-changes.md) — independent source audit of five self-reviewed behavior changes and their ledger claims.
-- [code-review-2026-08-06-findings.md](code-review-2026-08-06-findings.md) — the August-6 comprehensive webapp review, adversarial dispositions, and NFIX follow-up ownership.
+- [independent-audit-2026-07-30-self-reviewed-changes.md](reviews/independent-audit-2026-07-30-self-reviewed-changes.md) — independent source audit of five self-reviewed behavior changes and their ledger claims.
+- [code-review-2026-08-06-findings.md](reviews/code-review-2026-08-06-findings.md) — the August-6 comprehensive webapp review, adversarial dispositions, and NFIX follow-up ownership.
 - [full-review-2026-07-21-findings.md](full-review-2026-07-21-findings.md) — the July-21 full-codebase review (F-findings, FIX-01…12).
 - [full-review-2026-07-24-findings.md](full-review-2026-07-24-findings.md) — the July-23/24 holistic post-wave review (H-findings, FIX-13…19).
 - [nightly-review-2026-07-findings.md](nightly-review-2026-07-findings.md) — the rolling nightly-program ledger (N-findings, NFIX packets).
@@ -48,12 +48,12 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 ## Architecture & platform (developer reference)
 
 - [complete-product-and-google-cloud-architecture-audit.md](complete-product-and-google-cloud-architecture-audit.md) — the full architecture audit + roadmap.
-- [architecture-decision-production-platform.md](architecture-decision-production-platform.md) · [architecture-decision-workspace-first-cost-controlled-rollout.md](architecture-decision-workspace-first-cost-controlled-rollout.md) — the two foundational ADRs.
-- [production-persistence-boundary.md](production-persistence-boundary.md) · [production-postgresql-foundation.md](production-postgresql-foundation.md) · [production-postgresql-repositories.md](production-postgresql-repositories.md) · [development-d1-schema-migrations.md](development-d1-schema-migrations.md) — storage layers.
+- [architecture-decision-production-platform.md](architecture-decision-production-platform.md) · [architecture-decision-workspace-first-cost-controlled-rollout.md](specs/architecture-decision-workspace-first-cost-controlled-rollout.md) — the two foundational ADRs.
+- [production-persistence-boundary.md](production-persistence-boundary.md) · [production-postgresql-foundation.md](specs/production-postgresql-foundation.md) · [production-postgresql-repositories.md](specs/production-postgresql-repositories.md) · [development-d1-schema-migrations.md](specs/development-d1-schema-migrations.md) — storage layers.
 - [google-cloud-runtime-foundation.md](google-cloud-runtime-foundation.md) — the fail-closed Cloud Run image, private Cloud SQL connector, one-off migration command, and bounded core rehearsal. (Added to the index July 24, 2026.)
-- [google-workspace-organization.md](google-workspace-organization.md) · [google-workspace-watch-and-queue-design.md](google-workspace-watch-and-queue-design.md) · [google-chat-notifications.md](google-chat-notifications.md) · [google-integration-opportunities.md](google-integration-opportunities.md) — Google integration design.
+- [google-workspace-organization.md](google-workspace-organization.md) · [google-workspace-watch-and-queue-design.md](google-workspace-watch-and-queue-design.md) · [google-chat-notifications.md](specs/google-chat-notifications.md) · [google-integration-opportunities.md](briefs/google-integration-opportunities.md) — Google integration design.
 - [flooring-kpis.md](flooring-kpis.md) — the authoritative KPI definitions.
-- [request-rate-limiting.md](request-rate-limiting.md) · [authorization-simulation.md](authorization-simulation.md) · [administration-and-access-plan.md](administration-and-access-plan.md) · [collaboration-and-sharing.md](collaboration-and-sharing.md) · [portable-record-creation.md](archive/portable-record-creation.md) · [pre-workspace-development-plan.md](archive/pre-workspace-development-plan.md) — subsystem references.
+- [request-rate-limiting.md](request-rate-limiting.md) · [authorization-simulation.md](authorization-simulation.md) · [administration-and-access-plan.md](specs/administration-and-access-plan.md) · [collaboration-and-sharing.md](collaboration-and-sharing.md) · [portable-record-creation.md](archive/portable-record-creation.md) · [pre-workspace-development-plan.md](archive/pre-workspace-development-plan.md) — subsystem references.
 
 ## Runbooks (operators)
 

@@ -42,7 +42,7 @@ These non-secret decisions are tracked in detail in [Production foundation and m
 - [ ] Approve RPO, RTO, the database profile, and the estimate-based production alert budget.
 - [ ] Name the deployment approver and emergency rollback owner.
 
-See the accepted [Workspace-first, cost-controlled rollout](../architecture-decision-workspace-first-cost-controlled-rollout.md) for the complete decision, tradeoffs, and service-activation gates.
+See the accepted [Workspace-first, cost-controlled rollout](../specs/architecture-decision-workspace-first-cost-controlled-rollout.md) for the complete decision, tradeoffs, and service-activation gates.
 
 ## Completion result
 
