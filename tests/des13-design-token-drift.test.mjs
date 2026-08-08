@@ -7,7 +7,7 @@ import test from "node:test";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const applicationRoot = join(repositoryRoot, "app");
 const globalsPath = join(applicationRoot, "globals.css");
-const designAuthorityPath = join(repositoryRoot, "docs/dashboard-design-spec.md");
+const designAuthorityPath = join(repositoryRoot, "docs/specs/dashboard-design-spec.md");
 const allowlist = JSON.parse(
   await readFile(join(repositoryRoot, "tests/fixtures/des13-design-token-allowlist.json"), "utf8"),
 );

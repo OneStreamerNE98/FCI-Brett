@@ -6,17 +6,17 @@ These instructions apply to the entire repository and are intended to give every
 
 Start with [`docs/README.md`](docs/README.md), the audience-grouped index of every document (added July 24, 2026). Then, before changing code, read:
 
-1. `docs/codex-to-codex-handoff.md`
-2. `docs/architecture-decision-production-platform.md`
+1. `docs/guides/codex-to-codex-handoff.md`
+2. `docs/specs/architecture-decision-production-platform.md`
 3. `docs/specs/architecture-decision-workspace-first-cost-controlled-rollout.md`
-4. `docs/20-user-product-and-architecture-review.md`
+4. `docs/reviews/20-user-product-and-architecture-review.md`
 5. `docs/agent-plan-architecture-workspace-and-setup.md`
-6. `docs/complete-product-and-google-cloud-architecture-audit.md`
-7. `docs/google-cloud-runtime-foundation.md`
+6. `docs/reviews/complete-product-and-google-cloud-architecture-audit.md`
+7. `docs/specs/google-cloud-runtime-foundation.md`
 8. `docs/archive/ui-and-product-readiness-review.md`
-9. `docs/google-workspace-rollout-guide.md`
+9. `docs/guides/google-workspace-rollout-guide.md`
 10. `docs/task-checklists/README.md`
-11. `docs/collaboration-and-sharing.md`
+11. `docs/specs/collaboration-and-sharing.md`
 12. `docs/nightly-reviews/README.md` (the standing nightly review program; added July 24, 2026)
 
 ## Current product boundary
@@ -163,7 +163,7 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   and rejects stale merged-PR references, but nothing makes prose availability lists true —
   which is exactly why they must not be dispatched from.)
 - **Owner decisions have exactly one home.** AI-workstream decisions live in
-  `docs/ai-assistant-spec.md` §12; operating-model and record-editing decisions live in
+  `docs/specs/ai-assistant-spec.md` §12; operating-model and record-editing decisions live in
   `docs/task-checklists/06-20-user-operating-model-and-access.md`. Every other surface
   (ledger preambles, plan files, packet bodies) **points, never copies** — and on any
   conflict, the home wins. Copies drift; this session proved it twice.

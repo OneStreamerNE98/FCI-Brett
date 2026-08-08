@@ -104,7 +104,7 @@ Administrator-only. An AI proposal must not become a route around that.
 
 **There is an open, recorded weakness that becomes far more serious once email can write.**
 
-`AI-R10` (`docs/ai-assistant-spec.md:364`, status **Open**): the exact project-number
+`AI-R10` (`docs/specs/ai-assistant-spec.md:364`, status **Open**): the exact project-number
 matcher searches `from`, `subject` and `snippet` **without any sender-ownership check**.
 A sender quoting another client's project number can pull that project's fields into an
 AI context.

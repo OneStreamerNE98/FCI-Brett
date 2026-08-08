@@ -33,7 +33,7 @@ These live in `AGENTS.md` and the plan ledger. A violation is always a finding.
   guards legitimately moved; the re-pointed pin must still fail for the original defect.
   Deleting an assertion is not re-pointing it.
 - **Prose and pin move together, deliberately, or not at all.**
-- **Guardrail 0:** a change under `app/settings/**` updates `docs/settings-guide.md` or
+- **Guardrail 0:** a change under `app/settings/**` updates `docs/guides/settings-guide.md` or
   states "Guide impact: none" — and that claim must be true.
 - **No new timers or background polling** (the scheduler law). Revalidation is triggered by
   focus, visibility, or navigation.

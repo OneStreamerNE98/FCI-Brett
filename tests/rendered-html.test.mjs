@@ -578,7 +578,7 @@ test("keeps layout editing icon-only, conditional, and aligned through PageTitle
 test("makes company shared calendars authoritative without a personal-calendar mode", async () => {
   const [app, settingsApi, settingsDomain, guide] = await Promise.all([
     readAppSurface(), read("app/api/v1/settings/workspace/route.ts"), read("app/domain/workspace-settings.ts"),
-    read("docs/google-workspace-organization.md"),
+    read("docs/guides/google-workspace-organization.md"),
   ]);
   assert.match(app, /Plan to create two shared FCI calendars/);
   assert.match(app, /Keep company work in two shared FCI Workspace calendars/);
@@ -672,7 +672,7 @@ test("selects the Gmail intake mailbox from the hosted allowlist without exposin
     read("app/lib/workspace-effective-config.ts"),
     read("app/lib/google-gmail.ts"),
     read("app/api/v1/integrations/google/authorize/route.ts"),
-    read("docs/settings-guide.md"),
+    read("docs/guides/settings-guide.md"),
   ]);
 
   assert.match(panel, /<select id="workspace-intake-mailbox"/u);
@@ -694,7 +694,7 @@ test("keeps the app authoritative while mirroring clients and projects to Google
   const [oauth, sheets, clientsApi, projectsApi, statusApi, syncApi, schema, guide] = await Promise.all([
     read("app/lib/google-oauth.ts"), read("app/lib/google-sheets.ts"), read("app/api/v1/clients/route.ts"),
     read("app/api/v1/projects/route.ts"), read("app/api/v1/integrations/google/sheets/status/route.ts"),
-    read("app/api/v1/integrations/google/sheets/sync/route.ts"), read("db/schema.ts"), read("docs/google-workspace-organization.md"),
+    read("app/api/v1/integrations/google/sheets/sync/route.ts"), read("db/schema.ts"), read("docs/guides/google-workspace-organization.md"),
   ]);
   assert.match(oauth, /https:\/\/www\.googleapis\.com\/auth\/spreadsheets/);
   assert.match(oauth, /clientDirectorySheetId/);
@@ -716,7 +716,7 @@ test("wires development controls and exposes Workspace-only live configuration p
   const [app, recordTypes, workspaceApi, envExample, testGuide, oauth, driveWorkspace] = await Promise.all([
     readAppSurface(), read("app/lib/record-types.ts"),
     read("app/api/v1/google-workspace/route.ts"),
-    read(".env.example"), read("docs/testing-and-google-workspace-setup.md"),
+    read(".env.example"), read("docs/guides/testing-and-google-workspace-setup.md"),
     read("app/lib/google-oauth.ts"), read("app/lib/google-workspace.ts"),
   ]);
   assert.match(app, /workspace-search/);
@@ -796,7 +796,7 @@ test("keeps local Workspace simulation isolated from the one company Workspace c
     read("app/api/v1/integrations/google/simulation/reset/route.ts"), read("app/api/v1/integrations/google/authorize/route.ts"),
     read("app/lib/google-drive.ts"), read("app/lib/workspace-auth.ts"), read("app/chatgpt-auth.ts"),
     read("app/api/v1/projects/route.ts"), read("app/api/v1/projects/[projectId]/drive/route.ts"),
-    read("db/schema.ts"), read("docs/testing-and-google-workspace-setup.md"),
+    read("db/schema.ts"), read("docs/guides/testing-and-google-workspace-setup.md"),
   ]);
   assert.match(oauth, /GOOGLE_INTEGRATION_MODE/);
   assert.match(oauth, /connectionKey: simulation \? "workspace-simulation" : "google-workspace"/);
@@ -837,7 +837,7 @@ test("provides explicit Gmail and Calendar controls in simulation and Workspace 
     read("app/lib/google-calendar-client.ts"),
     read("app/lib/google-integration-events.ts"),
     read("app/api/v1/integrations/google/calendar/test-hold/route.ts"),
-    readAppSurface(), read("docs/testing-and-google-workspace-setup.md"),
+    readAppSurface(), read("docs/guides/testing-and-google-workspace-setup.md"),
   ]);
   assert.match(oauth, /GOOGLE_WORKSPACE_/);
   assert.match(oauth, /https:\/\/www\.googleapis\.com\/auth\/gmail\.modify/);

@@ -222,7 +222,7 @@ test("pins the financial gate, definitions document, drill-through, and A7 excep
   const [app, panel, definitions, designLedger] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
     read("app/features/reports/BusinessKpisPanel.tsx"),
-    read("docs/flooring-kpis.md"),
+    read("docs/specs/flooring-kpis.md"),
     read("docs/design-critique-fix-plan.md"),
   ]);
 

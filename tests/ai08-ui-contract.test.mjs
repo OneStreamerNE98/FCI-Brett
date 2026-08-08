@@ -35,7 +35,7 @@ const HELP_COPY = {
 
 test("pins the AI-08 settings and help copy to the canonical section-9 contract", async () => {
   const [spec, card, help] = await Promise.all([
-    read("docs/ai-assistant-spec.md"),
+    read("docs/specs/ai-assistant-spec.md"),
     read("app/settings/components/AiAssistantSettingsCard.tsx"),
     read("app/assistant/components/AssistantHelpPanel.tsx"),
   ]);

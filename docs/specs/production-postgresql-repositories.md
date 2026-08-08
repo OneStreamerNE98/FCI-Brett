@@ -6,7 +6,7 @@ Status: Foundation implementation merged through PR #51; BE-16 project-segment p
 
 ## Boundary
 
-This boundary connects the provider-neutral client, project, lead, and project-meeting contracts to the completed source-only PostgreSQL schema. The [Google Cloud runtime foundation](../google-cloud-runtime-foundation.md) creates bounded pool-backed repository factories, and merged PR #51 composes production client/project creation plus scoped lead and project-meeting reads and creation through the employee router. The current Sites/D1 development routes retain their existing behavior through D1 adapters; hosted configuration, test data, and the Workspace connection remain unchanged.
+This boundary connects the provider-neutral client, project, lead, and project-meeting contracts to the completed source-only PostgreSQL schema. The [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) creates bounded pool-backed repository factories, and merged PR #51 composes production client/project creation plus scoped lead and project-meeting reads and creation through the employee router. The current Sites/D1 development routes retain their existing behavior through D1 adapters; hosted configuration, test data, and the Workspace connection remain unchanged.
 
 No PostgreSQL URL, Cloud SQL instance, Cloud Run service, credential, live worker, production data, or external provider call is part of this implementation.
 

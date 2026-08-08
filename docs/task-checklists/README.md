@@ -93,11 +93,11 @@ The themed nightly review program's per-night findings and recommendations live 
 10. [Frontend and multi-user hardening](09-frontend-and-multi-user-hardening.md)
 11. [Complete product and integration architecture](10-complete-product-and-integration-architecture.md)
 12. [Google-native quick wins (no code)](11-google-quick-wins.md)
-13. [Codex-to-Codex coworker handoff](../codex-to-codex-handoff.md)
+13. [Codex-to-Codex coworker handoff](../guides/codex-to-codex-handoff.md)
 
-Read the [20-user product and architecture review](../20-user-product-and-architecture-review.md) for the evidence, priority findings, corrected delivery order, and product ideas behind these task checklists.
+Read the [20-user product and architecture review](../reviews/20-user-product-and-architecture-review.md) for the evidence, priority findings, corrected delivery order, and product ideas behind these task checklists.
 
-Read the [complete product and Google Cloud architecture audit](../complete-product-and-google-cloud-architecture-audit.md) for the capability map, Google Cloud topology, texting/reminder design, integration reliability requirements, owner decisions, acceptance gates, and branch-sized implementation order.
+Read the [complete product and Google Cloud architecture audit](../reviews/complete-product-and-google-cloud-architecture-audit.md) for the capability map, Google Cloud topology, texting/reminder design, integration reliability requirements, owner decisions, acceptance gates, and branch-sized implementation order.
 
 Read the accepted [Workspace-first, cost-controlled rollout](../specs/architecture-decision-workspace-first-cost-controlled-rollout.md) before approving infrastructure work. It distinguishes isolated environment boundaries from running resources and records the cost and feature-activation gates.
 
@@ -105,7 +105,7 @@ Use the [Pre-Workspace development plan](../archive/pre-workspace-development-pl
 
 ## Where agent work is tracked
 
-These checklists are owner-facing setup, decision, acceptance, and operations records. Active backend, Workspace, and Settings implementation status lives in the [agent execution plan](../agent-plan-architecture-workspace-and-setup.md); UI remediation status lives in the [design-critique plan](../design-critique-fix-plan.md); and architecture branch history and gates live in the [complete architecture audit roadmap](../complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap). The root [README](../../README.md#prioritized-next-work) is the entry point. Pull requests and issues may mirror those ledgers for review, but they do not create a separate task list.
+These checklists are owner-facing setup, decision, acceptance, and operations records. Active backend, Workspace, and Settings implementation status lives in the [agent execution plan](../agent-plan-architecture-workspace-and-setup.md); UI remediation status lives in the [design-critique plan](../design-critique-fix-plan.md); and architecture branch history and gates live in the [complete architecture audit roadmap](../reviews/complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap). The root [README](../../README.md#prioritized-next-work) is the entry point. Pull requests and issues may mirror those ledgers for review, but they do not create a separate task list.
 
 ## Recommended next work
 

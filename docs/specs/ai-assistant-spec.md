@@ -331,10 +331,10 @@ packet corrects the help/presentation mismatch.
   residual id AI-R01…AI-R14 to appear **exactly once in the region from the §11 heading
   to the END OF FILE** — the guard's slice has no lower boundary, so a residual id
   mentioned in §12 or any later section double-counts and fails, not just one inside
-  §11. The same suite pins sentences in `docs/settings-guide.md` and
-  `docs/meeting-notes-and-otter.md`, the `### AI-0N ·` heading grammar and Complete
+  §11. The same suite pins sentences in `docs/guides/settings-guide.md` and
+  `docs/briefs/meeting-notes-and-otter.md`, the `### AI-0N ·` heading grammar and Complete
   statuses for AI-01…09 in the plan ledger (plus a no-Complete pin on AI-10), and the
-  assistant scope row in `docs/request-rate-limiting.md`. Prose and pin move together,
+  assistant scope row in `docs/specs/request-rate-limiting.md`. Prose and pin move together,
   deliberately, or not at all.
 
 ## 11. Reconciled residual register (source-verified July 26, 2026)
