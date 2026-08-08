@@ -8,7 +8,7 @@ completion in PRs #54/#55, their status reconciliation in PRs #60/#62, and TRK-0
 tracking-guard completion in PR #66.
 
 This is a Codex-ready follow-up ledger. Each packet is one agent work packet with the same
-shape as `docs/agent-plan-architecture-workspace-and-setup.md` (why / files / steps /
+shape as `docs/ledger/agent-plan-architecture-workspace-and-setup.md` (why / files / steps /
 acceptance / severity / deps). Follow that plan's **Global guardrails** and the repo
 `AGENTS.md`. Update each packet's status line in this file on start and on merge.
 
@@ -167,7 +167,7 @@ this for the explicit known-packet map. Update that map and its tracking-file li
 a packet merges. (4) Reconcile the root README's production/launch boundary and mark the
 architecture audit's generic-records action resolved in source without weakening the
 separate upload warning or assistant records-only assertion.
-**Files:** `README.md`, `docs/agent-plan-architecture-workspace-and-setup.md`,
+**Files:** `README.md`, `docs/ledger/agent-plan-architecture-workspace-and-setup.md`,
 `docs/specs/authorization-simulation.md`, `docs/guides/codex-to-codex-handoff.md`,
 `docs/task-checklists/README.md`,
 `docs/reviews/complete-product-and-google-cloud-architecture-audit.md`, this follow-up ledger,

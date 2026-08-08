@@ -53,7 +53,7 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 > remaining visual debt (for example the green-tinted legacy surface palette) and the
 > final reconciliation of this ledger belong to DES-09. The table rows above are kept
 > unchanged as the historical record; sibling findings ledgers are grouped under
-> [docs/README.md → Findings & reviews](README.md#findings--reviews).
+> [docs/README.md → Findings & reviews](../README.md#findings--reviews).
 
 ## Screen findings ledger
 

@@ -223,7 +223,7 @@ test("pins the financial gate, definitions document, drill-through, and A7 excep
     read("app/FloorOpsApp.tsx"),
     read("app/features/reports/BusinessKpisPanel.tsx"),
     read("docs/specs/flooring-kpis.md"),
-    read("docs/design-critique-fix-plan.md"),
+    read("docs/ledger/design-critique-fix-plan.md"),
   ]);
 
   assert.match(app, /<ReportsView[^>]+isAdmin=\{isAdmin\}/);

@@ -1,5 +1,5 @@
 # Pre-Workspace development plan
-> **Archived August 2026** — superseded by [the agent plan](../agent-plan-architecture-workspace-and-setup.md) and [task-checklists](../task-checklists/); retained for history.
+> **Archived August 2026** — superseded by [the agent plan](../ledger/agent-plan-architecture-workspace-and-setup.md) and [task-checklists](../task-checklists/); retained for history.
 
 Reviewed: July 14, 2026
 Audience: Business owner, Workspace administrator, product owner, and developers
@@ -152,7 +152,7 @@ See [Google Cloud runtime foundation](../specs/google-cloud-runtime-foundation.m
 
 ## Next bounded developer assignments
 
-Use the [agent execution plan](../agent-plan-architecture-workspace-and-setup.md) for current packet status and dependency order. The administration-specific items below remain governed by the [Administration and Access plan](../specs/administration-and-access-plan.md):
+Use the [agent execution plan](../ledger/agent-plan-architecture-workspace-and-setup.md) for current packet status and dependency order. The administration-specific items below remain governed by the [Administration and Access plan](../specs/administration-and-access-plan.md):
 
 1. `codex/admin-audit-viewer`: merged in PR #21 with the separately privileged, projection-limited Activity reader and tab; production migration 5 and its reader grant remain unapplied.
 2. `codex/admin-field-links`: when field assignments are scheduled, add a separate hashed exact-project Field Link lifecycle and later tab.

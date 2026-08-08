@@ -304,7 +304,7 @@ Design/contracts/fixtures for scheduling and communications may proceed, but ope
 
 ## Ordered branch-sized implementation roadmap
 
-This table preserves architecture branch history and acceptance gates. Current packet status and dependency sequencing live in the [agent execution plan](../agent-plan-architecture-workspace-and-setup.md); UI remediation sequencing lives in the [design-critique ledger](../design-critique-fix-plan.md); owner actions live in the [task checklists](../task-checklists/README.md). Tracking annotations below map each open roadmap row to those ledgers without rewriting completed history.
+This table preserves architecture branch history and acceptance gates. Current packet status and dependency sequencing live in the [agent execution plan](../ledger/agent-plan-architecture-workspace-and-setup.md); UI remediation sequencing lives in the [design-critique ledger](../ledger/design-critique-fix-plan.md); owner actions live in the [task checklists](../task-checklists/README.md). Tracking annotations below map each open roadmap row to those ledgers without rewriting completed history.
 
 | Order | Suggested branch | Bounded outcome | Gate |
 | --- | --- | --- | --- |

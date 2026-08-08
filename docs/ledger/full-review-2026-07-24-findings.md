@@ -1,7 +1,7 @@
 # Holistic review — July 23–24, 2026 — findings ledger
 
 > **Sibling reviews:** all findings ledgers are grouped under
-> [docs/README.md → Findings & reviews](README.md#findings--reviews). (Added July 24, 2026.)
+> [docs/README.md → Findings & reviews](../README.md#findings--reviews). (Added July 24, 2026.)
 
 **Review target:** `origin/main` as of July 23–24, 2026 (post-merge state through
 PR #148 / commit `4da89b4`). This is a *holistic* quality walk of the merged waves
@@ -328,7 +328,7 @@ entry (details and dispositions in the **FIX-17** packet below):
 ## Wave R5 — packet drafts
 
 Rules: every packet follows the global guardrails in
-`docs/agent-plan-architecture-workspace-and-setup.md` (secrets, fail-closed, honest
+`docs/ledger/agent-plan-architecture-workspace-and-setup.md` (secrets, fail-closed, honest
 UI, append-only migrations, never-delete, simulation parity, server-side authz,
 review-first). All acceptance criteria are mutation-sensitive: a test must fail if
 the fix regresses. New packets carry no status line until started.

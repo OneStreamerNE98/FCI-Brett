@@ -223,7 +223,7 @@ test("SET-24 renders the fixed role and session policies without controls", asyn
 
 test("SET-24 updates the ledger and both guide sections", async () => {
   const [plan, guide] = await Promise.all([
-    read("docs/agent-plan-architecture-workspace-and-setup.md"),
+    read("docs/ledger/agent-plan-architecture-workspace-and-setup.md"),
     read("docs/guides/settings-guide.md"),
   ]);
   const packet = plan.slice(plan.indexOf("### SET-24"), plan.indexOf("### SET-25"));

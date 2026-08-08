@@ -10,7 +10,7 @@ Depends on: Approved roles/capabilities and production API contracts
 
 The interface is suitable for learning the single-user workflow. It needs explicit authorization, freshness, error, accessibility, and feature-readiness behavior before about 20 employees can rely on it together.
 
-The complete July 17 design-critique finding ledger, including intentionally deferred structural work and verification gates, is maintained in [the UI design critique remediation plan](../design-critique-fix-plan.md).
+The complete July 17 design-critique finding ledger, including intentionally deferred structural work and verification gates, is maintained in [the UI design critique remediation plan](../ledger/design-critique-fix-plan.md).
 
 ## July 13, 2026 UI audit priorities
 

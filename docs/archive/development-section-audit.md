@@ -1,11 +1,11 @@
 # Development section audit
-> **Archived August 2026** — point-in-time audit (July 12, 2026); current status lives in [the agent plan](../agent-plan-architecture-workspace-and-setup.md); retained for history.
+> **Archived August 2026** — point-in-time audit (July 12, 2026); current status lives in [the agent plan](../ledger/agent-plan-architecture-workspace-and-setup.md); retained for history.
 
 Audit date: July 12, 2026
 Remediation pass: July 12, 2026
 
 > **Historical snapshot — accurate as of July 12, 2026** (banner added July 24, 2026).
-> The [agent plan](../agent-plan-architecture-workspace-and-setup.md) owns current status.
+> The [agent plan](../ledger/agent-plan-architecture-workspace-and-setup.md) owns current status.
 > Since this audit: settings persistence landed (BE-07), the AI assistant wave shipped
 > its engine and settings (Workstream G), and the Google Workspace settings surface was
 > redesigned into the four-stage flow (SET-29…34), and **record editing shipped

@@ -15,7 +15,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | BE-09/#51 and BE-12/#53 merged source-only | Finish the remaining migration/cutover tooling, approved calculator evidence, and owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` was the last version-numbered deployment (private Sites development version 40); the owner now deploys on-demand from GitHub (Issue #258). KPI-02/#52, SET-10/#56, logo refresh/#57, and later merged UI source remain undeployed | Current queue and wave order live in the [agent plan's wave text](../agent-plan-architecture-workspace-and-setup.md); Wave R1 fixes are complete, and the SET-29…34 four-stage settings redesign and the DES-01…07 design-token/nav wave have since completed source-only (updated July 24, 2026). |
+| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` was the last version-numbered deployment (private Sites development version 40); the owner now deploys on-demand from GitHub (Issue #258). KPI-02/#52, SET-10/#56, logo refresh/#57, and later merged UI source remain undeployed | Current queue and wave order live in the [agent plan's wave text](../ledger/agent-plan-architecture-workspace-and-setup.md); Wave R1 fixes are complete, and the SET-29…34 four-stage settings redesign and the DES-01…07 design-token/nav wave have since completed source-only (updated July 24, 2026). |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
@@ -66,9 +66,9 @@ This dated snapshot records review work only; it does not change any owner check
 **Where current status lives (updated July 22, 2026):** the table above is the frozen
 record of the reviewed #51–#57 train and is not a running log. Authoritative, per-packet
 status is maintained in the guard-enforced `Status:` lines of the
-[agent execution plan](../agent-plan-architecture-workspace-and-setup.md), and full-review
+[agent execution plan](../ledger/agent-plan-architecture-workspace-and-setup.md), and full-review
 fix-packet status in the
-[full-codebase review findings](../full-review-2026-07-21-findings.md) — consult those for
+[full-codebase review findings](../ledger/full-review-2026-07-21-findings.md) — consult those for
 the exact current list, not this snapshot. Since that train, the dashboard-driven Workspace
 setup wave plus the flooring-KPI, rate-limiting, and Google-integration packets have merged
 source-only and undeployed; the nine-lens full-codebase review and the owner-approved
@@ -105,7 +105,7 @@ Use the [Pre-Workspace development plan](../archive/pre-workspace-development-pl
 
 ## Where agent work is tracked
 
-These checklists are owner-facing setup, decision, acceptance, and operations records. Active backend, Workspace, and Settings implementation status lives in the [agent execution plan](../agent-plan-architecture-workspace-and-setup.md); UI remediation status lives in the [design-critique plan](../design-critique-fix-plan.md); and architecture branch history and gates live in the [complete architecture audit roadmap](../reviews/complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap). The root [README](../../README.md#prioritized-next-work) is the entry point. Pull requests and issues may mirror those ledgers for review, but they do not create a separate task list.
+These checklists are owner-facing setup, decision, acceptance, and operations records. Active backend, Workspace, and Settings implementation status lives in the [agent execution plan](../ledger/agent-plan-architecture-workspace-and-setup.md); UI remediation status lives in the [design-critique plan](../ledger/design-critique-fix-plan.md); and architecture branch history and gates live in the [complete architecture audit roadmap](../reviews/complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap). The root [README](../../README.md#prioritized-next-work) is the entry point. Pull requests and issues may mirror those ledgers for review, but they do not create a separate task list.
 
 ## Recommended next work
 

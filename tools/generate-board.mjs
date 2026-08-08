@@ -10,7 +10,7 @@
  *   node tools/generate-board.mjs          # rewrite docs/BOARD.md in place
  *
  * The four ledgers are the ones the August 7 restructure plan counts as the 196-packet
- * set. docs/be04-oidc-review-and-followups.md also carries packet-shaped headings (four
+ * set. docs/ledger/be04-oidc-review-and-followups.md also carries packet-shaped headings (four
  * OIDC packets and KPI-01-FIX, all resolved); it is a review-followups document rather
  * than one of the four ledgers, so it stays out of the board until the stage-5 ledger
  * consolidation folds it in.
@@ -20,10 +20,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const LEDGERS = [
-  { path: "docs/agent-plan-architecture-workspace-and-setup.md", label: "agent-plan" },
-  { path: "docs/full-review-2026-07-21-findings.md", label: "review-2026-07-21" },
-  { path: "docs/full-review-2026-07-24-findings.md", label: "review-2026-07-24" },
-  { path: "docs/nightly-review-2026-07-findings.md", label: "nightly-2026-07" },
+  { path: "docs/ledger/agent-plan-architecture-workspace-and-setup.md", label: "agent-plan" },
+  { path: "docs/ledger/full-review-2026-07-21-findings.md", label: "review-2026-07-21" },
+  { path: "docs/ledger/full-review-2026-07-24-findings.md", label: "review-2026-07-24" },
+  { path: "docs/ledger/nightly-review-2026-07-findings.md", label: "nightly-2026-07" },
 ];
 
 export const BOARD_PATH = "docs/BOARD.md";

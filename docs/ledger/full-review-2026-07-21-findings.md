@@ -1,7 +1,7 @@
 # Full-codebase review — July 21, 2026 — findings ledger
 
 > **Sibling reviews:** all findings ledgers are grouped under
-> [docs/README.md → Findings & reviews](README.md#findings--reviews). (Added July 24, 2026.)
+> [docs/README.md → Findings & reviews](../README.md#findings--reviews). (Added July 24, 2026.)
 
 **Review target:** pinned commit `58e4498` (origin/main as of July 21, 2026; two docs
 commits behind current main, which adds only PR #89's reviewed follow-ups).
@@ -176,7 +176,7 @@ consumer.
 # FIX packets (build order: R1 → R3; R2 is the SET-29 series)
 
 Rules: every packet follows the global guardrails in
-`docs/agent-plan-architecture-workspace-and-setup.md` (secrets, fail-closed, honest
+`docs/ledger/agent-plan-architecture-workspace-and-setup.md` (secrets, fail-closed, honest
 UI, append-only migrations, never-delete, simulation parity, server-side authz,
 review-first). All acceptance criteria are mutation-sensitive: a test must fail if
 the fix regresses.
@@ -466,7 +466,7 @@ Cloud Armor) is part of the same review and determines the throttle's shape.
 > **Wave R5 (July 23–24, 2026):** the holistic post-wave review's findings and
 > packets (FIX-13…FIX-19, with FIX-14/FIX-16 folded into SET-06 by owner
 > decision) live in
-> [`docs/full-review-2026-07-24-findings.md`](full-review-2026-07-24-findings.md).
+> [`docs/ledger/full-review-2026-07-24-findings.md`](full-review-2026-07-24-findings.md).
 
 ### FIX-12 · R4 consolidation + residual sweep (P3s F-17/F-18 + recorded residuals; medium; Wave R4, after the SET-29 series)
 **Why:** the July 22 R1 capture audit confirmed every finding is dispositioned, but

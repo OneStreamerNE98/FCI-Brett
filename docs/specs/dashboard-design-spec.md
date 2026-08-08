@@ -4,7 +4,7 @@
 mockup `docs/dashboard-design-mockup.html` accompanies this spec for the
 affordance-grammar and brand-treatment look). This document is the design
 authority for the DES-01…DES-09 packets in
-`docs/agent-plan-architecture-workspace-and-setup.md` (Workstream F).
+`docs/ledger/agent-plan-architecture-workspace-and-setup.md` (Workstream F).
 
 **Goal (owner's words, binding):** keep the UI **simple and minimalist** while
 making it easier to navigate: the nav pane correct on every device open and
