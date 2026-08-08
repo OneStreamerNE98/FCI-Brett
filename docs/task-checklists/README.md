@@ -99,7 +99,7 @@ Read the [20-user product and architecture review](../20-user-product-and-archit
 
 Read the [complete product and Google Cloud architecture audit](../complete-product-and-google-cloud-architecture-audit.md) for the capability map, Google Cloud topology, texting/reminder design, integration reliability requirements, owner decisions, acceptance gates, and branch-sized implementation order.
 
-Read the accepted [Workspace-first, cost-controlled rollout](../architecture-decision-workspace-first-cost-controlled-rollout.md) before approving infrastructure work. It distinguishes isolated environment boundaries from running resources and records the cost and feature-activation gates.
+Read the accepted [Workspace-first, cost-controlled rollout](../specs/architecture-decision-workspace-first-cost-controlled-rollout.md) before approving infrastructure work. It distinguishes isolated environment boundaries from running resources and records the cost and feature-activation gates.
 
 Use the [Pre-Workspace development plan](../archive/pre-workspace-development-plan.md) to separate work that can be built with simulation now from owner decisions and live-connection tasks that require Workspace resources or credentials.
 
@@ -114,7 +114,7 @@ TRK-02 is complete in PR #66.
 PR #51 completed BE-09 in source; BE-10 has since completed (PR #82) and BE-14 has since completed (PR #178, July 24, 2026). PR #52 completed KPI-02 in source; KPI-03 has since completed (PR #75).
 The reviewed PR #51–#57 merge train is complete. SET-13 became assignable and has since completed (PR #76). For what is actually unclaimed, read the status lines in `../agent-plan-architecture-workspace-and-setup.md` — a packet is available if and only if it has no status line. Do not rely on a list copied here; the previous one named four packets (BE-07, SET-11, WS-13, GI-02) that had already merged. No checklist item here authorizes a live provider, staging run, migration/apply, production UI composition, owner acceptance, or deployment.
 
-Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
+Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../specs/administration-and-access-plan.md).
 
 **Deployment is owner-triggered from GitHub (Issue #258).** There is no standing "latest controlled release" version number. The historical PR #32 deployment at `adc79b8` (private Sites development version 40) included PR #30's semantic-table slice at `aa8ed8f` and is recorded for reference only. Later source through PR #48, documentation reconciliation through PR #50, BE-09 in PR #51, KPI-02 in PR #52, BE-12 in PR #53, OIDC-02/OIDC-03 in PRs #54/#55, SET-10 in PR #56, logo refresh in PR #57, and TRK-02 in PR #66 are merged but undeployed.
 None of the remaining steps above authorizes production deployment, live OIDC/session admission, staging execution, a migration or infrastructure apply, a second user, or real data.

@@ -1,5 +1,5 @@
 # Portable client and project creation
-> **Archived August 2026** — completed-slice record; superseded by [production-postgresql-foundation.md](../production-postgresql-foundation.md) and [production-postgresql-repositories.md](../production-postgresql-repositories.md); retained for history.
+> **Archived August 2026** — completed-slice record; superseded by [production-postgresql-foundation.md](../specs/production-postgresql-foundation.md) and [production-postgresql-repositories.md](../specs/production-postgresql-repositories.md); retained for history.
 
 Reviewed: July 13, 2026
 
@@ -9,7 +9,7 @@ Status: Implemented in source and covered by automated tests. Not deployed.
 
 Client and project creation now use provider-neutral domain and application services instead of placing business rules directly in Next.js route handlers. The current D1 database and synchronous Google directory mirror remain development adapters behind those boundaries, so the hosted development environment keeps its existing HTTP behavior while production adapters are developed separately.
 
-This is a bounded portability proof. The first [production PostgreSQL foundation](production-postgresql-foundation.md) and the source-only [PostgreSQL repository slice](production-postgresql-repositories.md) are now implemented separately. Production runtime composition, multi-user authorization, live queued Google synchronization, and the Workspace connection remain incomplete.
+This is a bounded portability proof. The first [production PostgreSQL foundation](../specs/production-postgresql-foundation.md) and the source-only [PostgreSQL repository slice](../specs/production-postgresql-repositories.md) are now implemented separately. Production runtime composition, multi-user authorization, live queued Google synchronization, and the Workspace connection remain incomplete.
 
 ## Creation flow
 
@@ -38,7 +38,7 @@ The application and domain layers do not import Next.js, Cloudflare bindings, or
 
 Development D1 schema changes now use the checked-in, ordered Drizzle sequence that Sites packages for controlled deployment. Normal API requests execute no schema DDL, and regression tests detect runtime DDL or missing schema/index artifacts.
 
-Read [Development D1 deployment migrations](development-d1-schema-migrations.md) before deploying this branch. The checked-in Sites/Drizzle sequence is for the one-user D1 test-data development environment, not the production PostgreSQL migration system. Before any development deployment, back up the test database and inspect it for duplicate client codes, client names, or project numbers because the new uniqueness indexes intentionally fail instead of rewriting conflicting records.
+Read [Development D1 deployment migrations](../specs/development-d1-schema-migrations.md) before deploying this branch. The checked-in Sites/Drizzle sequence is for the one-user D1 test-data development environment, not the production PostgreSQL migration system. Before any development deployment, back up the test database and inspect it for duplicate client codes, client names, or project numbers because the new uniqueness indexes intentionally fail instead of rewriting conflicting records.
 
 ## Compatibility and safety
 

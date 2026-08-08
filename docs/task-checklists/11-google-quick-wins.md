@@ -3,7 +3,7 @@
 Owner: business owner + Workspace administrator
 
 Status: Open — created July 21, 2026 with the adopted
-[Google integration opportunities](../google-integration-opportunities.md); tracked as
+[Google integration opportunities](../briefs/google-integration-opportunities.md); tracked as
 packet WS-16 in the [agent execution plan](../agent-plan-architecture-workspace-and-setup.md)
 
 Depends on: [Workspace resources](01-workspace-resources.md) (accounts, calendars, and

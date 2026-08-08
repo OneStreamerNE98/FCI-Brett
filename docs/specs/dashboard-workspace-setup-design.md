@@ -2,7 +2,7 @@
 
 Design date: July 20, 2026 · Owner-approved scope (Jason) · Baseline: `main` after
 PR #55 · Packets: SET-13…SET-21 + WS-14 in the
-[agent execution plan](agent-plan-architecture-workspace-and-setup.md).
+[agent execution plan](../agent-plan-architecture-workspace-and-setup.md).
 
 The admin completes most Google Workspace setup from Settings instead of manual
 Google-console work, and — critically — **defines the setup itself** (folder tree,

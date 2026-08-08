@@ -17,7 +17,7 @@ simulation-tested until these land).
 ## Block 1 · Workspace resources verification (~45 min, read-only)
 
 Confirm what the company Workspace already has, using
-[Workspace resources — checklist 01](task-checklists/01-workspace-resources.md):
+[Workspace resources — checklist 01](../task-checklists/01-workspace-resources.md):
 the verified domain, the operations connector account (the ONE account the app
 will connect as — not a personal account), that Drive/Gmail/Calendar/Sheets are
 enabled for it, Shared Drive support on the current Workspace edition, the
@@ -26,7 +26,7 @@ back:** the checklist's facts list — names/IDs only.
 
 ## Block 2 · Google Cloud + OAuth inventory (~1–1.5 hr, read-only, then gated changes)
 
-Using [Google Cloud and OAuth — checklist 02](task-checklists/02-google-cloud-and-oauth.md):
+Using [Google Cloud and OAuth — checklist 02](../task-checklists/02-google-cloud-and-oauth.md):
 inventory the company's existing Cloud project candidate — project ID, parent
 organization, what it's currently used for, who has IAM roles, billing state,
 which APIs are enabled. **Report back the checklist's non-secret facts and
@@ -42,11 +42,11 @@ key** (HTTP-referrer locked to the app's domains, Maps APIs only). This is the
 one thing blocking live job-site maps on the client/project screens. Hand the
 key to Jason for hosting configuration — not by email. Jason: it goes into the
 hosted environment settings under the exact name **`GOOGLE_MAPS_BROWSER_API_KEY`**;
-full detail in [checklist 02, Maps Platform](task-checklists/02-google-cloud-and-oauth.md).
+full detail in [checklist 02, Maps Platform](../task-checklists/02-google-cloud-and-oauth.md).
 
 ## Block 4 · Google-native quick wins (~1 hr, no code involved)
 
-The items in [Google quick wins — checklist 11](task-checklists/11-google-quick-wins.md) —
+The items in [Google quick wins — checklist 11](../task-checklists/11-google-quick-wins.md) —
 small Workspace-side setup (labels, templates, calendar sharing conventions)
 that makes the app's integrations land cleanly later.
 

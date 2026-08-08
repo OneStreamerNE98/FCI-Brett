@@ -343,7 +343,7 @@ OIDC vars (exactly-one-of secret/secret-file, like the postgres password pair); 
 config leaves the image byte-identical. Uses the **employee-login** OAuth client only.
 Emit security-audit events. Never read `oai-authenticated-user-email` in the platform
 layer. JWKS-stubbed verifier in tests. **Conform to
-`docs/administration-and-access-plan.md`:** the fixed policy (three roles, single-use
+`docs/specs/administration-and-access-plan.md`:** the fixed policy (three roles, single-use
 7-day invitations, 30-min/8-h sessions, final-Administrator protection, initial
 Administrators `admincrm@cherryhillfci.com` and `brett@cherryhillfci.com` pending live
 identity verification) is approved and not open for redesign.
@@ -1339,7 +1339,7 @@ appProperties) vs discardable (oauth attempts, sync state).
 (`calendars.insert`/`calendarList.list`), which the current consent does not hold
 (`calendar.events` only). Adding it is a consent-surface expansion the owner must
 approve under checklist-02 scope-review discipline; the app never widens consent
-silently. See [dashboard workspace setup design](dashboard-workspace-setup-design.md).
+silently. See [dashboard workspace setup design](specs/dashboard-workspace-setup-design.md).
 **Do (owner, guided):** Review the scope-addition rationale (calendar creation and
 listing from the setup dashboard); confirm the connector OAuth client's consent screen
 lists the calendar scope (the two OAuth clients are never merged); set
@@ -1354,7 +1354,7 @@ reauthorization pair; no other scope changed; checklist-02 row checked with a da
 autocomplete) use API keys, not the connector OAuth account, and require a billing
 account on the Google Cloud project. The owner budget is ≤$50/month; expected actual
 usage is ~$0–10/month inside free tiers, and a budget alert enforces the ceiling. See
-[Google integration opportunities](../google-integration-opportunities.md) — this file
+[Google integration opportunities](briefs/google-integration-opportunities.md) — this file
 lives at `docs/`, adjust the relative link if moved.
 **Do (owner, guided):** Attach a company-controlled Cloud Billing account to the
 verified development project (checklist 02); enable Maps Embed API, Address Validation
@@ -1914,7 +1914,7 @@ card's sentence may say so.
 ### SET-13 · Workspace resource registry + effective-config layer + resources card (large, after completed SET-03+04+10) — FIRST in the dashboard-setup feature
 **Status:** Complete — PR #76, July 21, 2026. Source-only and undeployed; migration 0013 has not been applied to Sites.
 
-**Why:** Owner-approved direction ([design doc](dashboard-workspace-setup-design.md)):
+**Why:** Owner-approved direction ([design doc](specs/dashboard-workspace-setup-design.md)):
 dashboard-created resource IDs persist app-side and become runtime-authoritative with
 env fallback and a visible source badge. Today `authorize` gates on `oauthReady`, which
 requires resource-ID env vars — so nothing can be created from the dashboard because
@@ -2328,7 +2328,7 @@ answer), and the InfoHint trigger needs a ≥44px hit area at 390px.
 **Why:** Owner-approved redesign (July 21, 2026): the Google Workspace section is a
 nine-piece single-column scroll that restates the same mode/connection state nine
 times from three independently loaded endpoints (full-review UI-honesty lens, P2, at
-`58e4498`). Design authority: `docs/settings-redesign-spec.md` + the approved
+`58e4498`). Design authority: `docs/specs/settings-redesign-spec.md` + the approved
 `docs/settings-redesign-wireframe.html`.
 **Do:** In `GoogleWorkspacePanel.tsx`, add the single status banner (mode chip +
 plain-words headline with the next step + "Stage N of 4"), the reusable `SetupStage`
@@ -2764,10 +2764,10 @@ install cycle time, and callback rate.
 Rules for this workstream: (1) **simple over complete** — only KPIs every flooring
 installer recognizes instantly; (2) every formula is pinned in one definitions doc so all
 agents and reports compute identical numbers; (3) **dollar-value KPIs are
-Administrator-only at rollout** per `docs/administration-and-access-plan.md` (PR #41
+Administrator-only at rollout** per `docs/specs/administration-and-access-plan.md` (PR #41
 wires the gate directly through SET-02's authenticated `isAdmin`); (4) schema changes are
 additive-only and follow
-`docs/development-d1-schema-migrations.md` (D1) and the append-only checksummed registry
+`docs/specs/development-d1-schema-migrations.md` (D1) and the append-only checksummed registry
 (PostgreSQL); (5) no cost/margin capture, no external review data, no scheduling
 dependencies — see the exclusions in KPI-01's definitions doc.
 
@@ -2833,7 +2833,7 @@ workflow redesign.
 specialty / mixed — validate against the list server-side but store text),
 `square_feet` (integer), `contract_value` (integer dollars, the sold price at booking);
 run `npm run db:generate` for immutable migration 0012 per
-`docs/development-d1-schema-migrations.md` (additive, no unique indexes, no backfill).
+`docs/specs/development-d1-schema-migrations.md` (additive, no unique indexes, no backfill).
 (2) Extend POST /api/v1/projects validation (bounded, all three optional) and the
 New-project modal with the three optional inputs (category select, sq ft, contract
 value — modal field conventions from the accessibility pass); render them in the project
@@ -2916,7 +2916,7 @@ format). Effort: small.
 
 Goal: tighten the app's integration with Google products the company already pays for,
 selected from the adopted
-[Google integration opportunities](google-integration-opportunities.md) research
+[Google integration opportunities](briefs/google-integration-opportunities.md) research
 (owner budget ≤$50/month; the whole workstream is expected to cost ~$0–10/month
 actual). Every packet is source-only, simulation-testable, and owner-gated for any new
 scope, API key, or billing attachment. GI packets follow the same guardrails, status
@@ -3159,7 +3159,7 @@ not become a separate task source of truth.
 | `docs/task-checklists/*` | **Owner-facing** setup, connection, acceptance, and operations checkboxes | Owners check boxes; agents only fix stale facts (BE-01) or add evidence templates (WS-11) |
 | `docs/complete-product-and-google-cloud-architecture-audit.md` roadmap | Architecture branch history and gates | TRK-01 cross-references its open items to BE/WS ids |
 | `README.md` "Prioritized next work" | Entry point / pointer | BE-01 fixes its content; TRK-01 makes it point to the ledgers instead of duplicating them |
-| `docs/administration-and-access-plan.md` | **Approved first-release access design** (fixed roles, five admin workflows, initial Administrators `admincrm@`/`brett@cherryhillfci.com`) | BE-04 and any access work must conform to it; do not re-open its decisions |
+| `docs/specs/administration-and-access-plan.md` | **Approved first-release access design** (fixed roles, five admin workflows, initial Administrators `admincrm@`/`brett@cherryhillfci.com`) | BE-04 and any access work must conform to it; do not re-open its decisions |
 | `docs/archive/pre-workspace-development-plan.md` | What can start now vs. must wait for Workspace/credentials | Consistent with this plan's owner gate; TRK-01 cross-links it |
 | `docs/20-user-product-and-architecture-review.md` | P0/P1/P2 findings, corrected delivery order, go/no-go gates | The gates govern second-user/real-data admission; BE/WS items map onto its delivery order |
 
@@ -3789,7 +3789,7 @@ category (a) is named individually in the PR body with what it would have broken
 **Status:** Superseded — absorbed into DES-17
 
 **Why:** filed August 6, 2026 from the comprehensive code review
-(`docs/code-review-2026-08-06-findings.md`, F2, adversarially confirmed by direct
+(`docs/reviews/code-review-2026-08-06-findings.md`, F2, adversarially confirmed by direct
 inspection) — and **superseded the same day**: DES-17, filed August 4 from the usability
 review, already owns the error boundary (plus the toast queue and empty-state actions).
 The August 6 measurement independently re-confirmed DES-17's premise (zero
@@ -3995,7 +3995,7 @@ as a default; and the Cloud Run image builds twice with no layer cache. Rejected
 validation: the build-stamp "gap" — `.env.example` documents those variables as the
 deploy step's responsibility (DOC-06), and the Cloud Run build never reads them — plus
 the claimed rollback-doc gap. The deliberate forward-fix/restore posture is already
-documented in `docs/production-postgresql-foundation.md` and
+documented in `docs/specs/production-postgresql-foundation.md` and
 `docs/runbooks/google-cloud/migration-cutover-and-recovery.md`; do not duplicate or
 reverse it here.
 **Do:** land each sub-item as its own commit: (a) evaluate the vinext upgrade or write
@@ -4241,7 +4241,7 @@ fallback; the single toast slot overwrites rapid notifications (a suppression ha
 the notify callback papers over one case); `OperationsEmptyState` has no action slot,
 which is the mechanical cause of 9 of 12 sampled empty-state dead ends. Independently
 re-measured August 6, 2026 by the comprehensive code review
-(`docs/code-review-2026-08-06-findings.md`, F2 — zero `error.tsx` files, zero
+(`docs/reviews/code-review-2026-08-06-findings.md`, F2 — zero `error.tsx` files, zero
 `ErrorBoundary` classes, `app/layout.tsx` renders `{children}` bare); that review's
 duplicate filing is recorded as NFIX-11, superseded into this packet.
 **Do:** (1) an app-shell error boundary plus route-level error surface that says what
@@ -5308,7 +5308,7 @@ twice. **R1** — full-review foundation fix packets (FIX-01…FIX-06 plus FIX-1
 layering, or test infrastructure. **R1 completed July 22, 2026 (PRs #95–#112,
 reviewed and flipped), so R2 is unblocked and active.**
 **R2** — the SET-29 → SET-34 stage-shell series (design authority:
-`docs/settings-redesign-spec.md` + approved wireframe; strictly one packet at a
+`docs/specs/settings-redesign-spec.md` + approved wireframe; strictly one packet at a
 time — all six touch `GoogleWorkspacePanel.tsx`). **R3** — remaining full-review fix
 packets that touch settings UI, built on the new frame (FIX-07, FIX-08). **R4** — the
 feature queue resumes stage-native, plus FIX-09, the production-only FIX-11
@@ -5508,7 +5508,7 @@ remain the only dispatch authority).
 - Client-status semantics (archived clients selectable in pickers; status is display-only
   everywhere) — enhancement candidate from the EDIT-05 review.
 - Gmail Workspace Add-on ("the flagship",
-  [`docs/google-integration-opportunities.md`](google-integration-opportunities.md)) — filing
+  [`docs/briefs/google-integration-opportunities.md`](briefs/google-integration-opportunities.md)) — filing
   where staff already read mail; strategic option, not scheduled.
 
 **Orchestrator to-dos (not Codex):**

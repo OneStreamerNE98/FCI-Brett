@@ -311,7 +311,7 @@
 - **File:** `app/platform/postgres/production-schema-migrations.ts`
 - **Validation:** The runner is forward-only, but the repository deliberately uses
   forward-fix or restore-based rollback and already documents that procedure in
-  `docs/production-postgresql-foundation.md` and
+  `docs/specs/production-postgresql-foundation.md` and
   `docs/runbooks/google-cloud/migration-cutover-and-recovery.md`.
 - **Disposition:** Already satisfied by the recorded operating model; no NFIX packet and
   no down-migration machinery authorized.

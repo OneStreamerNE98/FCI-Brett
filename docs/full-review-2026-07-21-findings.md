@@ -102,7 +102,7 @@ legitimate test addition breaks it.
 **F-11 · The same mode/connection state renders nine times in the Workspace panel**
 (UI honesty; enumerated at lines 574-577, 601, 605, 607, 638, 648, 662, 668, 669,
 from three independently loaded endpoints that can transiently disagree) —
-**remediated by the SET-29…SET-34 series** (`docs/settings-redesign-spec.md`); no
+**remediated by the SET-29…SET-34 series** (`docs/specs/settings-redesign-spec.md`); no
 separate FIX packet.
 
 **F-12 · One backend enum, three label mappings, two of them leaking raw values**

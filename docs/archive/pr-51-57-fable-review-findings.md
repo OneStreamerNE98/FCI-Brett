@@ -7,8 +7,8 @@ Baseline: `main` after PR #58 (`c955d91`) · Follow-ups section revised July 20,
 after a completeness audit of the review record.
 
 > **Snapshot scope:** review record and follow-up instructions, not a status ledger.
-> Canonical status lives in the [agent execution plan](agent-plan-architecture-workspace-and-setup.md)
-> and the [OIDC follow-up ledger](be04-oidc-review-and-followups.md).
+> Canonical status lives in the [agent execution plan](../agent-plan-architecture-workspace-and-setup.md)
+> and the [OIDC follow-up ledger](../be04-oidc-review-and-followups.md).
 
 ## Verdict
 
