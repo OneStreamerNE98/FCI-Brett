@@ -3746,7 +3746,7 @@ with outcomes.
 **Effort:** small-medium. **Cost:** $0.
 
 ### NFIX-09 · Every merge to main cancels the previous merge's verification (small; CI only)
-**Status:** In progress — `kimi/nfix09-main-concurrency`
+**Status:** Complete — PR #331, August 7, 2026. `cancel-in-progress` on the CI concurrency group is now conditioned on `github.ref != 'refs/heads/main'`, so a merge to main no longer cancels the previous merge's still-running verification. Verified live in `.github/workflows/ci.yml`.
 
 **Why:** `.github/workflows/ci.yml` sets `cancel-in-progress: true` on a concurrency group keyed
 on `github.ref`, which is CONSTANT for pushes to `main`. So each merge kills the still-running
@@ -4232,7 +4232,7 @@ updated in the same commit); `npm test`, `npm run test:e2e`, `npm run lint` name
 **Effort:** small-medium. **Cost:** $0. **Took and released the FloorOpsApp slot in PR #306.**
 
 ### DES-17 · The failure surface: error boundary, toast queue with next steps, empty-state actions (medium)
-**Status:** In progress — `codex/des17-failure-surface`
+**Status:** Complete — PR #332, August 7, 2026. Source-only and undeployed. Unreviewed by the orchestrator at merge time — queued for the standing review (see the August 7 post-hoc review plan). Do not re-dispatch.
 
 **Why:** the August 4 usability review measured the trust surface: zero React error
 boundaries (a render throw blanks the whole app); 53 of 54 error toasts offer no next
