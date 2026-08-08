@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 49 not started · 4 in progress · 2 blocked · 129 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 49 not started · 2 in progress · 2 blocked · 131 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -54,7 +54,7 @@ row holds the full text. Packets without a status line are not started.
 | DES-14b | FloorOpsApp decomposition: the modal and drawer cluster (large, after DES-14) | Complete — PR #328, August 7, 2026. | agent-plan |
 | DES-15 | Record-page list views with sorting and search (medium-large, after DES-14) | — | agent-plan |
 | DES-16 | Flow honesty: the phone-call lead path, the Schedule phantoms, and a role-gated nav (small-medium) — ADOPTION FLAGSHIP | Complete — PR #306, August 4, 2026. | agent-plan |
-| DES-17 | The failure surface: error boundary, toast queue with next steps, empty-state actions (medium) | In progress — `codex/des17-failure-surface` | agent-plan |
+| DES-17 | The failure surface: error boundary, toast queue with next steps, empty-state actions (medium) | Complete — PR #332, August 7, 2026. | agent-plan |
 | DES-18 | Findability and the filing prefill (small-medium, after AI-11(c) merges — inbox cluster) | — | agent-plan |
 | DES-19 | Responsive layout primitives and the dynamic-state guard (medium-large; after DES-13 and DES-14) | — | agent-plan |
 | DES-20 | Settings navigation architecture: the phone index and the tablet double-rail (medium; after DES-19) | — | agent-plan |
@@ -123,7 +123,7 @@ row holds the full text. Packets without a status line are not started.
 | NFIX-06 | Tablet-band clipping and overlap fixes (small) | Complete — PR #267, July 31, 2026. | nightly-2026-07 |
 | NFIX-07 | Scanner false-signal classes, resilient scan method, and the three live August 3 defects (small) | Complete — PR #289, August 4, 2026. | nightly-2026-07 |
 | NFIX-08 | iPhone info-tooltips never display on tap (small) | — | nightly-2026-07 |
-| NFIX-09 | Every merge to main cancels the previous merge's verification (small; CI only) | In progress — `kimi/nfix09-main-concurrency` | agent-plan |
+| NFIX-09 | Every merge to main cancels the previous merge's verification (small; CI only) | Complete — PR #331, August 7, 2026. | agent-plan |
 | NFIX-10 | 256 type errors nobody runs (medium; quality gate) | — | agent-plan |
 | NFIX-11 | Error boundaries: one crash currently unmounts the whole app (medium; quality gate) | Superseded — absorbed into DES-17 | agent-plan |
 | NFIX-12 | Execute the remaining direct-route coverage gaps (small-medium) | — | agent-plan |
