@@ -8,7 +8,7 @@ Status: Implemented and tested in source. Not provisioned, applied, or deployed.
 
 The production PostgreSQL foundation is deliberately separate from the current D1 development environment. It defines the first production data model and migration safety controls without changing API routes, D1 migration versions 1–3, the hosted development environment, Google Workspace, or any live data.
 
-This document describes the schema and migration-runner boundary through immutable migration v10. The source-only [PostgreSQL repository slice](production-postgresql-repositories.md) implements client/project/lead/project-meeting adapters, application idempotency, and worker-safe outbox state transitions. The [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) composes those adapters around a bounded private Cloud SQL pool, provides separate service/migration/rehearsal entry points, and defines least-privilege source policy. The full application runtime, a live outbox worker, provisioned Cloud resources/secrets, and complete development-data migration remain later assignments.
+This document describes the schema and migration-runner boundary through immutable migration v10. The source-only [PostgreSQL repository slice](production-postgresql-repositories.md) implements client/project/lead/project-meeting adapters, application idempotency, and worker-safe outbox state transitions. The [Google Cloud runtime foundation](../google-cloud-runtime-foundation.md) composes those adapters around a bounded private Cloud SQL pool, provides separate service/migration/rehearsal entry points, and defines least-privilege source policy. The full application runtime, a live outbox worker, provisioned Cloud resources/secrets, and complete development-data migration remain later assignments.
 
 ## Core model
 
@@ -101,7 +101,7 @@ Never point `TEST_POSTGRES_URL` at a shared, staging, or production database. Th
 - Explicit runtime/migration/rehearsal access modes, Secret Manager-friendly password-file input, redacted operational errors, and ordered shutdown.
 - Source-only capability roles/exact grants plus a bounded test-data rehearsal that preserves supported core IDs and audit evidence while always reporting that full cutover is not ready.
 
-See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) for the exact boundary and remaining work.
+See [Google Cloud runtime foundation](../google-cloud-runtime-foundation.md) for the exact boundary and remaining work.
 
 ## Provisioning work intentionally deferred
 

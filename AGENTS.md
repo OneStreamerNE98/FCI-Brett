@@ -8,7 +8,7 @@ Start with [`docs/README.md`](docs/README.md), the audience-grouped index of eve
 
 1. `docs/codex-to-codex-handoff.md`
 2. `docs/architecture-decision-production-platform.md`
-3. `docs/architecture-decision-workspace-first-cost-controlled-rollout.md`
+3. `docs/specs/architecture-decision-workspace-first-cost-controlled-rollout.md`
 4. `docs/20-user-product-and-architecture-review.md`
 5. `docs/agent-plan-architecture-workspace-and-setup.md`
 6. `docs/complete-product-and-google-cloud-architecture-audit.md`
@@ -23,7 +23,7 @@ Start with [`docs/README.md`](docs/README.md), the audience-grouped index of eve
 
 - The Sites/Workers/D1/R2 deployment is the controlled, single-user development environment and uses test data only.
 - Production will use a small regional Cloud Run/Cloud SQL modular monolith, Secret Manager, Google Workspace OIDC, and application-owned authorization and audit controls. Cloud Tasks, Cloud Scheduler, Gmail Pub/Sub, Calendar HTTPS webhooks, Cloud Storage quarantine/scanning, SMS, and `pgvector` are feature-gated capabilities, not day-one provisioning requirements.
-- Follow the [Workspace-first, cost-controlled rollout](docs/architecture-decision-workspace-first-cost-controlled-rollout.md): reuse existing Workspace services, keep Sites as development, keep staging on demand, define both standalone and HA Cloud SQL profiles, and leave optional infrastructure modules disabled and unapplied until approved.
+- Follow the [Workspace-first, cost-controlled rollout](docs/specs/architecture-decision-workspace-first-cost-controlled-rollout.md): reuse existing Workspace services, keep Sites as development, keep staging on demand, define both standalone and HA Cloud SQL profiles, and leave optional infrastructure modules disabled and unapplied until approved.
 - Preserve the current development deployment, Google Workspace test connector, and existing data unless the owner explicitly approves a migration or destructive change.
 - Do not add scheduling, messaging, or AI document indexing before the production platform and authorization foundation is accepted.
 - Do not admit a second user or store real client data until users, sessions, roles, project permissions, backup restoration, and audit controls pass acceptance.
@@ -222,7 +222,7 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
     from another family covers a blind spot nothing else in the process covers, and that
     outweighs a longer probation).
     Every agent joining the review layer reads
-    [`docs/agent-reviewer-briefing.md`](docs/agent-reviewer-briefing.md) first. When live: findings post as PR comments
+    [`docs/briefs/agent-reviewer-briefing.md`](docs/briefs/agent-reviewer-briefing.md) first. When live: findings post as PR comments
     prefixed with the literal token `KIMI-ADVISORY:`; such comments are EXCLUDED from
     the address-every-automated-comment rule; findings count only if posted before the
     orchestrator's verdict comment — later findings become new packets, never PR
