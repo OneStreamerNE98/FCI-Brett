@@ -5370,8 +5370,10 @@ its bullet — leaving four claimants; DES-14 and DES-12, filed August 3, 2026, 
 in the tail, making six. Recommended claim order, most valuable first:
 
 **DES-14 (complete in PR #327) → DES-14b (complete in PR #328) →
-GI-05 (if approved) → WS-20 (if approved) → DES-17 (shell scope,
+GI-05 (if approved) → DES-17 (shell scope,
 post-decomposition) → DES-10 (variants a/b only) → DES-12.**
+(WS-20 dropped from this order August 9, 2026 — build evidence, see its bullet below:
+it takes no slot.)
 (DES-16 and DES-17 were added August 4, 2026 with the usability wave. DES-16 merged in
 PR #306 and released the slot; DES-17's slot need is the app-shell toast/boundary
 machinery that remains in `FloorOpsApp.tsx` after DES-14, so it follows the extraction.)
@@ -5400,8 +5402,13 @@ machinery that remains in `FloorOpsApp.tsx` after DES-14, so it follows the extr
   shared navigation-triggered revalidation remain inline in `app/FloorOpsApp.tsx`.
 - **GI-05** — the project drawer and its Planned-capabilities list
   (inside `ProjectDrawer`). Also gated on an owner decision about scheduling.
-- **WS-20** — a mailbox picker sits beside `bucket` at the same `InboxView` mount. Also gated
-  on two owner decisions recorded in its packet.
+- **WS-20** — takes NO `FloorOpsApp.tsx` slot (build evidence, August 9, 2026, PR #352, in
+  review — not yet merged): the mailbox picker landed inside
+  `InboxView.tsx`/`GoogleWorkspacePanel.tsx` at their own mounts, not the FloorOpsApp shell —
+  PR #352's diff touches zero `FloorOpsApp.tsx` lines, confirmed directly against its file
+  list. An earlier bullet here predicted the picker would sit beside `bucket` at the
+  FloorOpsApp mount; that prediction is retired — a slot claim follows the diff, never the
+  other way around.
 - **DES-14** — complete in PR #327. It moved the four record views, shared contracts, and
   shared display helpers out of `app/FloorOpsApp.tsx`; those record views permanently exit
   the queue.
