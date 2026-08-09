@@ -429,9 +429,19 @@ test("mail-item adapter maps nullable relationships, bounds list size, and upser
     dismissal.sql,
     // The retirement status is now bound, not a literal, so a row records whether it
     // was accepted or dismissed rather than collapsing every exit to "dismissed".
-    /^UPDATE mail_items SET status = \?/u,
+    /^UPDATE mail_items\s+SET status = \?/u,
   );
-  assert.deepEqual(dismissal.values, ["dismissed", "test@example.com", 33, null, 33, "mail-1", "google-workspace"]);
+  assert.deepEqual(dismissal.values, [
+    "dismissed",
+    "test@example.com",
+    33,
+    null,
+    33,
+    "mail-1",
+    "google-workspace",
+    "dismissed",
+    null,
+  ]);
   assert.equal(database.runs.length, 3);
 });
 
