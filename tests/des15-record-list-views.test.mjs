@@ -60,6 +60,7 @@ test("DES-15 extracted views implement search, sorting, progressive reveal, and 
   assert.match(revealMobileTopbar, /topbarScrollDirectionRef\.current = 0/u);
   assert.match(revealMobileTopbar, /topbarScrollDistanceRef\.current = 0/u);
   assert.match(shell, /function openProject\([\s\S]*?revealMobileTopbar\(\);[\s\S]*?setSelectedProject\(project\)/u);
+  assert.match(shell, /className=\{`topbar\$\{topbarHidden && !projectOpen \? " topbar-hidden" : ""\}`\}/u);
 });
 
 test("DES-15 persists through the existing account preference and page-layout JSON boundary", () => {

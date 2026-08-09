@@ -1455,7 +1455,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
 
       {mobileNavActive && <div className="sidebar-scrim" role="presentation" aria-hidden="true" onMouseDown={() => setMobileNav(false)} />}
       <main className="main-area" inert={mobileNavActive ? true : undefined}>
-        <header ref={topbarRef} className={`topbar${topbarHidden ? " topbar-hidden" : ""}`}>
+        <header ref={topbarRef} className={`topbar${topbarHidden && !projectOpen ? " topbar-hidden" : ""}`}>
           <button
             ref={mobileNavigationTriggerRef}
             className="mobile-menu"
