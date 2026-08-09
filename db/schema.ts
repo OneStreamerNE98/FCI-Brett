@@ -249,7 +249,7 @@ export const userPreferences = sqliteTable("user_preferences", {
 
 export const mailItems = sqliteTable("mail_items", {
   id: text("id").primaryKey(),
-  connectionKey: text("connection_key").notNull().default("google-workspace"),
+  connectionKey: text("connection_key").notNull(),
   gmailMessageId: text("gmail_message_id"),
   gmailThreadId: text("gmail_thread_id"),
   clientId: text("client_id"),
@@ -269,6 +269,7 @@ export const mailItems = sqliteTable("mail_items", {
   receivedAt: integer("received_at", { mode: "timestamp_ms" }),
   failureAttempts: integer("failure_attempts").notNull().default(0),
   errorCode: text("error_code"),
+  coverageComplete: integer("coverage_complete", { mode: "boolean" }).notNull().default(false),
   reviewedBy: text("reviewed_by"),
   reviewedAt: integer("reviewed_at", { mode: "timestamp_ms" }),
   acceptedIntent: text("accepted_intent"),
@@ -361,7 +362,10 @@ export const googleConnections = sqliteTable("google_connections", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
-});
+}, (table) => [
+  uniqueIndex("google_connections_google_subject_unique").on(table.googleSubject),
+  uniqueIndex("google_connections_google_email_lower_unique").on(sql`lower(${table.googleEmail})`),
+]);
 
 /** App-managed Google Workspace resource IDs for the controlled development connector. */
 export const workspaceResources = sqliteTable("workspace_resources", {

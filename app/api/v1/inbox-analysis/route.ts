@@ -6,6 +6,7 @@ import {
   acquireWorkspaceSetupLease,
   completeWorkspaceSetupLease,
   failWorkspaceSetupLease,
+  googleConnectionLeaseFence,
   type WorkspaceSetupLease,
 } from "../../../adapters/d1/workspace-setup-leases";
 import { OpenAIResponsesProvider } from "../../../adapters/openai/responses-provider";
@@ -34,7 +35,10 @@ import {
   type GmailMessageSummary,
 } from "../../../lib/google-gmail";
 import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
-import { getConnectionScope } from "../../../lib/google-oauth-sites";
+import {
+  GoogleIntegrationError,
+  getGoogleMailboxRuntimeConfig,
+} from "../../../lib/google-oauth-sites";
 import { noStoreJson, noStoreResponse } from "../../../lib/no-store-json";
 import {
   simulationInboxAnalysisFixture,
@@ -663,6 +667,7 @@ export async function runInboxAnalysisSweep(input: {
       scopeKey: "gmail-inbox",
       actor: input.actor,
       now: now(),
+      connectionFence: googleConnectionLeaseFence(config),
     },
   );
   if (!lease) {
@@ -1286,12 +1291,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const workspace = await getWorkspaceGmailClient(
+      request.nextUrl.searchParams.get("mailbox"),
+    );
     return noStoreJson(await runInboxAnalysisSweep({
       database,
       environment,
       featureEnabled: configuration.features.inboxAnalysis,
       model: configuration.model,
       actor: auth.user.email,
+      workspace,
       ...(sweepRequest.pageToken
         ? { pageToken: sweepRequest.pageToken }
         : {}),
@@ -1453,7 +1462,11 @@ export async function GET(request: NextRequest) {
     await ensureWorkspaceSchema();
     const database = env.DB as unknown as D1Database;
     const repository = createD1MailItemRepository(database);
-    const connectionKey = getConnectionScope().connectionKey;
+    const connectionKey = (
+      await getGoogleMailboxRuntimeConfig(
+        request.nextUrl.searchParams.get("mailbox"),
+      )
+    ).connectionKey;
     const labelCatalog = await readAssistantLabelCatalog(database);
     const [page, failed] = await Promise.all([
       repository.listByStatusPage(
@@ -1474,7 +1487,10 @@ export async function GET(request: NextRequest) {
         ? { failedCount: failed.count, failedReason: failed.reason }
         : {}),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof GoogleIntegrationError) {
+      return noStoreResponse(gmailErrorResponse(error));
+    }
     return noStoreJson(
       { error: "The inbox review queue could not be loaded." },
       500,
@@ -1509,7 +1525,11 @@ export async function PATCH(request: NextRequest) {
     await ensureWorkspaceSchema();
     const database = env.DB as unknown as D1Database;
     const repository = createD1MailItemRepository(database);
-    const connectionKey = getConnectionScope().connectionKey;
+    const connectionKey = (
+      await getGoogleMailboxRuntimeConfig(
+        request.nextUrl.searchParams.get("mailbox"),
+      )
+    ).connectionKey;
     if (retry) {
       const labelCatalog = await readAssistantLabelCatalog(database);
       const retriedCount = await repository.resetExhaustedAnalysisFailures(
@@ -1534,7 +1554,10 @@ export async function PATCH(request: NextRequest) {
       return noStoreJson({ error: "Inbox review row not found." }, 404);
     }
     return noStoreJson({ id: update.id, status: update.outcome });
-  } catch {
+  } catch (error) {
+    if (error instanceof GoogleIntegrationError) {
+      return noStoreResponse(gmailErrorResponse(error));
+    }
     return noStoreJson(
       {
         error: retry

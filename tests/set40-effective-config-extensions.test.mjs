@@ -150,11 +150,10 @@ test("simulation rejects Drive provisioning writes after validation and before p
   assert.equal(databaseCalls, 0);
 });
 
-test("hot list GET handlers use only the synchronous connection scope", async () => {
+test("ordinary list GET handlers keep the synchronous scope while mailbox consumers resolve only in their assigned paths", async () => {
   const routes = [
     "app/api/v1/clients/route.ts",
     "app/api/v1/projects/route.ts",
-    "app/api/v1/tasks/route.ts",
     "app/api/v1/leads/route.ts",
     "app/api/v1/dashboard/route.ts",
     "app/api/v1/integrations/google/operations/route.ts",
@@ -165,6 +164,17 @@ test("hot list GET handlers use only the synchronous connection scope", async ()
     const getHandler = source.split("export async function GET", 2)[1]?.split(/\nexport async function /u, 1)[0] ?? "";
     assert.doesNotMatch(getHandler, /getEffectiveGoogleRuntime(?:Config|Setup)\(/u, relative);
   }
+  const taskSource = await readFile(new URL("../app/api/v1/tasks/route.ts", import.meta.url), "utf8");
+  const taskGet = taskSource.split("export async function GET", 2)[1]?.split(/\nexport async function /u, 1)[0] ?? "";
+  const taskPost = taskSource.split("export async function POST", 2)[1] ?? "";
+  assert.doesNotMatch(taskGet, /getGoogleMailboxRuntimeConfig\(/u);
+  assert.match(taskPost, /await getGoogleMailboxRuntimeConfig\(taskRequest\.inboxReview\.mailbox\)/u);
+
+  const operationsSource = await readFile(
+    new URL("../app/api/v1/integrations/google/operations/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(operationsSource, /await getGoogleConnectionScopes\(\)/u);
 });
 
 test("spreadsheet adoption fields remain Administrator-only while their sources stay explicit", async () => {
@@ -529,6 +539,13 @@ class VerifyD1Database {
         key_version TEXT NOT NULL, status TEXT NOT NULL,
         last_error_code TEXT, last_success_at INTEGER, created_by TEXT NOT NULL,
         created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, revoked_at INTEGER
+      );
+      CREATE TABLE google_drive_operations (
+        id TEXT PRIMARY KEY, connection_key TEXT NOT NULL,
+        operation_key TEXT NOT NULL UNIQUE, project_id TEXT NOT NULL,
+        status TEXT NOT NULL, lease_expires_at INTEGER,
+        last_error_code TEXT, created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
       );
     `);
   }

@@ -1,6 +1,14 @@
 import { env } from "cloudflare:workers";
 import { NextRequest } from "next/server";
 
+import type { D1Database } from "../../../../../../adapters/d1/d1-database";
+import {
+  acquireWorkspaceSetupLease,
+  completeWorkspaceSetupLease,
+  failWorkspaceSetupLease,
+  googleConnectionLeaseFence,
+  type WorkspaceSetupLease,
+} from "../../../../../../adapters/d1/workspace-setup-leases";
 import { parseBoundedJsonObject } from "../../../../../../lib/api-json-body";
 import {
   GoogleDriveClient,
@@ -211,7 +219,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   let providerFileCreated = false;
+  const database = env.DB as unknown as D1Database;
+  let lease: WorkspaceSetupLease | null = null;
   try {
+    if (!config.simulation) {
+      lease = await acquireWorkspaceSetupLease(database, {
+        id: crypto.randomUUID(),
+        connectionKey: config.workspaceConnectionKey,
+        action: `project-file-create:${project.id}`,
+        scopeKey: `project-file:${project.id}`,
+        actor: auth.user.email,
+        now: Date.now(),
+        connectionFence: googleConnectionLeaseFence(config),
+      });
+      if (!lease) {
+        return noStoreJson({
+          error: "The Google connection changed or another project file is already being created. Try again.",
+          code: "project_file_create_in_progress",
+        }, { status: 409 });
+      }
+    }
     let file: { id: string; name: string; url: string };
 
     if (config.simulation) {
@@ -292,6 +319,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         ),
     ]);
 
+    if (lease) {
+      await completeWorkspaceSetupLease(database, lease, Date.now());
+      lease = null;
+    }
+
     return noStoreJson({
       created: true,
       ...(config.simulation ? { simulated: true } : {}),
@@ -299,21 +331,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
       environment: config.environment,
     }, { status: 201 });
   } catch (error) {
+    let responseError = error;
     if (providerFileCreated) {
       const code = error instanceof GoogleIntegrationError ? error.code : "project_file_create_failed";
-      await env.DB.prepare("INSERT INTO google_integration_events (id, connection_key, event_type, actor, entity_type, entity_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(
-          crypto.randomUUID(),
-          config.connectionKey,
-          "drive.file_create_failed",
-          auth.user.email,
-          "project",
-          project.id,
-          `mode=workspace;kind=${kind};source=${templateKey ? `template:${templateKey}` : "blank"};code=${code};provider_file_preserved=true`,
-          Date.now(),
-        )
-        .run();
+      try {
+        await env.DB.prepare("INSERT INTO google_integration_events (id, connection_key, event_type, actor, entity_type, entity_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(
+            crypto.randomUUID(),
+            config.connectionKey,
+            "drive.file_create_failed",
+            auth.user.email,
+            "project",
+            project.id,
+            `mode=workspace;kind=${kind};source=${templateKey ? `template:${templateKey}` : "blank"};code=${code};provider_file_preserved=true`,
+            Date.now(),
+          )
+          .run();
+      } catch (auditError) {
+        responseError = auditError;
+      }
     }
-    return noStoreResponse(googleIntegrationErrorResponse(error, "The document could not be created in the project folder. Try again."));
+    if (lease) {
+      await failWorkspaceSetupLease(database, lease, "project_file_create_failed", Date.now());
+      lease = null;
+    }
+    return noStoreResponse(googleIntegrationErrorResponse(responseError, "The document could not be created in the project folder. Try again."));
   }
 }

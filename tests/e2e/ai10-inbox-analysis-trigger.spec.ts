@@ -10,6 +10,7 @@ const message = {
   snippet: "A safe Inbox analysis fixture.",
   labelIds: ["INBOX"],
 };
+const mailboxEmail = message.to;
 const leadReviewRow = {
   id: "mail-item-ai10-lead-review",
   subject: "FCI TEST lead request",
@@ -43,6 +44,40 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
     status,
     contentType: "application/json",
     body: JSON.stringify(body),
+  });
+}
+
+function connectedMailboxPayload() {
+  return {
+    runtimeMode: "simulation",
+    simulation: true,
+    enabledServices: ["drive", "gmail", "calendar", "sheets"],
+    connection: {
+      connected: true,
+      status: "connected",
+      account: mailboxEmail,
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: { drive: true, gmail: true, calendar: true, sheets: true },
+      requiresReauthorization: false,
+    },
+    mailboxes: [{
+      email: mailboxEmail,
+      status: "connected",
+      connected: true,
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: { drive: true, gmail: true, calendar: true, sheets: true },
+      requiresReauthorization: false,
+    }],
+  };
+}
+
+async function routeInboxAnalysis(
+  page: Page,
+  handler: (route: Route) => Promise<void> | void,
+) {
+  await page.route("**/api/v1/inbox-analysis?*", async (route) => {
+    expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(mailboxEmail);
+    await handler(route);
   });
 }
 
@@ -88,6 +123,8 @@ async function mockInbox(
       simulation: true,
     },
   }));
+  await page.route("**/api/v1/integrations/google/connection", (route) =>
+    fulfillJson(route, connectedMailboxPayload()));
   await page.route("**/api/v1/leads", (route) => fulfillJson(route, { leads: [] }));
   await page.route("**/api/v1/clients", (route) => fulfillJson(route, { clients: [] }));
   await page.route("**/api/v1/projects", (route) => fulfillJson(route, { projects: [] }));
@@ -129,7 +166,7 @@ async function mockInbox(
 test("inboxAnalysis off makes an Inbox open and load issue zero sweep requests", async ({ page }) => {
   await mockInbox(page, false);
   let analysisRequests = 0;
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     analysisRequests += 1;
     await fulfillJson(route, {
       terminationReason: "caught-up",
@@ -154,7 +191,7 @@ test("Inbox open reports honest bounded coverage and Check older carries only th
   const secondResponse = new Promise<void>((resolve) => {
     releaseSecondResponse = resolve;
   });
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     requestBodies.push(route.request().postDataJSON());
     if (requestBodies.length === 1) {
       await fulfillJson(route, {
@@ -201,7 +238,7 @@ test("Inbox open reports honest bounded coverage and Check older carries only th
 test("tokenless older-pending remains actionable and restarts one bounded scan", async ({ page }) => {
   await mockInbox(page, true);
   const requestBodies: unknown[] = [];
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     requestBodies.push(route.request().postDataJSON());
     if (requestBodies.length === 1) {
       await fulfillJson(route, {
@@ -233,7 +270,7 @@ for (const denied of [
   test(`${denied.label} Inbox rendering makes zero analysis requests`, async ({ page }) => {
     await mockInbox(page, true, denied.options);
     let analysisRequests = 0;
-    await page.route("**/api/v1/inbox-analysis", async (route) => {
+    await routeInboxAnalysis(page, async (route) => {
       analysisRequests += 1;
       await fulfillJson(route, {
         terminationReason: "caught-up",
@@ -242,8 +279,19 @@ for (const denied of [
     });
 
     await page.goto("/inbox");
-    await page.getByRole("button", { name: "Load messages", exact: true }).click();
-    await expect(page.getByText(message.subject, { exact: true })).toBeVisible();
+    const loadMessages = page.getByRole("button", { name: "Load messages", exact: true });
+    if (denied.label === "non-admin") {
+      await expect(loadMessages).toBeDisabled();
+      await expect(page.getByRole("heading", { name: "Administrator mailbox access" })).toBeVisible();
+      await expect(page.getByText(
+        "Attached Workspace mailboxes are currently available only to Administrators.",
+        { exact: true },
+      )).toBeVisible();
+      await expect(page.getByText(message.subject, { exact: true })).toHaveCount(0);
+    } else {
+      await loadMessages.click();
+      await expect(page.getByText(message.subject, { exact: true })).toBeVisible();
+    }
     expect(analysisRequests).toBe(0);
     await expect(page.getByText("Checking inbox analysis…", { exact: true })).toHaveCount(0);
     await expect(page.getByText("You're caught up", { exact: true })).toHaveCount(0);
@@ -254,7 +302,7 @@ for (const denied of [
 test("a failed action-triggered sweep clears an earlier caught-up result instead of leaving stale success copy", async ({ page }) => {
   await mockInbox(page, true);
   let analysisRequests = 0;
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     analysisRequests += 1;
     if (analysisRequests === 1) {
       await fulfillJson(route, {
@@ -297,7 +345,7 @@ test("Needs review renders the stored queue, continues bounded coverage, and dis
       gmailQueueReads.push(request.url());
     }
   });
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     const method = route.request().method();
     const body = method === "GET"
       ? null
@@ -374,7 +422,7 @@ test("Needs review renders stored meanings for active and retired custom labels"
   await mockInbox(page, true);
   const activeSlug = `label_${"d".repeat(32)}`;
   const retiredSlug = `label_${"e".repeat(32)}`;
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     if (route.request().method() === "POST") {
       await fulfillJson(route, {
         terminationReason: "caught-up",
@@ -425,7 +473,7 @@ test("Needs review renders stored meanings for active and retired custom labels"
 
 test("Needs review accepts an empty administrator label catalog when no rows remain", async ({ page }) => {
   await mockInbox(page, true);
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     if (route.request().method() === "POST") {
       await fulfillJson(route, {
         terminationReason: "caught-up",
@@ -457,7 +505,7 @@ test("a lead-intent review row opens one prefilled lead review and retires only 
     }
     await fulfillJson(route, { leads: [] });
   });
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     const method = route.request().method();
     if (method === "POST") {
       await fulfillJson(route, {
@@ -556,7 +604,7 @@ test("a failed lead retirement stays honest after another row is created and ret
     }
     await fulfillJson(route, { leads: [] });
   });
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     const method = route.request().method();
     if (method === "POST") {
       await fulfillJson(route, {
@@ -631,7 +679,7 @@ test("Needs review stays indeterminate until its stored queue read settles", asy
   const queueReleased = new Promise<void>((resolve) => {
     releaseQueue = resolve;
   });
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     if (route.request().method() === "POST") {
       await fulfillJson(route, {
         terminationReason: "caught-up",
@@ -654,7 +702,7 @@ test("Needs review stays indeterminate until its stored queue read settles", asy
 
 test("Needs review read failures stay unavailable instead of fabricating an empty queue", async ({ page }) => {
   await mockInbox(page, true);
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     if (route.request().method() === "POST") {
       await fulfillJson(route, {
         terminationReason: "caught-up",
@@ -675,7 +723,7 @@ test("Needs review read failures stay unavailable instead of fabricating an empt
 test("connected non-admins cannot refresh the Administrator-only review queue", async ({ page }) => {
   await mockInbox(page, true, { isAdmin: false });
   let analysisRequests = 0;
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     analysisRequests += 1;
     await fulfillJson(route, { rows: [], totalCount: 0 });
   });
@@ -690,7 +738,7 @@ test("connected non-admins cannot refresh the Administrator-only review queue", 
 test("missing-key Needs review loads stored rows without claiming or starting a sweep", async ({ page }) => {
   await mockInbox(page, true, { keyState: "Missing" });
   const methods: string[] = [];
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     methods.push(route.request().method());
     await fulfillJson(route, {
       rows: [{
@@ -722,7 +770,7 @@ test("a stale queue read cannot replace a newer Gmail bucket load", async ({ pag
   const queueReleased = new Promise<void>((resolve) => {
     releaseQueue = resolve;
   });
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     if (route.request().method() === "POST") {
       await fulfillJson(route, {
         terminationReason: "caught-up",
@@ -744,7 +792,7 @@ test("a stale queue read cannot replace a newer Gmail bucket load", async ({ pag
 
   await page.goto("/inbox?bucket=needs-review");
   await expect(page.getByText("Checking the review queue…", { exact: true })).toBeVisible();
-  await page.getByLabel("Mailbox").selectOption("inbox");
+  await page.getByRole("combobox", { name: "Mailbox", exact: true }).selectOption("inbox");
   await page.getByRole("button", { name: "Load messages", exact: true }).click();
   await expect(page.getByText(message.subject, { exact: true })).toBeVisible();
   releaseQueue?.();
@@ -758,7 +806,7 @@ test("a delayed Mark reviewed response cannot restore the queue after a mailbox 
   const dismissalReleased = new Promise<void>((resolve) => {
     releaseDismissal = resolve;
   });
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     const method = route.request().method();
     if (method === "POST") {
       await fulfillJson(route, {
@@ -791,7 +839,7 @@ test("a delayed Mark reviewed response cannot restore the queue after a mailbox 
   await page.getByRole("button", {
     name: "Mark reviewed: FCI TEST delayed review row",
   }).click();
-  await page.getByLabel("Mailbox").selectOption("inbox");
+  await page.getByRole("combobox", { name: "Mailbox", exact: true }).selectOption("inbox");
   await page.getByRole("button", { name: "Load messages", exact: true }).click();
   await expect(page.getByText(message.subject, { exact: true })).toBeVisible();
   releaseDismissal?.();

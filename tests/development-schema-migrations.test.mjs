@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { ensureWorkspaceSchema } from "../app/api/v1/_workspace-data.ts";
@@ -38,10 +40,15 @@ const googleFormLeadIntakeMigrationPrefix = "0023_";
 const addressValidationMigrationPrefix = "0024_";
 const assistantLabelMigrationPrefix = "0025_";
 const mailItemReviewAttributionMigrationPrefix = "0026_";
+const sharedMailboxMigrationPrefix = "0027_";
 const allowedDestructiveMigrations = new Map([
   [
     "0008_strong_korg.sql",
-    "ALTER TABLE `user_preferences` DROP COLUMN `personal_calendar_display`;",
+    { exactSql: "ALTER TABLE `user_preferences` DROP COLUMN `personal_calendar_display`;" },
+  ],
+  [
+    "0027_shiny_red_ghost.sql",
+    { normalizedSha256: "a80d490307f45abf8a3267ddeb9d83cc2407bbc6766837d4b505bedccd7dc08e" },
   ],
 ]);
 
@@ -66,6 +73,8 @@ const requiredDevelopmentIndexes = [
   "google_form_lead_watermarks_scope_unique",
   "google_form_lead_reviews_submission_unique",
   "google_form_lead_reviews_queue_idx",
+  "google_connections_google_subject_unique",
+  "google_connections_google_email_lower_unique",
 ];
 
 async function sourceFiles(directory) {
@@ -153,7 +162,12 @@ function assertNoUnexpectedDestructiveDdl(migrations) {
   for (const { file, sql } of migrations) {
     const destructiveStatements = destructiveDdlStatements(sql);
     if (destructiveStatements.length === 0) continue;
-    if (allowedDestructiveMigrations.get(file) === sql.trim()) continue;
+    const allowedMigration = allowedDestructiveMigrations.get(file);
+    const normalizedSql = sql.replaceAll("\r\n", "\n").replaceAll("\r", "\n").trim();
+    if (
+      allowedMigration?.exactSql === sql.trim()
+      || allowedMigration?.normalizedSha256 === createHash("sha256").update(normalizedSql).digest("hex")
+    ) continue;
     for (const statement of destructiveStatements) violations.push({ file, statement });
   }
   assert.deepEqual(
@@ -867,7 +881,7 @@ test("adds AI-11(d)'s review attribution columns in additive migration 0026", as
   assert.ok(Object.hasOwn(snapshot.tables.mail_items.columns, "reviewed_by"));
   assert.ok(Object.hasOwn(snapshot.tables.mail_items.columns, "reviewed_at"));
   assert.ok(Object.hasOwn(snapshot.tables.mail_items.columns, "accepted_intent"));
-  const journalEntry = journal.entries.at(-1);
+  const journalEntry = journal.entries.find((entry) => entry.tag === "0026_mail_item_review_attribution");
   assert.deepEqual(journalEntry, {
     idx: 26,
     version: "6",
@@ -875,6 +889,91 @@ test("adds AI-11(d)'s review attribution columns in additive migration 0026", as
     tag: "0026_mail_item_review_attribution",
     breakpoints: true,
   });
+});
+
+test("makes WS-20 mail-item mailbox ownership explicit without losing persisted columns", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(sharedMailboxMigrationPrefix));
+  assert.equal(migration, "0027_shiny_red_ghost.sql");
+  assert.equal(files.filter((file) => file.startsWith(sharedMailboxMigrationPrefix)).length, 1);
+  const [migrationSql, schemaSource, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(root, "db", "schema.ts"), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0026_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0027_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+
+  assert.match(migrationSql, /CREATE TABLE `__new_mail_items`/u);
+  assert.match(migrationSql, /`connection_key` text NOT NULL/u);
+  assert.doesNotMatch(migrationSql, /`connection_key` text DEFAULT 'google-workspace'/u);
+  for (const column of [
+    "coverage_complete",
+    "reviewed_by",
+    "reviewed_at",
+    "accepted_intent",
+  ]) {
+    assert.ok(migrationSql.includes(`\`${column}\``));
+    assert.ok(Object.hasOwn(snapshot.tables.mail_items.columns, column));
+  }
+  assert.match(
+    migrationSql,
+    /CREATE UNIQUE INDEX `google_connections_google_subject_unique` ON `google_connections` \(`google_subject`\)/u,
+  );
+  assert.match(
+    migrationSql,
+    /CREATE UNIQUE INDEX `google_connections_google_email_lower_unique` ON `google_connections` \(lower\("google_email"\)\)/u,
+  );
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.equal(previousSnapshot.tables.mail_items.columns.connection_key.default, "'google-workspace'");
+  assert.equal(snapshot.tables.mail_items.columns.connection_key.default, undefined);
+  assert.equal(
+    snapshot.tables.google_connections.indexes.google_connections_google_subject_unique.isUnique,
+    true,
+  );
+  assert.deepEqual(
+    snapshot.tables.google_connections.indexes.google_connections_google_email_lower_unique,
+    {
+      name: "google_connections_google_email_lower_unique",
+      columns: ['lower("google_email")'],
+      isUnique: true,
+    },
+  );
+  assert.match(schemaSource, /connectionKey: text\("connection_key"\)\.notNull\(\),/u);
+  assert.match(schemaSource, /coverageComplete: integer\("coverage_complete"/u);
+  assert.match(schemaSource, /uniqueIndex\("google_connections_google_subject_unique"\)/u);
+  assert.match(
+    schemaSource,
+    /uniqueIndex\("google_connections_google_email_lower_unique"\)\.on\(sql`lower\(\$\{table\.googleEmail\}\)`\)/u,
+  );
+  const journalEntry = journal.entries.at(-1);
+  assert.deepEqual(journalEntry, {
+    idx: 27,
+    version: "6",
+    when: journalEntry.when,
+    tag: "0027_shiny_red_ghost",
+    breakpoints: true,
+  });
+});
+
+test("applies the WS-20 D1 chain and rejects case-insensitive duplicate mailbox emails", async () => {
+  const database = new DatabaseSync(":memory:");
+  try {
+    for (const { sql } of await migrationSources(drizzleRoot)) {
+      database.exec(sql.replaceAll("--> statement-breakpoint", ""));
+    }
+    const insert = database.prepare(`INSERT INTO google_connections (
+      id, connection_key, google_subject, google_email, scopes_json,
+      refresh_token_ciphertext, key_version, status, created_by, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, '[]', 'ciphertext', 'v1', 'connected', 'schema-test', 1, 1)`);
+    insert.run("connection-one", "gmail_one", "subject-one", "Owner@Example.com");
+    assert.throws(
+      () => insert.run("connection-two", "gmail_two", "subject-two", "owner@example.COM"),
+      /google_connections_google_email_lower_unique/u,
+    );
+  } finally {
+    database.close();
+  }
 });
 
 test("packages the complete Drizzle migration sequence for Sites deployment", async () => {

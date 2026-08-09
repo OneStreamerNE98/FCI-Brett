@@ -60,6 +60,7 @@ const [
   domain,
   application,
   blueprintModule,
+  oauthModule,
   statusRoute,
   previewRoute,
   confirmRoute,
@@ -68,6 +69,7 @@ const [
   vite.ssrLoadModule("/app/domain/first-run-import.ts"),
   vite.ssrLoadModule("/app/application/first-run-import.ts"),
   vite.ssrLoadModule("/app/lib/workspace-blueprint.ts"),
+  vite.ssrLoadModule("/app/lib/google-oauth.ts"),
   vite.ssrLoadModule("/app/api/v1/settings/first-run-import/route.ts"),
   vite.ssrLoadModule("/app/api/v1/settings/first-run-import/preview/route.ts"),
   vite.ssrLoadModule("/app/api/v1/settings/first-run-import/confirm/route.ts"),
@@ -153,6 +155,7 @@ function fakeDatabase({
   projects = [],
   blueprint = null,
   resources = [],
+  connection = null,
 } = {}) {
   const state = {
     clients: structuredClone(clients),
@@ -160,6 +163,7 @@ function fakeDatabase({
     activities: [],
     blueprint: blueprint ? structuredClone(blueprint) : null,
     resources: structuredClone(resources),
+    connection: connection ? structuredClone(connection) : null,
     leases: new Map(),
     beforeNextClientSnapshot: null,
     beforeNextBatch: null,
@@ -172,9 +176,19 @@ function fakeDatabase({
     const { sql, values } = statement;
     writes.push({ sql, values: [...values] });
     if (/^INSERT INTO google_drive_operations /u.test(sql)) {
+      const bypassConnectionFence = values[8] === 1;
+      if (!bypassConnectionFence && (
+        state.connection?.id !== values[9]
+        || state.connection?.connection_key !== values[10]
+        || state.connection?.google_email.toLowerCase() !== values[11]
+        || state.connection?.refresh_token_ciphertext !== values[12]
+        || state.connection?.status !== "connected"
+      )) {
+        return { meta: { changes: 0 } };
+      }
       const operationKey = values[2];
       const current = state.leases.get(operationKey);
-      const reclaimNow = values[8];
+      const reclaimNow = values.at(-1);
       if (
         current?.status === "in-progress"
         && current.leaseExpiresAt >= reclaimNow
@@ -227,6 +241,16 @@ function fakeDatabase({
         errorCode: values[0],
       });
       return { meta: { changes: 1 } };
+    }
+    if (/^UPDATE google_connections SET last_success_at/u.test(sql)) {
+      const matches = state.connection?.id === values[2]
+        && state.connection?.refresh_token_ciphertext === values[3];
+      return { meta: { changes: matches ? 1 : 0 } };
+    }
+    if (/^UPDATE google_connections SET (?:status = 'reauthorization-required', )?last_error_code/u.test(sql)) {
+      const matches = state.connection?.id === values[2]
+        && state.connection?.refresh_token_ciphertext === values[3];
+      return { meta: { changes: matches ? 1 : 0 } };
     }
     if (/^INSERT INTO clients /u.test(sql)) {
       const normalizedPhone = (value) => String(value ?? "").replace(/\D/gu, "");
@@ -374,6 +398,16 @@ function fakeDatabase({
               : null;
           }
           if (/FROM workspace_settings WHERE id = \?/u.test(sql)) return null;
+          if (/FROM google_connections WHERE connection_key = \?/u.test(sql)) {
+            return state.connection?.connection_key === statement.values[0]
+              ? structuredClone(state.connection)
+              : null;
+          }
+          if (/FROM google_connections WHERE lower\(google_email\) = \?/u.test(sql)) {
+            return state.connection?.google_email.toLowerCase() === statement.values[0]
+              ? structuredClone(state.connection)
+              : null;
+          }
           if (/^SELECT id FROM clients WHERE id = \? LIMIT 1$/u.test(sql)) {
             const client = state.clients.find(({ id }) => id === statement.values[0]);
             return client ? { id: client.id } : null;
@@ -2124,6 +2158,111 @@ test("SET-25 live-sheet source derives its bounded row range from the batch limi
     /acquireWorkspaceSetupLease[\s\S]*readRepository\.snapshot\(\)[\s\S]*Date\.now\(\) >= lease\.leaseExpiresAt[\s\S]*confirmFirstRunImport/u,
   );
   assert.doesNotMatch(sharedSource, /A1:Z102/u);
+});
+
+test("SET-25 live Sheet confirmation cannot lease generation B after reading with generation A", async () => {
+  const encryptionKey = Buffer.alloc(32, 0x25).toString("base64url");
+  const encrypted = await oauthModule.encryptGoogleSecret(
+    "FCI TEST GENERATION A",
+    encryptionKey,
+    "google-connection:google-workspace:refresh",
+  );
+  const resource = {
+    ...importResource(),
+    connection_key: "google-workspace",
+    external_id: "live-import-sheet",
+  };
+  const database = fakeDatabase({
+    blueprint: importBlueprint(),
+    resources: [resource],
+    connection: {
+      id: "connection-1",
+      connection_key: "google-workspace",
+      google_subject: "google-subject-1",
+      google_email: "operations@cherryhillfci.com",
+      scopes_json: JSON.stringify(["https://www.googleapis.com/auth/spreadsheets"]),
+      refresh_token_ciphertext: encrypted,
+      key_version: "1",
+      status: "connected",
+    },
+  });
+  setEnvironment(database, {
+    NODE_ENV: "production",
+    GOOGLE_INTEGRATION_MODE: "workspace",
+    GOOGLE_WORKSPACE_ENABLED_SERVICES: "sheets",
+    GOOGLE_WORKSPACE_CLIENT_ID: "workspace-client-id",
+    GOOGLE_WORKSPACE_CLIENT_SECRET: "workspace-client-secret",
+    GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI: `${BASE_URL}/api/v1/integrations/google/callback`,
+    GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY: encryptionKey,
+    GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION: "1",
+    GOOGLE_WORKSPACE_ALLOWED_DOMAINS: "cherryhillfci.com",
+    GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: "operations@cherryhillfci.com",
+    GOOGLE_WORKSPACE_INTAKE_MAILBOX: "operations@cherryhillfci.com",
+  });
+  const sheetValues = [
+    CLIENT_HEADERS,
+    [
+      "LEGACY-RACE",
+      "FCI TEST — DO NOT USE — stale Sheet row",
+      "active",
+      "Commercial",
+      "Stale Contact",
+      "stale@example.test",
+      "555-0125",
+      "25 Stale Way",
+    ],
+  ];
+  const reviewed = await domain.previewFirstRunImport({
+    entity: "clients",
+    expectedHeaders: CLIENT_HEADERS,
+    snapshot: emptySnapshot(),
+    values: sheetValues,
+  });
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === "oauth2.googleapis.com") {
+      return Response.json({ access_token: "workspace-access-token" });
+    }
+    if (url.hostname === "sheets.googleapis.com" && !url.pathname.includes("/values/")) {
+      return Response.json({
+        sheets: [{
+          properties: {
+            sheetId: 1,
+            title: "Clients Import",
+            gridProperties: { rowCount: 20, columnCount: CLIENT_HEADERS.length, frozenRowCount: 1 },
+          },
+        }],
+      });
+    }
+    if (url.hostname === "sheets.googleapis.com" && url.pathname.includes("/values/")) {
+      database.state.connection.refresh_token_ciphertext = "ciphertext-generation-b";
+      database.state.connection.key_version = "2";
+      return Response.json({ values: sheetValues });
+    }
+    throw new Error(`Unexpected provider request: ${url.href}`);
+  };
+
+  try {
+    const response = await confirmRoute.POST(request(
+      "/api/v1/settings/first-run-import/confirm",
+      {
+        method: "POST",
+        body: {
+          entity: "clients",
+          source: { kind: "spreadsheet", spreadsheetKey: "first-run-import" },
+          rows: [{ rowKey: reviewed.rows[0].rowKey }],
+        },
+      },
+    ));
+    const responseBody = await response.json();
+    assert.equal(response.status, 409, JSON.stringify(responseBody));
+    assert.equal(responseBody.code, "import_in_progress");
+    assert.equal(database.state.clients.length, 0);
+    assert.equal(database.state.activities.length, 0);
+    assert.equal(database.state.leases.size, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("SET-25 D1 root writes pin every duplicate key and the exact lease fence", async () => {

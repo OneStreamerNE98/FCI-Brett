@@ -11,7 +11,7 @@ import type { AddressValidationResult } from "../../features/address-validation/
 import type { D1Database } from "./d1-database";
 
 const MAX_ACTIVE_REVIEWS_PER_ACTOR = 25;
-const CONSUMED_RETENTION_MS = 60 * 60 * 1_000;
+export const ADDRESS_REVIEW_CONSUMED_RETENTION_MS = 60 * 60 * 1_000;
 
 type AddressValidationReviewRow = {
   id: string;
@@ -85,7 +85,7 @@ export async function insertAddressValidationReview(
   }>,
 ): Promise<SavedAddressReview> {
   const expiresAt = input.now + ADDRESS_REVIEW_TTL_MS;
-  const cleanupBefore = input.now - CONSUMED_RETENTION_MS;
+  const cleanupBefore = input.now - ADDRESS_REVIEW_CONSUMED_RETENTION_MS;
   const statements = [
     // Neither cleanup may ever delete a provisionally claimed receipt
     // (consumed_at set, mutation still in flight): deleting one turns the

@@ -28,6 +28,7 @@ import { TASK_SCHEMA_STATEMENTS } from "../app/platform/postgres/task-schema.ts"
 import { CORE_RECORD_CONCURRENCY_STATEMENTS } from "../app/platform/postgres/core-record-concurrency-schema.ts";
 import { MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS } from "../app/platform/postgres/mail-item-analysis-schema.ts";
 import { MAIL_ITEM_REVIEW_ATTRIBUTION_SCHEMA_STATEMENTS } from "../app/platform/postgres/mail-item-review-attribution-schema.ts";
+import { SHARED_MAILBOX_SCHEMA_STATEMENTS } from "../app/platform/postgres/shared-mailboxes-schema.ts";
 import { GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS } from "../app/platform/postgres/google-form-lead-intake-schema.ts";
 import { ADDRESS_VALIDATION_SCHEMA_STATEMENTS } from "../app/platform/postgres/address-validation-schema.ts";
 import { ASSISTANT_LABEL_SCHEMA_STATEMENTS } from "../app/platform/postgres/assistant-label-schema.ts";
@@ -406,7 +407,7 @@ test("registers the non-structural core-record concurrency law as contiguous mig
     "sha256:03c2f1db12a9d09566877b99d11f7b53c756e1847e3cca93a29eb97db064bd10",
   );
   assert.deepEqual(PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version), [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
   ]);
   assert.deepEqual(
     migration.statements.map((statement) => {
@@ -627,6 +628,20 @@ test("registers AI-11(d)'s review attribution as additive immutable migration si
     sql,
     /\b(?:DROP|TRUNCATE|DELETE|UPDATE|INSERT|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/iu,
   );
+});
+
+test("registers WS-20's explicit mail-item mailbox scope as immutable migration seventeen", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 17);
+  assert.ok(migration);
+  assert.equal(migration.name, "shared_mailboxes");
+  assert.equal(migration.statements, SHARED_MAILBOX_SCHEMA_STATEMENTS);
+  assert.equal(
+    migration.checksum,
+    "sha256:73916455770603037831724f36d146c984ba5adfe7dc056837a6d9c43576d26f",
+  );
+  assert.deepEqual(migration.statements, [
+    "ALTER TABLE mail_items ALTER COLUMN connection_key DROP DEFAULT",
+  ]);
 });
 
 test("rejects gaps, duplicate names, transaction control, and concurrent indexes", () => {
