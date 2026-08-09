@@ -324,6 +324,13 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const userInitials = userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC";
 
   const revealMobileTopbar = useCallback(() => {
+    if (topbarAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(topbarAnimationFrameRef.current);
+      topbarAnimationFrameRef.current = null;
+    }
+    topbarLastScrollYRef.current = Math.max(0, window.scrollY);
+    topbarScrollDirectionRef.current = 0;
+    topbarScrollDistanceRef.current = 0;
     topbarHiddenRef.current = false;
     setTopbarHidden(false);
   }, []);

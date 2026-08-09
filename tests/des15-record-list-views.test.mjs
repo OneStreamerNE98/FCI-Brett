@@ -44,6 +44,7 @@ test("DES-15 extracted views implement search, sorting, progressive reveal, and 
   const clients = read("app/clients/components/ClientsView.tsx");
   const projects = read("app/projects/components/ProjectsView.tsx");
   const shell = read("app/FloorOpsApp.tsx");
+  const revealMobileTopbar = shell.match(/const revealMobileTopbar = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[\]\);/u)?.[1] ?? "";
   assert.match(shared, /sortable \? <div role="table" aria-label=\{`\$\{ariaLabel\} sorting controls`\}>\{header\}<\/div> : header/u);
   assert.match(shared, /aria-sort=\{active \? sortDirection : "none"\}/u);
   assert.match(shared, /className="operations-sort-header"/u);
@@ -53,6 +54,11 @@ test("DES-15 extracted views implement search, sorting, progressive reveal, and 
   assert.match(clients, /visibleClients\.slice\(0, rowCap\)/u);
   assert.match(projects, /filteredProjects\.slice\(0, rowCap\)/u);
   assert.match(projects, /useDeferredValue\(projectSearch\)/u);
+  assert.match(revealMobileTopbar, /window\.cancelAnimationFrame\(topbarAnimationFrameRef\.current\)/u);
+  assert.match(revealMobileTopbar, /topbarAnimationFrameRef\.current = null/u);
+  assert.match(revealMobileTopbar, /topbarLastScrollYRef\.current = Math\.max\(0, window\.scrollY\)/u);
+  assert.match(revealMobileTopbar, /topbarScrollDirectionRef\.current = 0/u);
+  assert.match(revealMobileTopbar, /topbarScrollDistanceRef\.current = 0/u);
   assert.match(shell, /function openProject\([\s\S]*?revealMobileTopbar\(\);[\s\S]*?setSelectedProject\(project\)/u);
 });
 
