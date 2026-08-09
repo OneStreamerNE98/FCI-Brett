@@ -421,6 +421,8 @@ test("the scheduler law is enforced across every client-reachable module, not ju
   assert.deepEqual(
     sites,
     [
+      // Day-rollover refresh for the dashboard snapshot; same ruling as below.
+      { label: "app/application/use-directory-data.ts", functionName: "schedule", timer: "setTimeout" },
       // Day-rollover refresh. ADJUDICATED August 4, 2026: this stays. The
       // scheduler law targets background/polling work that runs while nobody is
       // signed in. A single setTimeout that fires once at the local day boundary
@@ -434,8 +436,6 @@ test("the scheduler law is enforced across every client-reachable module, not ju
       { label: "app/features/address-validation/AddressValidationField.tsx", functionName: "AddressValidationField", timer: "setTimeout" },
       // Wall-clock display tick: re-renders a shown time, issues no request.
       { label: "app/FloorOpsApp.tsx", functionName: "Overview", timer: "setInterval" },
-      // Day-rollover refresh for the dashboard snapshot; same ruling as above.
-      { label: "app/FloorOpsApp.tsx", functionName: "schedule", timer: "setTimeout" },
       // Hydration and focus deferrals to the next task; none of them fetch.
       { label: "app/management/access/AdminAccessPage.tsx", functionName: "AdminAccessPage", timer: "setTimeout" },
       { label: "app/management/access/AdminAccessPage.tsx", functionName: "AdminAccessPage", timer: "setTimeout" },
@@ -487,7 +487,7 @@ test("dirty settings drafts stay mounted while their readers remain in the lifec
 });
 
 test("terminal authorization failures clear every custom materialized privileged surface", async () => {
-  const [directory, tasks, reply, importCard, projectFiles, checklist, assistant, app, inbox, activity] = await Promise.all([
+  const [directory, tasks, reply, importCard, projectFiles, checklist, assistant, app, directoryController, currentUserSettings, inbox, activity] = await Promise.all([
     read("app/settings/components/DirectorySyncPanel.tsx"),
     read("app/assistant/components/TaskManagementPanel.tsx"),
     read("app/inbox/components/GmailReplyModal.tsx"),
@@ -496,6 +496,8 @@ test("terminal authorization failures clear every custom materialized privileged
     read("app/settings/components/LaunchChecklistCard.tsx"),
     read("app/assistant/components/AssistantView.tsx"),
     read("app/FloorOpsApp.tsx"),
+    read("app/application/use-directory-data.ts"),
+    read("app/application/use-current-user-settings.ts"),
     read("app/inbox/components/InboxView.tsx"),
     read("app/management/access/AdminActivityPanel.tsx"),
   ]);
@@ -507,8 +509,9 @@ test("terminal authorization failures clear every custom materialized privileged
   assert.match(projectFiles, /isTerminalCachedGetError\(error\)[\s\S]{0,160}files: \[\][\s\S]{0,100}setModalProjectId\(null\)/u);
   assert.match(checklist, /isTerminalCachedGetError\(checklistResult\.reason\)[\s\S]{0,160}setLaunchChecklist\(null\)[\s\S]{0,100}setCanAttest\(false\)/u);
   assert.match(assistant, /isTerminalCachedGetError\(error\)[\s\S]{0,160}setMeetings\(\[\]\)[\s\S]{0,100}setMeetingId\(""\)/u);
-  assert.match(app, /isTerminalCachedGetError\(error\)[\s\S]{0,500}setSelectedLeadId\(null\)[\s\S]{0,240}setProjectOpen\(false\)/u);
-  assert.match(app, /isTerminalCachedGetError\(error\)[\s\S]{0,180}failClosedCurrentUserSettings\(\)/u);
+  assert.match(directoryController, /isTerminalCachedGetError\(error\)[\s\S]{0,500}setSelectedLeadId\(null\)[\s\S]{0,160}setSelectedProject\(null\)/u);
+  assert.match(app, /selectedLeadId === null\) setLeadOpen\(false\)[\s\S]{0,180}selectedProject === null\) setProjectOpen\(false\)/u);
+  assert.match(currentUserSettings, /isTerminalCachedGetError\(error\)[\s\S]{0,180}failClosedCurrentUserSettings\(\)/u);
   assert.match(inbox, /isTerminalCachedGetError\(connectionError\)[\s\S]{0,480}setMessages\(\[\]\)[\s\S]{0,320}setReplyMessage\(null\)/u);
   assert.match(activity, /error\.status === 403[\s\S]{0,160}setActivityPage\(null\)[\s\S]{0,100}setAppliedRequest\(null\)/u);
 });

@@ -14,16 +14,16 @@ function section(source, start, end, label) {
 }
 
 test("SET-11 status revalidates automatically without triggering a sync", async () => {
-  const [app, panel, route] = await Promise.all([
-    read("app/FloorOpsApp.tsx"),
+  const [directoryController, panel, route] = await Promise.all([
+    read("app/application/use-directory-data.ts"),
     read("app/settings/components/DirectorySyncPanel.tsx"),
     read("app/api/v1/integrations/google/sheets/status/route.ts"),
   ]);
 
   // SET-42 retires the pure status button. The mounted directory reader now
   // includes the no-store route in the shared lifecycle census.
-  assert.match(app, /const DIRECTORY_GET_URLS = \[[\s\S]*"\/api\/v1\/integrations\/google\/sheets\/status"/);
-  assert.match(app, /useCachedGetSubscription\(DIRECTORY_GET_URLS, \(\) => refreshDirectoryData\(true\)\)/);
+  assert.match(directoryController, /const DIRECTORY_GET_URLS = \[[\s\S]*"\/api\/v1\/integrations\/google\/sheets\/status"/);
+  assert.match(directoryController, /useCachedGetSubscription\(DIRECTORY_GET_URLS, \(\) => refreshDirectoryData\(true\)\)/);
 
   // The client path that reads mirror status is now refreshDirectoryData. The
   // SET-11 guarantee is unchanged and is asserted against that path directly,
@@ -31,7 +31,7 @@ test("SET-11 status revalidates automatically without triggering a sync", async 
   // mirror state can never write. Nothing in this reader may reach the sync
   // endpoint or issue a non-GET request.
   const statusRead = section(
-    app,
+    directoryController,
     "const refreshDirectoryData = useCallback(",
     "}, [userEmail, userName]);",
     "directory status read",

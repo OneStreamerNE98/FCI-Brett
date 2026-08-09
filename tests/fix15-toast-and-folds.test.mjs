@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 const appPath = new URL("../app/FloorOpsApp.tsx", import.meta.url);
+const directoryControllerPath = new URL("../app/application/use-directory-data.ts", import.meta.url);
 const projectMeetingsPath = new URL("../app/projects/components/ProjectMeetings.tsx", import.meta.url);
 const goldenPath = new URL("./e2e/page-layouts.spec.ts", import.meta.url);
 
@@ -51,15 +52,15 @@ test("DES-17 keeps independent lifetimes for rapid success and info notification
 });
 
 test("N7-7 fences every directory refresh outcome without merging AI-04 dashboard arbitration", async () => {
-  const app = await source(appPath);
-  const refresh = sliceBetween(app, "const refreshDirectoryData = useCallback", "const refreshDashboardSnapshot = useCallback");
+  const directoryController = await source(directoryControllerPath);
+  const refresh = sliceBetween(directoryController, "const refreshDirectoryData = useCallback", "const refreshDashboardSnapshot = useCallback");
   const loading = sliceBetween(refresh, "// Requests start synchronously", "return directoryRequests.then");
   const core = sliceBetween(refresh, "return directoryRequests.then", "void optionalRequests.then");
   const optional = sliceBetween(refresh, "void optionalRequests.then", "}).catch((error) => {");
   const failure = sliceBetween(refresh, "}).catch((error) => {", "}, [userEmail, userName]);");
   const fence = "if (directoryLoadId !== directoryLoadIdRef.current) return;";
 
-  assert.match(app, /const directoryLoadIdRef = useRef\(0\);/u);
+  assert.match(directoryController, /const directoryLoadIdRef = useRef\(0\);/u);
   assert.match(refresh, /const directoryLoadId = \+\+directoryLoadIdRef\.current;/u);
   assert.equal(
     (refresh.match(/if \(directoryLoadId !== directoryLoadIdRef\.current\) return;/gu) ?? []).length,
@@ -86,7 +87,7 @@ test("N7-7 fences every directory refresh outcome without merging AI-04 dashboar
   }
   assert.match(refresh, /const dashboardLoadId = \+\+dashboardRefreshLoadIdRef\.current;/u);
   assert.match(refresh, /if \(dashboardLoadId > dashboardAppliedLoadIdRef\.current\)/u);
-  assert.match(app, /const refreshDashboardSnapshot = useCallback[\s\S]+const loadId = \+\+dashboardRefreshLoadIdRef\.current;[\s\S]+if \(loadId > dashboardAppliedLoadIdRef\.current\)/u);
+  assert.match(directoryController, /const refreshDashboardSnapshot = useCallback[\s\S]+const loadId = \+\+dashboardRefreshLoadIdRef\.current;[\s\S]+if \(loadId > dashboardAppliedLoadIdRef\.current\)/u);
 });
 
 test("N7-8 inserts saved meetings using the server's meetingAt then createdAt descending order", async () => {
