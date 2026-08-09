@@ -324,6 +324,13 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const userInitials = userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC";
 
   const revealMobileTopbar = useCallback(() => {
+    if (topbarAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(topbarAnimationFrameRef.current);
+      topbarAnimationFrameRef.current = null;
+    }
+    topbarLastScrollYRef.current = Math.max(0, window.scrollY);
+    topbarScrollDirectionRef.current = 0;
+    topbarScrollDistanceRef.current = 0;
     topbarHiddenRef.current = false;
     setTopbarHidden(false);
   }, []);
@@ -1174,6 +1181,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   }
 
   function openProject(project: Project, returnFocusTarget: HTMLElement | null = null) {
+    revealMobileTopbar();
     projectDrawerReturnFocusRef.current = returnFocusTarget;
     setSelectedProject(project);
     setLeadOpen(false);
@@ -1447,7 +1455,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
 
       {mobileNavActive && <div className="sidebar-scrim" role="presentation" aria-hidden="true" onMouseDown={() => setMobileNav(false)} />}
       <main className="main-area" inert={mobileNavActive ? true : undefined}>
-        <header ref={topbarRef} className={`topbar${topbarHidden ? " topbar-hidden" : ""}`}>
+        <header ref={topbarRef} className={`topbar${topbarHidden && !projectOpen ? " topbar-hidden" : ""}`}>
           <button
             ref={mobileNavigationTriggerRef}
             className="mobile-menu"

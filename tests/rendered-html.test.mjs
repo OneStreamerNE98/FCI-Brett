@@ -355,7 +355,8 @@ test("keeps the design-critique interaction contracts in the rendered app", asyn
   assert.match(app, /Edit saved lead details here\./);
   assert.match(app, /> Edit lead<\/button>/);
   assert.match(app, /placeholder="Name, code, or email"/);
-  assert.match(app, /visibleClients\.map/);
+  assert.match(app, /renderedClients\.map/);
+  assert.match(app, /visibleClients\.slice\(0, rowCap\)/);
   assert.equal(inbox.match(/inbox-state-strip/g)?.length, 1);
   assert.match(assistant, /className="assistant-project-scope"/);
   const projectScopeIndex = assistant.indexOf('className="assistant-project-scope"');

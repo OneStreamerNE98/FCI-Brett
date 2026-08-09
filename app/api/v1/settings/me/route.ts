@@ -28,24 +28,37 @@ import {
   parseStoredPageLayouts,
   type PageLayouts,
 } from "../../../../lib/page-layouts";
+import {
+  normalizeRecordListPreferencesForWrite,
+  parseStoredRecordListPreferences,
+  type RecordListPreferences,
+} from "../../../../lib/record-list-preferences";
 
 const MAX_ACCOUNT_PREFERENCES_BODY_BYTES = 8_000;
 
 const PREFERENCE_KEYS = new Set<string>(USER_PREFERENCE_KEYS);
 
-type AccountPreferences = UserSettingsPreferences & { pageLayouts: PageLayouts };
+type AccountPreferences = UserSettingsPreferences & {
+  pageLayouts: PageLayouts;
+  recordListPreferences: RecordListPreferences;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function preferencesFromRow(row: UserPreferencesRecord | null, isAdmin: boolean): AccountPreferences {
-  if (!row) return { ...defaultUserSettingsPreferences(), pageLayouts: defaultPageLayouts(isAdmin) };
+  if (!row) return {
+    ...defaultUserSettingsPreferences(),
+    pageLayouts: defaultPageLayouts(isAdmin),
+    recordListPreferences: parseStoredRecordListPreferences(null),
+  };
   return {
     displayTimezone: row.displayTimezone || defaultUserSettingsPreferences().displayTimezone,
     replySignature: row.replySignature || "",
     notificationPreferences: parseStoredUserNotificationPreferences(row.notificationPreferencesJson),
     pageLayouts: parseStoredPageLayouts(row.pageLayoutsJson, isAdmin),
+    recordListPreferences: parseStoredRecordListPreferences(row.pageLayoutsJson),
   };
 }
 
@@ -93,6 +106,7 @@ export async function PATCH(request: NextRequest) {
   const current = await readPreferences(repository, auth.user.email, auth.user.isAdmin);
   const preferences = { ...current.preferences };
   let persistedPageLayouts = parseStoredPageLayouts(current.storedPageLayoutsJson, true);
+  let persistedRecordListPreferences = parseStoredRecordListPreferences(current.storedPageLayoutsJson);
 
   if (Object.hasOwn(body, "displayTimezone")) {
     const timezone = normalizeUserDisplayTimezone(body.displayTimezone);
@@ -115,13 +129,19 @@ export async function PATCH(request: NextRequest) {
     persistedPageLayouts = mergePageLayoutsForWrite(current.storedPageLayoutsJson, pageLayouts, auth.user.isAdmin);
     preferences.pageLayouts = normalizePageLayoutsForRead(persistedPageLayouts, auth.user.isAdmin);
   }
+  if (Object.hasOwn(body, "recordListPreferences")) {
+    const recordListPreferences = normalizeRecordListPreferencesForWrite(body.recordListPreferences);
+    if (!recordListPreferences) return NextResponse.json({ error: "recordListPreferences must contain the complete supported Leads, Clients, and Projects view and sort catalog." }, { status: 400 });
+    persistedRecordListPreferences = recordListPreferences;
+    preferences.recordListPreferences = recordListPreferences;
+  }
   const now = Date.now();
   await repository.upsert({
     userEmail: auth.user.email,
     displayTimezone: preferences.displayTimezone,
     replySignature: preferences.replySignature,
     notificationPreferencesJson: JSON.stringify(preferences.notificationPreferences),
-    pageLayoutsJson: JSON.stringify(persistedPageLayouts),
+    pageLayoutsJson: JSON.stringify({ ...persistedPageLayouts, recordLists: persistedRecordListPreferences }),
     updatedAt: now,
   });
   return NextResponse.json({ preferences, updatedAt: now }, { headers: { "Cache-Control": "no-store" } });

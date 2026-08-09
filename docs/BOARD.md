@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 43 not started · 4 in progress · 1 in review · 2 blocked · 134 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 42 not started · 4 in progress · 2 in review · 2 blocked · 134 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -52,7 +52,7 @@ row holds the full text. Packets without a status line are not started.
 | DES-13 | Design-language consolidation: color, type, and spacing scales with a drift guard (medium) | Complete — PR #309, August 5, 2026. | agent-plan |
 | DES-14 | FloorOpsApp decomposition: extract the four record views and their shared record contracts (large, after GI-04) | Complete — PR #327, August 5, 2026. | agent-plan |
 | DES-14b | FloorOpsApp decomposition: the modal and drawer cluster (large, after DES-14) | Complete — PR #328, August 7, 2026. | agent-plan |
-| DES-15 | Record-page list views with sorting and search (medium-large, after DES-14) | — | agent-plan |
+| DES-15 | Record-page list views with sorting and search (medium-large, after DES-14) | In review — PR #358 | agent-plan |
 | DES-16 | Flow honesty: the phone-call lead path, the Schedule phantoms, and a role-gated nav (small-medium) — ADOPTION FLAGSHIP | Complete — PR #306, August 4, 2026. | agent-plan |
 | DES-17 | The failure surface: error boundary, toast queue with next steps, empty-state actions (medium) | Complete — PR #332, August 7, 2026. | agent-plan |
 | DES-18 | Findability and the filing prefill (small-medium, after AI-11(c) merges — inbox cluster) | — | agent-plan |

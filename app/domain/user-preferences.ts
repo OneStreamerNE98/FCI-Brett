@@ -3,6 +3,7 @@ export const USER_PREFERENCE_KEYS = Object.freeze([
   "replySignature",
   "notificationPreferences",
   "pageLayouts",
+  "recordListPreferences",
 ] as const);
 
 export function normalizeUserDisplayTimezone(value: unknown) {
