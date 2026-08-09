@@ -1141,7 +1141,7 @@ test("live and simulation Gmail filing emit the same durable event-row shape", a
   }
 });
 
-test("mailbox-scoped Gmail filing keeps archive identity separate while Drive lease health uses the workspace scope", async () => {
+test("mailbox-scoped Gmail filing keeps archive identity and the filing lease isolated", async () => {
   const liveDatabase = createBehaviorDatabase();
   const mailboxConnectionKey = "gmail_fci_test_operations";
   const liveMessageId = "live-msg-mailbox-drive-scope";
@@ -1164,7 +1164,9 @@ test("mailbox-scoped Gmail filing keeps archive identity separate while Drive le
     );
     assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
     assert.equal(liveDatabase.state.operations.length, 1);
-    assert.equal(liveDatabase.state.operations[0].connection_key, LIVE_CONNECTION);
+    assert.equal(liveDatabase.state.operations[0].connection_key, mailboxConnectionKey);
+    assert.notEqual(liveDatabase.state.operations[0].connection_key, LIVE_CONNECTION,
+      "one mailbox's filing lease must not block connection work for another mailbox");
     assert.equal(
       liveDatabase.state.operations[0].operation_key,
       `${mailboxConnectionKey}:file-gmail:${liveMessageId}`,
