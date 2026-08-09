@@ -39,6 +39,7 @@ import { normalizeJobSiteLocation, type JobSiteMapsRuntimeConfig } from "./featu
 import {
   cachedGetJson,
   invalidateCachedGet,
+  invalidateCachedGetPrefix,
   isTerminalCachedGetError,
 } from "./lib/client-get-cache";
 import {
@@ -240,7 +241,7 @@ const DIRECTORY_GET_URLS = [
 ] as const;
 
 function invalidateDirectoryGets() {
-  for (const url of DIRECTORY_GET_URLS) invalidateCachedGet(url);
+  for (const url of DIRECTORY_GET_URLS) invalidateCachedGetPrefix(url);
 }
 
 export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, userEmail, accessLabel, signOutHref }: { initialView: OperationsView; environment: AppEnvironment; jobSiteMaps: JobSiteMapsRuntimeConfig; userName: string; userEmail: string; accessLabel: "Admin" | "Office"; signOutHref: string }) {
@@ -274,6 +275,9 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [leads, setLeads] = useState<Lead[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [projectItems, setProjectItems] = useState<Project[]>([]);
+  const [clientsCursor, setClientsCursor] = useState<string | null>(null);
+  const [projectsCursor, setProjectsCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [filingRules, setFilingRules] = useState<FilingRuleDraft[]>([]);
   const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
   const [liveDataState, setLiveDataState] = useState<LiveDataState>("loading");
@@ -372,8 +376,8 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     ]);
     const directoryRequests = Promise.all([
       getJson("/api/v1/leads"),
-      getJson("/api/v1/clients"),
-      getJson("/api/v1/projects"),
+      getJson("/api/v1/clients?limit=100"),
+      getJson("/api/v1/projects?limit=100"),
       getJson("/api/v1/dashboard"),
     ]);
     // Requests start synchronously; loading state moves to a microtask so the
@@ -406,6 +410,8 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       setLeads(nextLeads);
       setClients(nextClients);
       setProjectItems(nextProjects);
+      setClientsCursor(typeof clientData.nextCursor === "string" ? clientData.nextCursor : null);
+      setProjectsCursor(typeof projectData.nextCursor === "string" ? projectData.nextCursor : null);
       setSelectedLeadId((current) => current && nextLeads.some(({ id }) => id === current)
         ? current
         : null);
@@ -456,6 +462,55 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       if (!silent) directoryVisibleLoadsInFlightRef.current -= 1;
     });
   }, [userEmail, userName]);
+
+  const loadMoreDirectoryData = useCallback(async () => {
+    const clientCursor = clientsCursor;
+    const projectCursor = projectsCursor;
+    if (!clientCursor && !projectCursor) return;
+    setLoadingMore(true);
+    try {
+      const [clientData, projectData] = await Promise.all([
+        clientCursor
+          ? cachedGetJson<Record<string, unknown>>(`/api/v1/clients?limit=100&cursor=${encodeURIComponent(clientCursor)}`)
+          : Promise.resolve({ clients: [] as Record<string, unknown>[], nextCursor: null }),
+        projectCursor
+          ? cachedGetJson<Record<string, unknown>>(`/api/v1/projects?limit=100&cursor=${encodeURIComponent(projectCursor)}`)
+          : Promise.resolve({ projects: [] as Record<string, unknown>[], nextCursor: null }),
+      ]);
+      if (clientCursor) {
+        const clientRows = Array.isArray(clientData.clients) ? clientData.clients as Record<string, unknown>[] : [];
+        if (clientRows.length > 0) {
+          const newClients = clientRows.map(mapClientRecord);
+          setClients((prev) => [...prev, ...newClients]);
+        }
+        setClientsCursor(typeof clientData.nextCursor === "string" ? clientData.nextCursor : null);
+      }
+      if (projectCursor) {
+        const projectRows = Array.isArray(projectData.projects) ? projectData.projects as Record<string, unknown>[] : [];
+        if (projectRows.length > 0) {
+          const newProjects = projectRows.map((project) => {
+            const managerId = typeof project.project_manager_id === "string" && project.project_manager_id.trim()
+              ? project.project_manager_id.trim().toLowerCase()
+              : null;
+            const estimatedValue = optionalRecordNumber(project.estimated_value);
+            const squareFeet = optionalRecordNumber(project.square_feet);
+            const contractValue = optionalRecordNumber(project.contract_value);
+            const installationStartedAt = optionalProjectTimestamp(project.installation_started_at);
+            const installationCompletedAt = optionalProjectTimestamp(project.installation_completed_at);
+            const callbackNote = typeof project.callback_note === "string" && project.callback_note.trim() ? project.callback_note.trim() : null;
+            const jobSite = normalizeJobSiteLocation({ address: project.site, latitude: project.latitude, longitude: project.longitude });
+            return { id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory: optionalFlooringCategory(project.flooring_category), squareFeet: squareFeet !== null && Number.isSafeInteger(squareFeet) && squareFeet > 0 ? squareFeet : null, contractValue: contractValue !== null && Number.isSafeInteger(contractValue) && contractValue >= 0 ? contractValue : null, segment: resolveProjectSegment(project.segment), installationStartedAt, installationCompletedAt, hadCallback: project.had_callback === true || project.had_callback === 1, callbackNote, site: jobSite?.address ?? "Site pending", jobSite, managerId, lead: projectManagerLabel(managerId, userEmail, userName), date: "Not scheduled", accent: "sage", createdAt: optionalRecordNumber(project.created_at), updatedAt: optionalRecordNumber(project.updated_at), version: normalizeRecordVersion(project.version) ?? undefined, driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined };
+          });
+          setProjectItems((prev) => [...prev, ...newProjects]);
+        }
+        setProjectsCursor(typeof projectData.nextCursor === "string" ? projectData.nextCursor : null);
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [clientsCursor, projectsCursor, userEmail, userName]);
+
+  const hasMorePages = clientsCursor !== null || projectsCursor !== null;
 
   const refreshDashboardSnapshot = useCallback(async () => {
     const loadId = ++dashboardRefreshLoadIdRef.current;
@@ -1498,6 +1553,13 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
           <AppErrorBoundary key={view}>
             {development && <section className="development-banner" role="status" aria-label="Development environment; test data only"><ShieldCheck size={17} /><div><strong>Development environment · Test data only</strong><span>Use approved test records while this working copy moves toward production readiness.</span></div></section>}
             <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData(false, true)} />
+            {hasMorePages && liveDataState === "ready" && (view === "Clients" || view === "Projects" || view === "Overview" || view === "Reports") && (
+              <section className="load-more-banner" role="status">
+                <button type="button" className="button button-secondary" disabled={loadingMore} onClick={() => { void loadMoreDirectoryData(); }}>
+                  {loadingMore ? "Loading…" : "Load more records"}
+                </button>
+              </section>
+            )}
             {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.overview} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("overview", layout)} onView={navigateToView} onProject={openProject} onLead={openLead} />}
             {view === "Leads" && <LeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal({})} onAdvance={advanceLead} onLead={openLead} />}
             {view === "Clients" && <ClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}

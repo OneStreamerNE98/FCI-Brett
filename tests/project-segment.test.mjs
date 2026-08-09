@@ -39,8 +39,8 @@ test("stored choices win and old or invalid rows widen safely from client indust
 test("the D1 route strips the private industry join and resolves every public segment", async () => {
   const route = await read("app/api/v1/projects/route.ts");
   assert.match(route, /c\.industry AS client_industry/u);
-  assert.match(route, /const \{ client_industry: clientIndustry, \.\.\.publicRecord \} = record/u);
-  assert.match(route, /\.\.\.publicRecord,[\s\S]*segment: resolveProjectSegment\(record\.segment, clientIndustry\)/u);
+  assert.match(route, /const \{ client_industry: clientIndustry, \.\.\.publicRecord \} = row/u);
+  assert.match(route, /\.\.\.publicRecord,[\s\S]*segment: resolveProjectSegment\(row\.segment, clientIndustry\)/u);
 });
 
 test("the optional creation tap stays closed and leaving it untouched reaches server defaulting", async () => {

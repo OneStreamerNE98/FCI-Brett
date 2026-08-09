@@ -298,7 +298,7 @@ test(
         false,
       );
 
-      const projectManagerProjects = await repository.listProjectsForScope(
+      const { items: projectManagerProjects } = await repository.listProjectsForScope(
         projectManagerScope,
         now,
         20,
@@ -320,10 +320,8 @@ test(
       assert.deepEqual(sortedIds(projectManagerSearch), [ids.projectA]);
       assertNoFinancialProjection(projectManagerSearch);
       assert.equal(projectManagerSearch[0].segment, "residential");
-      assert.deepEqual(
-        sortedIds(await repository.listClientsForScope(projectManagerScope, now, 20)),
-        [ids.clientA],
-      );
+      const { items: pmClients } = await repository.listClientsForScope(projectManagerScope, now, 20);
+      assert.deepEqual(sortedIds(pmClients), [ids.clientA]);
       assert.equal(
         await repository.projectExistsForScope(projectManagerScope, ids.projectA, now),
         true,
@@ -373,7 +371,7 @@ test(
         financialVisible: false,
       });
 
-      const officeProjects = await repository.listProjectsForScope(officeScope, now, 20);
+      const { items: officeProjects } = await repository.listProjectsForScope(officeScope, now, 20);
       assert.deepEqual(sortedIds(officeProjects), projectIds);
       assertNoFinancialProjection(officeProjects);
       assert.deepEqual(
@@ -383,10 +381,8 @@ test(
           [ids.projectB, "residential"],
         ]),
       );
-      assert.deepEqual(
-        sortedIds(await repository.listClientsForScope(officeScope, now, 20)),
-        clientIds,
-      );
+      const { items: officeClients } = await repository.listClientsForScope(officeScope, now, 20);
+      assert.deepEqual(sortedIds(officeClients), clientIds);
       assert.deepEqual(await repository.getDashboardForScope(officeScope, now), {
         projectCount: 2,
         activeProjectCount: 1,
@@ -394,7 +390,7 @@ test(
         financialVisible: false,
       });
 
-      const administratorProjects = await repository.listProjectsForScope(
+      const { items: administratorProjects } = await repository.listProjectsForScope(
         administratorScope,
         now,
         20,
@@ -429,7 +425,7 @@ test(
         kind: "company",
       };
       assert.deepEqual(
-        await repository.listProjectsForScope(forgedProjectManagerCompanyScope, now, 20),
+        (await repository.listProjectsForScope(forgedProjectManagerCompanyScope, now, 20)).items,
         [],
       );
 
@@ -438,7 +434,7 @@ test(
         includeFinancial: true,
       };
       assert.deepEqual(
-        await repository.listProjectsForScope(forgedOfficeFinancialScope, now, 20),
+        (await repository.listProjectsForScope(forgedOfficeFinancialScope, now, 20)).items,
         [],
       );
       assert.equal(
@@ -456,7 +452,7 @@ test(
         authorizationVersion: "2",
       };
       assert.deepEqual(
-        await repository.listProjectsForScope(staleProjectManagerScope, now, 20),
+        (await repository.listProjectsForScope(staleProjectManagerScope, now, 20)).items,
         [],
       );
       assert.equal(
@@ -476,7 +472,7 @@ test(
         [ids.projectManagerSession, new Date(now)],
       );
       assert.deepEqual(
-        await repository.listProjectsForScope(projectManagerScope, now, 20),
+        (await repository.listProjectsForScope(projectManagerScope, now, 20)).items,
         [],
       );
       assert.equal(

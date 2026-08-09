@@ -902,6 +902,21 @@ function optionalAuditQueryValue(url: URL, key: string) {
   return value;
 }
 
+const MAX_LIST_LIMIT = 500;
+
+function parseListLimit(url: URL) {
+  const raw = url.searchParams.get("limit");
+  if (raw === null) return 100;
+  if (!/^[1-9][0-9]{0,2}$/.test(raw)) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_LIST_LIMIT) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  return value;
+}
+
 function auditTimestamp(value: string | null) {
   if (value === null) return null;
   if (
@@ -1137,9 +1152,21 @@ export function createEmployeeRequestRouter(
         matched.kind !== "search"
         && matched.kind !== "admin_audit_view"
         && matched.kind !== "employee_login_callback"
+        && !(matched.kind === "projects" || matched.kind === "clients")
         && url.search
       ) {
         throw new HttpFailure(400, "invalid_query");
+      }
+      if (
+        (matched.kind === "projects" || matched.kind === "clients")
+        && url.search
+      ) {
+        const ALLOWED_LIST_PARAMS = new Set(["limit", "cursor"]);
+        for (const key of url.searchParams.keys()) {
+          if (!ALLOWED_LIST_PARAMS.has(key)) {
+            throw new HttpFailure(400, "invalid_query");
+          }
+        }
       }
 
       const denyTransport = async (
@@ -1360,16 +1387,22 @@ export function createEmployeeRequestRouter(
       }
 
       if (matched.kind === "projects") {
+        const listLimit = parseListLimit(url);
+        const cursor = url.searchParams.get("cursor");
         const result = await dependencies.authorization.performProjectsList(
           requestTrace,
           (context) => dependencies.repository.listProjectsForScope(
             context.recordScope,
             now(),
-            100,
+            listLimit,
+            cursor,
           ),
         );
         if (!result.allowed) throw denialFailure(result.reason);
-        jsonResponse(request, response, 200, { data: result.value });
+        jsonResponse(request, response, 200, {
+          data: result.value.items,
+          nextCursor: result.value.nextCursor,
+        });
         return;
       }
 
@@ -1433,16 +1466,22 @@ export function createEmployeeRequestRouter(
       }
 
       if (matched.kind === "clients") {
+        const listLimit = parseListLimit(url);
+        const cursor = url.searchParams.get("cursor");
         const result = await dependencies.authorization.performClientsList(
           requestTrace,
           (context) => dependencies.repository.listClientsForScope(
             context.recordScope,
             now(),
-            100,
+            listLimit,
+            cursor,
           ),
         );
         if (!result.allowed) throw denialFailure(result.reason);
-        jsonResponse(request, response, 200, { data: result.value });
+        jsonResponse(request, response, 200, {
+          data: result.value.items,
+          nextCursor: result.value.nextCursor,
+        });
         return;
       }
 
