@@ -136,6 +136,12 @@ function fakeDatabase({ resources, blueprint = blueprintModule.seedWorkspaceBlue
           if (sql.startsWith("UPDATE google_connections SET")) {
             return { meta: { changes: 1 } };
           }
+          if (sql.startsWith("INSERT INTO google_drive_operations")) {
+            return { meta: { changes: 1 } };
+          }
+          if (sql.startsWith("UPDATE google_drive_operations SET")) {
+            return { meta: { changes: 1 } };
+          }
           if (sql.startsWith("INSERT INTO google_integration_events")) {
             const [
               id,

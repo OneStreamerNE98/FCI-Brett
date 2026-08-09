@@ -49,6 +49,44 @@
   margin: 0;
 }
 
+.mailboxConnections {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.mailboxConnectionsEmpty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.mailboxConnectionRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.mailboxConnectionRow > div {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.mailboxConnectionRow strong,
+.mailboxHealth strong {
+  overflow-wrap: anywhere;
+}
+
+.mailboxConnectionRow span,
+.mailboxHealth header span {
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+}
+
 .connectionHealthExpander {
   padding: 0;
   overflow: hidden;
@@ -106,6 +144,36 @@
   gap: var(--space-3);
   padding: var(--space-3);
   border-top: 1px solid var(--line);
+}
+
+.mailboxHealth {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.mailboxHealth + .mailboxHealth {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.mailboxHealth > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.gmailMailboxSelector {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.gmailMailboxSelector select {
+  min-height: var(--target-min);
+}
+
+.gmailMailboxSelector small {
+  color: var(--text-muted);
 }
 
 .connectionHealthAccount {
@@ -442,6 +510,16 @@
 
   .connectionActionButtons,
   .connectionActionButtons > * {
+    width: 100%;
+    max-width: none;
+  }
+
+  .mailboxConnectionRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mailboxConnectionRow > :global(.administrator-action-control),
+  .mailboxConnectionRow > :global(.administrator-action-control > button) {
     width: 100%;
     max-width: none;
   }

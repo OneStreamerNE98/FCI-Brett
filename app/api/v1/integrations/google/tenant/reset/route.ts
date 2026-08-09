@@ -11,14 +11,18 @@ const TENANT_RESET_BODY_LIMIT = 512;
 
 type StoredTenant = Readonly<{
   id: string;
+  connection_key: string;
   google_email: string;
   status: string;
 }>;
 
-async function storedTenant(connectionKey: string) {
-  return env.DB.prepare("SELECT id, google_email, status FROM google_connections WHERE connection_key = ?")
-    .bind(connectionKey)
-    .first<StoredTenant>();
+async function storedTenants(workspaceConnectionKey: string) {
+  const rows = await env.DB.prepare(`SELECT id, connection_key, google_email, status
+      FROM google_connections
+      ORDER BY CASE WHEN connection_key = ? THEN 0 ELSE 1 END, created_at, id`)
+    .bind(workspaceConnectionKey)
+    .all<StoredTenant>();
+  return rows.results;
 }
 
 function workspaceOnly() {
@@ -41,11 +45,17 @@ export async function GET(request: NextRequest) {
   await ensureWorkspaceSchema();
   const mode = workspaceOnly();
   if (mode.response) return mode.response;
-  const tenant = await storedTenant(mode.config.connectionKey);
+  const tenants = await storedTenants(mode.config.workspaceConnectionKey);
+  const tenant = tenants[0] ?? null;
+  const allDisconnected = tenants.length > 0
+    && tenants.every((candidate) => candidate.status === "revoked");
   return noStore({
-    available: tenant?.status === "revoked",
-    connectionStatus: tenant?.status ?? "not-connected",
+    available: allDisconnected,
+    connectionStatus: tenants.some((candidate) => candidate.status !== "revoked")
+      ? "connected"
+      : tenant?.status ?? "not-connected",
     discardedTenant: tenant?.google_email ?? null,
+    mailboxCount: tenants.length,
   });
 }
 
@@ -71,12 +81,13 @@ export async function POST(request: NextRequest) {
     return noStore({ error: "Provide only a non-empty confirmation field." }, { status: 400 });
   }
 
-  const tenant = await storedTenant(mode.config.connectionKey);
+  const tenants = await storedTenants(mode.config.workspaceConnectionKey);
+  const tenant = tenants[0] ?? null;
   if (!tenant) {
     return noStore({ error: "There is no saved Google Workspace tenant to reset." }, { status: 409 });
   }
-  if (tenant.status !== "revoked") {
-    return noStore({ error: "Disconnect the saved Google Workspace connection before starting fresh on a new tenant." }, { status: 409 });
+  if (tenants.some((candidate) => candidate.status !== "revoked")) {
+    return noStore({ error: "Disconnect every attached Google Workspace mailbox before starting fresh on a new tenant." }, { status: 409 });
   }
   if (parsed.body.confirmation.trim() !== tenant.google_email) {
     return noStore({ error: `Type ${tenant.google_email} exactly to confirm which tenant will be discarded.` }, { status: 409 });
@@ -84,11 +95,13 @@ export async function POST(request: NextRequest) {
 
   const now = Date.now();
   const outcome = await resetD1GoogleWorkspaceTenant(env.DB, {
-    connection: {
-      id: tenant.id,
-      key: mode.config.connectionKey,
-      googleEmail: tenant.google_email,
-    },
+    workspaceConnectionKey: mode.config.workspaceConnectionKey,
+    connections: tenants.map((candidate) => ({
+      id: candidate.id,
+      key: candidate.connection_key,
+      googleEmail: candidate.google_email,
+    })),
+    confirmationEmail: tenant.google_email,
     actor: auth.user.email,
     auditId: crypto.randomUUID(),
     now,

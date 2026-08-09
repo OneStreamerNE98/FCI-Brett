@@ -57,7 +57,10 @@ for (const route of operationsRoutes) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto(route);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-      await page.waitForLoadState("networkidle");
+      await expect(page.getByText("Loading live records", { exact: true })).toHaveCount(0);
+      if (route === "/settings?section=google-workspace") {
+        await expect(page.getByRole("group", { name: "Google Workspace setup stages" })).toBeVisible();
+      }
       const actionableListName = route === "/"
         ? "Lead pipeline records"
         : route === "/clients"

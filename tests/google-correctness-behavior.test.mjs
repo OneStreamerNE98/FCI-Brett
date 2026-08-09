@@ -25,8 +25,9 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false },
 });
 
-const [oauthModule, calendarModule, gmailModule] = await Promise.all([
+const [oauthModule, coreOauthModule, calendarModule, gmailModule] = await Promise.all([
   vite.ssrLoadModule("/app/lib/google-oauth-sites.ts"),
+  vite.ssrLoadModule("/app/lib/google-oauth.ts"),
   vite.ssrLoadModule("/app/lib/google-calendar-client.ts"),
   vite.ssrLoadModule("/app/lib/google-gmail.ts"),
 ]);
@@ -155,6 +156,213 @@ test("Gmail readiness accepts an allowlisted mailbox in an allowed domain withou
   assert.equal(multipleApprovedAccounts.missingDetails.some((detail) => (
     detail.envVar === "GOOGLE_WORKSPACE_INTAKE_MAILBOX"
   )), false);
+});
+
+test("Google authorization always offers account selection for an additional mailbox", () => {
+  const encryptionKey = Buffer.alloc(32, 18).toString("base64url");
+  const config = coreOauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey));
+  const authorization = new URL(coreOauthModule.buildGoogleAuthorizationUrl(
+    config,
+    "state-value",
+    "challenge-value",
+  ));
+  assert.equal(authorization.searchParams.get("prompt"), "consent select_account");
+});
+
+test("mailbox credentials use deterministic non-PII keys while the workspace key stays stable", async () => {
+  const encryptionKey = Buffer.alloc(32, 19).toString("base64url");
+  const config = coreOauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey, {
+    GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,gmail",
+    GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: "operations@cherryhillfci.com,sales@cherryhillfci.com",
+    GOOGLE_WORKSPACE_INTAKE_MAILBOX: "operations@cherryhillfci.com",
+  }));
+  const persistence = {
+    async findConnectionByGoogleSubject() { return null; },
+    async findConnectionByGoogleEmail() { return null; },
+    async listConnectionMetadata() { return []; },
+    async hasTenantScopedData() { throw new Error("same-tenant first attach must not probe tenant data"); },
+  };
+  const profile = {
+    subject: "verified-google-subject-123",
+    email: "sales@cherryhillfci.com",
+    emailVerified: true,
+  };
+  const first = await coreOauthModule.resolveGoogleMailboxConnectionConfig(
+    config,
+    profile,
+    { persistence },
+  );
+  const repeated = await coreOauthModule.resolveGoogleMailboxConnectionConfig(
+    config,
+    profile,
+    { persistence },
+  );
+  assert.equal(first.connectionKey, "google-workspace");
+  assert.equal(first.workspaceConnectionKey, "google-workspace");
+  assert.match(first.authConnectionKey, /^gmail_[a-f0-9]{64}$/u);
+  assert.equal(first.authConnectionKey, repeated.authConnectionKey);
+  assert.equal(first.authConnectionKey.includes("sales"), false);
+});
+
+test("mailbox credential resolution preserves a legacy subject key and fences a cross-domain tombstone with no tenant data", async () => {
+  const encryptionKey = Buffer.alloc(32, 20).toString("base64url");
+  const config = coreOauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey));
+  const legacy = {
+    id: "legacy-id",
+    connectionKey: "google-workspace",
+    googleSubject: "legacy-subject",
+    googleEmail: "operations@cherryhillfci.com",
+    refreshTokenCiphertext: "ciphertext",
+    keyVersion: "1",
+    scopesJson: "[]",
+    status: "connected",
+  };
+  const reused = await coreOauthModule.resolveGoogleMailboxConnectionConfig(
+    config,
+    { subject: "legacy-subject", email: "operations@cherryhillfci.com", emailVerified: true },
+    {
+      persistence: {
+        async findConnectionByGoogleSubject() { return legacy; },
+        async findConnectionByGoogleEmail() { throw new Error("subject match must win before email lookup"); },
+        async listConnectionMetadata() { throw new Error("existing subject should bypass tenant comparison"); },
+        async hasTenantScopedData() { throw new Error("existing subject should bypass tenant probe"); },
+      },
+    },
+  );
+  assert.equal(reused.authConnectionKey, "google-workspace");
+
+  await assert.rejects(
+    coreOauthModule.resolveGoogleMailboxConnectionConfig(
+      config,
+      { subject: "new-subject", email: "ops@other.example", emailVerified: true },
+      {
+        persistence: {
+          async findConnectionByGoogleSubject() { return null; },
+          async findConnectionByGoogleEmail() { return null; },
+          async listConnectionMetadata() {
+            return [{ ...legacy, connectionKey: "gmail_old_tenant", status: "revoked" }];
+          },
+          async hasTenantScopedData() {
+            throw new Error("cross-domain credentials fail closed even before tenant data exists");
+          },
+        },
+      },
+    ),
+    (error) => error.code === "google_tenant_reset_required" && error.status === 409,
+  );
+});
+
+test("a normalized-email match retains its key but requires fresh credentials when the verified Google subject changes", async () => {
+  const encryptionKey = Buffer.alloc(32, 22).toString("base64url");
+  const config = coreOauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey));
+  const existing = {
+    id: "connection-email-match",
+    connectionKey: "gmail_existing_email",
+    googleSubject: "old-subject",
+    googleEmail: "operations@cherryhillfci.com",
+    refreshTokenCiphertext: "retained-ciphertext",
+    keyVersion: "1",
+    scopesJson: "[]",
+    status: "connected",
+  };
+  const profile = {
+    subject: "new-subject",
+    email: "OPERATIONS@CHERRYHILLFCI.COM",
+    emailVerified: true,
+  };
+  const persistence = {
+    async findConnectionByGoogleSubject() { return null; },
+    async findConnectionByGoogleEmail(email) {
+      assert.equal(email, "operations@cherryhillfci.com");
+      return existing;
+    },
+    async listConnectionMetadata() { throw new Error("email match must resolve before tenant comparison"); },
+  };
+  const resolved = await coreOauthModule.resolveGoogleMailboxConnectionConfig(
+    config,
+    profile,
+    { persistence },
+  );
+  assert.equal(resolved.authConnectionKey, existing.connectionKey);
+  assert.equal(resolved.selectedMailboxEmail, "operations@cherryhillfci.com");
+
+  let saved;
+  const dependencies = {
+    persistence: {
+      async findConnection(key) {
+        assert.equal(key, existing.connectionKey);
+        return existing;
+      },
+      async hasTenantScopedData() {
+        throw new Error("same normalized email is not a tenant replacement");
+      },
+      async saveConnection(input) {
+        saved = input;
+        return "saved";
+      },
+    },
+    secrets: coreOauthModule.createGoogleSecretStore({
+      currentVersion: "1",
+      keys: { 1: encryptionKey },
+    }),
+    async fetch() { throw new Error("not used"); },
+    now: () => 1_700_000_000_000,
+    randomUUID: () => "unused-new-id",
+  };
+  await assert.rejects(
+    coreOauthModule.saveGoogleConnection(
+      resolved,
+      { accessToken: "access-token", scope: resolved.scopes },
+      { ...profile, email: profile.email.toLowerCase() },
+      "admin@cherryhillfci.com",
+      dependencies,
+    ),
+    (error) => error.code === "refresh_token_missing" && error.status === 409,
+  );
+  assert.equal(saved, undefined);
+
+  await coreOauthModule.saveGoogleConnection(
+    resolved,
+    { accessToken: "access-token", refreshToken: "FCI TEST NEW SUBJECT REFRESH", scope: resolved.scopes },
+    { ...profile, email: profile.email.toLowerCase() },
+    "admin@cherryhillfci.com",
+    dependencies,
+  );
+  assert.equal(saved.connectionKey, existing.connectionKey);
+  assert.equal(saved.id, existing.id);
+  assert.equal(saved.googleSubject, "new-subject");
+  assert.equal(saved.credentialSource, "fresh");
+  assert.notEqual(saved.refreshTokenCiphertext, existing.refreshTokenCiphertext);
+});
+
+test("runtime readiness uses selected-mailbox equality instead of re-reading the save-time allowlist", async () => {
+  const encryptionKey = Buffer.alloc(32, 21).toString("base64url");
+  const configured = coreOauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey, {
+    GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,gmail",
+    GOOGLE_WORKSPACE_INTAKE_MAILBOX: "operations@cherryhillfci.com",
+  }));
+  const status = await coreOauthModule.getGoogleConnectionStatus(
+    { ...configured, expectedGoogleEmails: [] },
+    {
+      persistence: {
+        async findConnection(key) {
+          assert.equal(key, configured.authConnectionKey);
+          return {
+            id: "connection-1",
+            connectionKey: key,
+            googleSubject: "subject-1",
+            googleEmail: "operations@cherryhillfci.com",
+            refreshTokenCiphertext: "ciphertext",
+            keyVersion: "1",
+            scopesJson: JSON.stringify(configured.scopes),
+            status: "connected",
+          };
+        },
+      },
+    },
+  );
+  assert.equal(status.connected, true);
+  assert.equal(status.services.gmail, true);
 });
 
 test("Workspace readiness describes missing hosted values without returning their values", () => {

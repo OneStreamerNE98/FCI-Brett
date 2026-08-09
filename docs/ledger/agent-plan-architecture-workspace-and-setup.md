@@ -1583,6 +1583,7 @@ afterwards provisions cleanly; the settings guide states the evidence-loss conse
 **Effort:** medium. **Cost:** $0.
 
 ### WS-20 · Attach additional shared mailboxes to the workspace (medium-large)
+**Status:** In progress — `codex/ws20-shared-mailboxes`
 **Why:** owner request, August 3, 2026 — staff should be able to work shared inboxes
 (`ops@`, `info@`, `sales@`) rather than the single connection mailbox, and eventually see
 their own mail. **Those are two different features with very different costs, and this packet
@@ -4296,6 +4297,7 @@ DES-13. Sequencing below is binding; none of these dispatch before their named
 predecessors merge.
 
 ### DES-19 · Responsive layout primitives and the dynamic-state guard (medium-large; after DES-13 and DES-14)
+**Status:** In progress — `kimi/des19-responsive-primitives`
 
 **Why:** audit P1 #1, P3 "viewport patches" (11 breakpoint values, 142 local layout
 rules, 9 wrapping), and P3 "tests weak on state transitions" — conditional states break

@@ -85,7 +85,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { client } = await getWorkspaceGmailClient();
+    const { client } = await getWorkspaceGmailClient(
+      request.nextUrl.searchParams.get("mailbox"),
+    );
     // Read-only Gmail: the server-derived reply context (recipient/subject/thread)
     // and a bounded, untrusted text/plain body extraction. This route NEVER
     // creates, sends, labels, or modifies a Gmail draft or message — the human

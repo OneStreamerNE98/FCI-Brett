@@ -93,6 +93,14 @@ class SqliteD1Statement {
 
   async run() {
     this.owner.writes.push({ sql: this.sql, values: [...this.values] });
+    if (
+      this.sql.startsWith("INSERT INTO google_drive_operations")
+      && this.owner.beforeLeaseRun
+    ) {
+      const beforeLeaseRun = this.owner.beforeLeaseRun;
+      this.owner.beforeLeaseRun = null;
+      await beforeLeaseRun();
+    }
     if (this.owner.failWritePattern?.test(this.sql)) {
       this.owner.failWriteMatches += 1;
     }
@@ -115,6 +123,7 @@ class Gi01Database {
     this.failWritePattern = null;
     this.failWriteOnMatch = 1;
     this.failWriteMatches = 0;
+    this.beforeLeaseRun = null;
     this.batchTail = Promise.resolve();
     this.database.exec(`
       CREATE TABLE workspace_resources (
@@ -165,6 +174,13 @@ class Gi01Database {
         key_version TEXT NOT NULL, status TEXT NOT NULL,
         last_error_code TEXT, last_success_at INTEGER, created_by TEXT NOT NULL,
         created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, revoked_at INTEGER
+      );
+      CREATE TABLE google_drive_operations (
+        id TEXT PRIMARY KEY, connection_key TEXT NOT NULL,
+        operation_key TEXT NOT NULL UNIQUE, project_id TEXT NOT NULL,
+        status TEXT NOT NULL, lease_expires_at INTEGER, last_error_code TEXT,
+        created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
       );
       CREATE TABLE google_form_lead_intake_watermarks (
         connection_key TEXT NOT NULL, spreadsheet_id TEXT NOT NULL,
@@ -1346,6 +1362,61 @@ test("GI-01 workspace route acquires a Sheets token, performs the bounded produc
   }
 });
 
+test("GI-01 cannot recreate stale-tenant reviews when reset wins after the Sheet read", async () => {
+  const database = new Gi01Database();
+  await workspaceEnvironment(database);
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.hostname === "oauth2.googleapis.com") {
+      return Response.json({ access_token: "workspace-access-token" });
+    }
+    if (url.hostname === "sheets.googleapis.com") {
+      const encodedRange = url.pathname.split("/values/")[1];
+      if (encodedRange && decodeURIComponent(encodedRange) === "A1:F1") {
+        return Response.json({ values: [[
+          "Timestamp", "Name", "Address", "Rooms", "Flooring Type", "Preferred Contact",
+        ]] });
+      }
+      assert.equal(url.searchParams.get("ranges"), "A2:F26");
+      assert.equal(new Headers(init.headers).get("authorization"), "Bearer workspace-access-token");
+      return Response.json({
+        sheets: [{
+          data: [{
+            startRow: 1,
+            rowData: [{
+              values: [
+                { formattedValue: "2026-08-08T12:00:00Z", effectiveValue: { stringValue: "2026-08-08T12:00:00Z" } },
+                { formattedValue: "FCI TEST — DO NOT USE — Reset race", effectiveValue: { stringValue: "FCI TEST — DO NOT USE — Reset race" } },
+                { formattedValue: "20 Reset Way", effectiveValue: { stringValue: "20 Reset Way" } },
+                { formattedValue: "Office", effectiveValue: { stringValue: "Office" } },
+                { formattedValue: "LVT", effectiveValue: { stringValue: "LVT" } },
+                { formattedValue: "reset@example.test", effectiveValue: { stringValue: "reset@example.test" } },
+              ],
+            }],
+          }],
+        }],
+      });
+    }
+    throw new Error(`Unexpected provider request ${url.href}`);
+  };
+  database.beforeLeaseRun = () => {
+    database.database.prepare("DELETE FROM google_connections").run();
+  };
+  try {
+    const response = await route.POST(request("POST"));
+    const body = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(body.code, "form_lead_check_in_progress");
+    assert.equal(database.count("google_connections"), 0);
+    assert.equal(database.count("google_drive_operations"), 0);
+    assert.equal(database.count("google_form_lead_reviews"), 0);
+    assert.equal(database.count("google_form_lead_intake_watermarks"), 0);
+    assert.equal(database.count("leads"), 0);
+  } finally {
+    database.close();
+  }
+});
+
 test("GI-01 lead POST atomically accepts one review and rejects a concurrent duplicate", async () => {
   const database = new Gi01Database();
   environment(database);
@@ -1896,7 +1967,7 @@ test("GI-01 never rewinds the watermark when the forward window is short", async
       }],
     }],
   });
-  globalThis.fetch = async (input, init = {}) => {
+  globalThis.fetch = async (input) => {
     const url = new URL(String(input));
     if (url.hostname === "oauth2.googleapis.com") {
       return Response.json({ access_token: "workspace-access-token" });
