@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 47 not started · 2 in progress · 2 blocked · 133 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 47 not started · 1 in progress · 1 in review · 2 blocked · 133 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -44,8 +44,8 @@ row holds the full text. Packets without a status line are not started.
 | DES-05 | Interactive vs static card grammar + FIX-08 absorption (medium; FloorOpsApp queue, after DES-06; GOLDEN REGEN 1 of 2) | Complete — PR #149, July 23, 2026. | agent-plan |
 | DES-06 | Layout-editor polish: icon-only Edit, honest Hidden-sections row, unified title-actions (small; FIRST DES packet in the FloorOpsApp queue; no golden regen) | Complete — PR #143, July 23, 2026. | agent-plan |
 | DES-07 | Primitive unification: KpiMetric→Metric, empty-state primitive, pill base (medium; FloorOpsApp queue after DES-04; GOLDEN REGEN 2 of 2, Reports hash only) | Complete — PR #165, July 24, 2026. | agent-plan |
-| DES-08 | Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue) | Blocked — sub-scope c only, deferred by owner decision (July 24, 2026) until the AI wave lands a truthful attention signal (revisit after AI-02/AI-04). | agent-plan |
-| DES-09 | Guardrail wrap-up + ledger closure (small; tests/docs only, last) | In progress — `codex/des09-guardrail-wrapup` | agent-plan |
+| DES-08 | Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue) | Blocked — sub-scope c only, awaiting an owner decision to lift the July 24 deferral now that its truthful AI-10 needs-review signal dependency is complete in… | agent-plan |
+| DES-09 | Guardrail wrap-up + ledger closure (small; tests/docs only, last) | In review — PR #359 | agent-plan |
 | DES-10 | Brand-mark presentation refinement (small; NOT priority — after the current DES queue; SVG work parallel-safe, the `.brand` edit takes the globals lock briefly) | — | agent-plan |
 | DES-11 | Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026) | Complete — PR #252 + PR #261, July 31, 2026. | agent-plan |
 | DES-12 | Layout editor: snap-in-place drag, touch support, and uniform card rhythm (medium) | — | agent-plan |

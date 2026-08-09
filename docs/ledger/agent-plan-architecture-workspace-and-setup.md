@@ -3366,7 +3366,7 @@ assertion); Reports regen diff = KpiMetric structure only; screenshot pass.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-08 · Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue)
-**Status:** Blocked — sub-scope c only, deferred by owner decision (July 24, 2026) until the AI wave lands a truthful attention signal (revisit after AI-02/AI-04). Every other sub-scope is merged: b (PR #167), d (PR #170), a-T1 (PR #174, incl. the Unspecified-industry honesty review fix), and a-T2 (PR #179 — migration 0019 nullable projects.segment, closed two-value catalog, industry-derived default with widen-on-read, KPI segment splits computed but deliberately rendered nowhere pending a non-golden display slot). Source-only and undeployed; migration 0019 unapplied to Sites. Guide impact: none.
+**Status:** Blocked — sub-scope c only, awaiting an owner decision to lift the July 24 deferral now that its truthful AI-10 needs-review signal dependency is complete in PR #235 + PR #238 + PR #245. Every other sub-scope is merged: b (PR #167), d (PR #170), a-T1 (PR #174, incl. the Unspecified-industry honesty review fix), and a-T2 (PR #179 — migration 0019 nullable projects.segment, closed two-value catalog, industry-derived default with widen-on-read, KPI segment splits computed but deliberately rendered nowhere pending a non-golden display slot). Source-only and undeployed; migration 0019 unapplied to Sites. Guide impact: none.
 
 **Why:** owner selections of July 22 — all four extras plus the meetings
 resolution of spec §5.
@@ -3393,7 +3393,7 @@ layouts unaffected).
 **Effort:** small each; a-T2 small-medium. **Cost:** $0.
 
 ### DES-09 · Guardrail wrap-up + ledger closure (small; tests/docs only, last)
-**Status:** In progress — `codex/des09-guardrail-wrapup`
+**Status:** In review — PR #359
 **Why:** close the design-critique ledger's Phase-3/4 open items this series
 executes, and leave one truth.
 **Do (narrowed August 3, 2026 — two sub-items struck as already delivered: the

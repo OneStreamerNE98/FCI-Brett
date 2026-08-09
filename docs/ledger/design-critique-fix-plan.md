@@ -1,23 +1,30 @@
 # UI design critique remediation plan
 
-Last reconciled: July 19, 2026 · Latest deployed release: private Sites development version 40 on July 19, 2026
+Last reconciled: August 9, 2026 · Deployment truth: [GitHub issue #258](https://github.com/OneStreamerNE98/FCI-Brett/issues/258)
 
 Source critique: the July 17, 2026 design critique supplied by the owner. This checked-in ledger is the self-contained project record; it does not depend on the original temporary worktree path.
 
 Baseline: PR #24, merged to `main` as `80a2d5a`
 
-Completed release: PR #25, merged to `main` as `13241fc` and deployed to the private Sites development environment as version 37
+Completed remediation slices: PR #25 (full-app critique pass), PR #27 (Reports
+drill-through), PR #29 (shared operations boundary), PR #30 (semantic rules table),
+PR #33 (actionable lists), PRs #35/#37 (Settings boundaries and honest role gating),
+and Workstream F PRs #119/#126/#132/#143/#149/#159/#165 (DES-01…07).
 
-Completed follow-on: PR #27, merged to `main` as `cf32a9e` and deployed to the private Sites development environment as version 38. It completes the bounded Reports chart-to-list contract and its rendered regression coverage.
+Historical deployment evidence, retained for the tracking guard rather than as a current
+live claim: PR #30 merged at `aa8ed8f`; PR #32 later deployed that source in Sites
+development version 40 at `adc79b8`. PR #32 is therefore the historical version-40
+deployment record for PR #30. Issue #258 supersedes this paragraph for current state.
 
-Completed structural follow-on: PR #29, merged to `main` as `1c2f991` and deployed to the private Sites development environment as version 39. It completes the first behavior-preserving Phase 3 shared operations UI and report-filter boundary.
+The `codex/actionable-lists` slice completed in source in PR #33 and was not deployed at that merge.
+The `codex/settings-panel-extraction` slice completed in source in PR #35 and was not deployed at that merge.
+These are historical merge-time facts, not current deployment claims.
 
-Completed follow-on: PR #30, merged to `main` as `aa8ed8f` on July 19, 2026. It completes the first shared responsive semantic-table slice for **Settings → Inbox & file rules**. It initially merged source-only and is now included in private Sites development version 40 through the exact PR #32 deployment baseline below.
-
-Completed deployment baseline: PR #32 merged to `main` as `adc79b855041db04cc3ca2a3eb232bc72408d33b` on July 19, 2026, and that exact commit was deployed to the private Sites development environment as version 40. Version 40 includes PR #30's responsive semantic rules table.
-
-Current source-only follow-ons: `codex/actionable-lists` is complete in PR #33 for the Overview pipeline, Clients, and Projects; Settings extraction/admin gating are complete in PRs #35/#37; the Tier-1 KPI panel is complete in PR #41; and the guided Workspace setup/prerequisites surface is complete in PR #44. None is deployed.
-KPI-02 is complete in merged PR #52, remains undeployed, and has released the sole `FloorOpsApp.tsx` slot to KPI-03, while later extracted Settings packets remain separately bounded.
+DES-09 reconciles and closes this historical critique ledger in PR #359. Current and
+future design work is dispatched only from the status lines in
+[`agent-plan-architecture-workspace-and-setup.md`](agent-plan-architecture-workspace-and-setup.md);
+this file no longer carries a parallel open-work queue. Consult issue #258 rather than
+this repository file for what is deployed.
 
 ## Purpose
 
@@ -42,18 +49,12 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 | A4 — desktop sidebar wrapping | Complete | Nav labels remain one line with ellipsis and compact feature-state labels where needed. | Preserve at desktop, tablet, and mobile drawer widths. |
 | A5 — eyebrow readability | Complete | Global 12 px eyebrow styling uses the compliant brown token. | Remove losing legacy declarations during Phase 3 CSS cleanup. |
 | A6 — competing primary actions | Complete for current routes | Topbar lead capture is demoted/contextual, mobile hides the extra topbar action, Inbox has one primary load action, Refresh is soft, and the global placeholder is the short “Search.” | Reassess when future route-specific creation actions become real. |
-| A7 — design-system pattern drift | Partial, Phase 3 | PR #29 added the first shared operations primitives. PR #30 added one reusable native table/card pattern, migrated Settings rules with rendered keyboard, mobile, and accessibility coverage, and is now included in private Sites development version 40. The source-only `codex/actionable-lists` branch is merged in PR #33 with a separate native list/list-item/button pattern across the Overview pipeline, Clients, and Projects. The Settings-only SET-01 component boundary is merged in PR #35. SET-02 is merged in PR #37 with one shared visible disabled-action treatment for Office users. Read-only `LeadStatusPanel` rows intentionally remain a static list; only actionable rows use the shared actionable-list pattern. | Migrate the remaining pill, empty-state, field, and button systems deliberately in later bounded packets; do not claim consolidation from visual overrides alone. |
-| A8 — token/cascade/style debt | Partial | Live cascade bugs, font token, warm active nav, responsive Reports, and current readability issues are fixed. | Remove dead sidebar theme rules, aliases, losing declarations, duplicated media queries, high-specificity overrides, and the remaining green-tinted legacy surface palette in the Phase 3 CSS track. |
+| A7 — design-system pattern drift | Complete for the critique boundary | PRs #29/#30/#33/#35/#37 establish the structural patterns; PRs #126/#149/#165 consolidate control, card, metric, empty-state, and pill grammar. Read-only `LeadStatusPanel` rows intentionally remain static while actionable rows use the shared actionable-list pattern. | Later design enhancements have their own packet status lines in the agent ledger. |
+| A8 — token/cascade/style debt | Complete for the critique boundary | PRs #119/#126/#208 removed the audited dead/cascade/control debt; PRs #309/#318 later tightened semantic-token drift and retired dead webfont/inline-style remnants. | New drift is guarded by the rendered and design-token suites. |
 
-> **Updated July 24, 2026:** Workstream F (DES-01…07, all Complete — see the
-> [agent plan](agent-plan-architecture-workspace-and-setup.md)) has since executed much
-> of the open A5/A7/A8 scope this table lists as Phase-3 work: the token/alias/dead-rule
-> and media-query consolidation (DES-01), radius/shadow and border normalization
-> (DES-02), and the KpiMetric/pill/empty-state primitive unification (DES-07). The
-> remaining visual debt (for example the green-tinted legacy surface palette) and the
-> final reconciliation of this ledger belong to DES-09. The table rows above are kept
-> unchanged as the historical record; sibling findings ledgers are grouped under
-> [docs/README.md → Findings & reviews](../README.md#findings--reviews).
+> **Closed August 9, 2026:** DES-09/PR #359 reconciles the July critique against the
+> completed bounded PRs above. Later design packets remain independently tracked in the
+> agent ledger; they do not reopen this historical findings ledger.
 
 ## Screen findings ledger
 
@@ -86,7 +87,7 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 - [x] Adopt 42 px page, 38–40 px standard, 34 px compact, and the documented 32 px bare-control target minimums.
 - [x] Keep desktop sidebar labels on one line.
 - [x] Fix the Reports, mobile metrics, Overview rail, and Assistant responsive cascade issues.
-- [ ] Remove redundant and dead legacy CSS declarations. This cleanup is intentionally paired with Phase 3 migrations so it does not destabilize the controlled development build.
+- [x] Remove redundant and dead legacy CSS declarations (PRs #119 and #208).
 
 ### Phase 2 — screen-specific remediation
 
@@ -106,37 +107,43 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 
 ### Phase 3 — structural consolidation
 
-Phase 3 remains open. The Settings-only panel-extraction scope is complete in source in PR #35 from `codex/settings-panel-extraction` and is not deployed; the remaining feature-boundary, primitive, Google-workflow, and CSS tracks stay open. Completed subitems and the remaining work are split into reviewable tracks so a visual cleanup does not become an unsafe application rewrite.
+Phase 3 is closed as a design-critique tracking surface. Its bounded work shipped through
+the PRs below; later refactors and enhancements are owned by their status lines in the
+agent ledger rather than duplicated here.
 
 1. **Semantic table and actionable-list track**
    - [x] First slice: create one shared responsive semantic table based on the Access People/Activity pattern and migrate **Settings → Inbox & file rules**.
    - [x] Preserve all five rule fields at desktop and mobile, native Pause/Enable and Delete keyboard behavior, focus visibility, and serious/critical axe coverage.
    - [x] Complete in source in PR #33 from `codex/actionable-lists`: define an accessible actionable-list pattern for the whole-row Overview pipeline, Projects, and Clients views without forcing interactive rows into table semantics. The source and proportionate automated and rendered verification pass.
 2. **UI primitive track**
-   - Consolidate the five pill systems into one accessible pill/feature-state base.
-   - Consolidate empty states and field conventions without erasing purposeful screen differences.
-   - Consolidate the ten legacy button-height patterns into the shared page, standard, and compact control scale.
-   - Adopt the Access heading scale app-wide after screenshot approval.
+   - [x] PR #165 consolidated metrics, empty states, and pill aliases without erasing purposeful screen differences.
+   - [x] PR #126 consolidated the audited button-height patterns into the shared control scale.
+   - [x] PRs #119/#126/#309 consolidated the typography, color, and spacing grammar with drift guards.
 3. **Feature-boundary track**
-   - Split `FloorOpsApp.tsx` by durable route/feature.
-   - Consolidate duplicated Inbox and Settings Google workflows behind shared hooks/components.
-   - Migrate source-string tests to behavior or component-boundary assertions before files move.
+   - [x] PR #29 established shared operations boundaries; PRs #35/#37 extracted Settings surfaces; PRs #327/#328 extracted the four record views and modal/drawer cluster.
+   - [x] Tests moved with those component boundaries while rendered behavior remained pinned.
+   - [x] Further shell splitting is explicitly owned by NFIX-24 and does not remain as an unnamed item here.
 4. **Legacy CSS track**
-   - Remove the dead dark-green sidebar block, misleading color aliases, losing warm overrides, redundant eyebrow declarations, and duplicated responsive blocks.
-   - Normalize the remaining green-tinted legacy surface colors into the approved warm neutral palette.
-   - Replace fixed-height overrides with the shared minimum-size scale.
+   - [x] PRs #119/#208 removed audited dead rules, aliases, losing overrides, and redundant responsive declarations.
+   - [x] PRs #126/#309 normalized surfaces and fixed control sizing, backed by the undersized-control and token-drift guards.
+   - [x] PR #318 retired the remaining dead webfont load and inline-style island identified by the later audit.
 
-Phase 3 progress through July 19, 2026: PR #29 merged the first behavior-preserving boundary into `main` at `1c2f991`, and the exact merged source was deployed as private Sites development version 39. That slice extracts the shared page title, panel header, metric, avatar, and status components from `FloorOpsApp.tsx` and replaces the duplicated Leads/Projects report-filter banner and destination-focus effects with one shared component and history/session helper. PR #30 then merged the first shared semantic table for **Settings → Inbox & file rules** at `aa8ed8f`, with native headings, labeled mobile cards, and unchanged rule mutations. PR #32 merged at `adc79b8`, and that exact commit deployed as private Sites development version 40, so the semantic table is now deployed. The source-only `codex/actionable-lists` branch is merged in PR #33 with shared native list/list-item/button semantics, concise action names linked to accessible descriptions that preserve all decision-useful metadata, exact row-trigger focus restoration, responsive behavior, and empty-state separation for the Overview pipeline, Clients, and Projects. SET-01/SET-02 are merged in PRs #35/#37, KPI-01 is merged in PR #41, and SET-03/SET-04 are merged in PR #44. They preserve server gates, directly gate dollar KPIs with authenticated `isAdmin`, and keep rendered tests isolated from `.env.local`. PRs #33, #35, #37, #41, and #44 are not deployed. Feature-level route splitting, duplicated Inbox/Settings Google-workflow consolidation, broader pill/field/button consolidation, and legacy CSS removal remain open as separate reviewable slices.
+DES-09/PR #359 performs the final cross-ledger reconciliation; no Phase-3 item remains
+dispatchable from this document.
 
 ### Phase 4 — durable guardrails
 
 - [x] Axe serious/critical checks exist for the primary durable routes and run in CI.
 - [x] Add Schedule and 390 px coverage to the axe route matrix.
-- [ ] Cover modal, drawer, search, Access boundary, Inbox connection/error, and Assistant answer states.
-- [ ] Check in and harden the screenshot tour: configurable base URL, deterministic waits, failure propagation, desktop/mobile captures, and no swallowed errors.
+- [x] Modal, drawer, search, Access boundary, Inbox connection/error, Assistant answer, and layout-editor states have focused axe coverage across their owning PRs; PR #359 adds the remaining notifications-popover assertion.
+- [x] Close the historical screenshot-tour item: the checked-in Playwright harness supplies configurable origin, deterministic server startup, and failure propagation; PR #359 captured the approved references after visible route identity and settled network activity. Reference capture is evidence, not a golden-image regression gate.
 - [x] Add a CSS regression guard for new sub-12 px declarations.
-- [ ] Add a CSS regression guard for undersized fixed controls.
-- [ ] Capture approved desktop and mobile reference screenshots once the browser harness is reliable.
+- [x] Add a CSS regression guard for undersized fixed controls (PR #126; mutation-sensitive guard retained in `tests/rendered-html.test.mjs`).
+- [x] Capture approved desktop and mobile reference screenshots (18 files in `docs/design-baseline/2026-08-09/`, PR #359).
+
+Phase 4 is closed by DES-09/PR #359. The typography guard has an empty
+`font-size:0` allowlist, the undersized-control guard is mutation-sensitive, and the
+frozen Overview and Reports hashes plus their three Node pinning suites remain unchanged.
 
 ## Verification gates for this release
 
@@ -147,8 +154,22 @@ Phase 3 progress through July 19, 2026: PR #29 merged the first behavior-preserv
 - Browser screenshots for the durable routes and the Lead drawer at desktop and 390 px
 - No unhandled browser console errors on exercised paths
 - No text-size declarations below 12 px in `app/globals.css`
-- The only allowed `font-size:0` declarations are the two compact feature-state selectors that hide duplicated visual text while their visible `::after` labels render at 12 px; the accessible full label remains in the DOM.
+- No `font-size:0` declarations; the guard allowlist is empty.
 - No serious/critical axe color-contrast or target-size regressions
+
+### DES-09 closure evidence — PR #359
+
+- The approved post-series source reference contains all nine durable product routes at
+  1280×800 and 390×844 under `docs/design-baseline/2026-08-09/`.
+- `tests/e2e/frontend-correctness.spec.ts` now runs one serious/critical axe assertion
+  against the open `#notifications-popover` state.
+- The typography and undersized-control guards pass with the `font-size:0` allowlist
+  empty and the control-size mutation probe intact.
+- The Overview and Reports golden constants and all three Node pinning suites are
+  byte-identical to the branch base; DES-09 performs no golden regeneration.
+- The packet changes docs, tests, and reference screenshots only. It does not change
+  application behavior, data, schema, migration, authorization, configuration, external
+  services, or deployment state.
 
 ### July 18 verification evidence
 
@@ -202,4 +223,7 @@ Phase 3 progress through July 19, 2026: PR #29 merged the first behavior-preserv
 
 ## Follow-on release boundary
 
-The owner separately authorized this critique pass for the controlled, single-user Sites development environment, and version 37 was deployed successfully on July 18, 2026. The bounded Reports follow-on then shipped as version 38, and PR #29's first Phase 3 shared UI/filter boundary shipped as version 39. PR #32 merged as `adc79b8` and that exact commit shipped as private Sites development version 40 on July 19, 2026, bringing PR #30's semantic-table slice into the controlled deployment. Those releases did not change hosted access, data, migrations, or Google Workspace configuration. The source-only actionable-list, Settings extraction/admin gating, Tier-1 KPI, and guided Workspace setup slices are merged in PRs #33/#35/#37/#41/#44; none is deployed. Private Sites development version 40 remains live. Production deployment, production configuration, data migration, multi-user admission, and live Google Workspace changes remain governed by the production-platform, authorization, and rollout acceptance gates in the repository guidance.
+This July critique ledger is closed. Any remaining or later design work is governed by
+the canonical packet status lines in the agent ledger. PR #359 is source evidence only:
+it does not deploy, alter hosted configuration, migrate data, change Google Workspace,
+or admit another user. Issue #258 is the sole authority for the current Sites deployment.
