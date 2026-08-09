@@ -4,6 +4,13 @@ import { NextRequest } from "next/server";
 import type { D1Database } from "../../../../../../../adapters/d1/d1-database";
 import { createD1WorkspaceSettingsRepository } from "../../../../../../../adapters/d1/workspace-settings-repository";
 import { upsertWorkspaceResource } from "../../../../../../../adapters/d1/workspace-resources";
+import {
+  acquireWorkspaceSetupLease,
+  completeWorkspaceSetupLease,
+  failWorkspaceSetupLease,
+  googleConnectionLeaseFence,
+  type WorkspaceSetupLease,
+} from "../../../../../../../adapters/d1/workspace-setup-leases";
 import { WORKSPACE_SETTINGS_ID } from "../../../../../../../domain/workspace-settings";
 import { parseBoundedJsonObject } from "../../../../../../../lib/api-json-body";
 import { googleIntegrationErrorResponse } from "../../../../../../../lib/google-integration-error";
@@ -59,12 +66,29 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  const database = env.DB as unknown as D1Database;
+  let lease: WorkspaceSetupLease | null = null;
   try {
     await new GoogleSheetsClient(
       await getGoogleAccessToken(config, "sheets"),
       externalId,
     ).metadata();
     const now = Date.now();
+    lease = await acquireWorkspaceSetupLease(database, {
+      id: crypto.randomUUID(),
+      connectionKey: config.workspaceConnectionKey,
+      action: "sheets-client-directory-verify",
+      scopeKey: "sheets-client-directory-verify",
+      actor: auth.user.email,
+      now,
+      connectionFence: googleConnectionLeaseFence(config),
+    });
+    if (!lease) {
+      return json({
+        error: "The Google connection changed or this spreadsheet is already being verified. Try again.",
+        code: "sheets_verify_in_progress",
+      }, 409);
+    }
     const existing = setup.resources.find((resource) => (
       resource.resourceType === "sheets.spreadsheet"
       && resource.resourceKey === "client-directory"
@@ -89,7 +113,7 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     });
     await createD1WorkspaceSettingsRepository(
-      env.DB as unknown as D1Database,
+      database,
     ).mergeSettings({
       id: WORKSPACE_SETTINGS_ID,
       clientDirectorySheetId: externalId,
@@ -97,6 +121,8 @@ export async function POST(request: NextRequest) {
       updatedBy: auth.user.email,
       updatedAt: now,
     });
+    await completeWorkspaceSetupLease(database, lease, Date.now());
+    lease = null;
     return json({
       verified: true,
       simulated: false,
@@ -106,6 +132,9 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (lease) {
+      await failWorkspaceSetupLease(database, lease, "sheets_verify_failed", Date.now());
+    }
     return noStoreResponse(googleIntegrationErrorResponse(
       error,
       "The Client Directory spreadsheet could not be verified. Try again.",

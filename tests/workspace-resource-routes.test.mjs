@@ -58,19 +58,28 @@ function routeRequest(path, email, method = "GET", cookies = {}) {
   };
 }
 
-function fakeDatabase({ resources = [], connection = null, blueprint = null } = {}) {
+function fakeDatabase({
+  resources = [],
+  connection = null,
+  blueprint = null,
+  expireAttemptAfterInsert = false,
+  resetAfterAttemptConsume = false,
+} = {}) {
   const queries = [];
   const oauthAttempts = [];
   const savedConnections = [];
+  const integrationEvents = [];
   let currentConnection = connection;
   const database = {
     queries,
     oauthAttempts,
     savedConnections,
+    integrationEvents,
     prepare(sql) {
       const query = { sql, values: [], kind: "prepared" };
       queries.push(query);
       const statement = {
+        sql,
         bind(...values) {
           query.values = values;
           return statement;
@@ -78,6 +87,9 @@ function fakeDatabase({ resources = [], connection = null, blueprint = null } = 
         async all() {
           query.kind = "all";
           if (/FROM workspace_resources/u.test(sql)) return { results: resources };
+          if (/FROM google_connections ORDER BY/u.test(sql)) {
+            return { results: currentConnection ? [structuredClone(currentConnection)] : [] };
+          }
           throw new Error(`Unexpected all query: ${sql}`);
         },
         async first() {
@@ -113,6 +125,7 @@ function fakeDatabase({ resources = [], connection = null, blueprint = null } = 
               created_at: query.values[8],
               consumed_at: null,
             });
+            if (expireAttemptAfterInsert) oauthAttempts.at(-1).expires_at = 0;
           }
           if (/^UPDATE google_oauth_attempts SET consumed_at/u.test(sql)) {
             const attempt = oauthAttempts.find((candidate) => (
@@ -122,8 +135,21 @@ function fakeDatabase({ resources = [], connection = null, blueprint = null } = 
             ));
             if (!attempt) return { meta: { changes: 0 } };
             attempt.consumed_at = query.values[0];
+            if (resetAfterAttemptConsume) {
+              attempt.expires_at = 0;
+              integrationEvents.length = 0;
+            }
           }
           if (/^INSERT INTO google_connections/u.test(sql)) {
+            if (/FROM google_oauth_attempts/u.test(sql)) {
+              const attempt = oauthAttempts.find((candidate) => candidate.id === query.values[11]);
+              if (
+                !attempt
+                || attempt.consumed_at === null
+                || attempt.expires_at <= 0
+                || attempt.expires_at < query.values[12]
+              ) return { meta: { changes: 0 } };
+            }
             currentConnection = {
               id: query.values[0],
               connection_key: query.values[1],
@@ -136,13 +162,41 @@ function fakeDatabase({ resources = [], connection = null, blueprint = null } = 
             };
             savedConnections.push(currentConnection);
           }
+          if (/^INSERT INTO google_integration_events/u.test(sql)) {
+            if (/FROM google_oauth_attempts/u.test(sql)) {
+              const attempt = oauthAttempts.find((candidate) => candidate.id === query.values[8]);
+              const expectsConsumed = /consumed_at IS NOT NULL/u.test(sql);
+              const valid = attempt
+                && attempt.connection_key === query.values[9]
+                && (expectsConsumed ? attempt.consumed_at !== null : attempt.consumed_at === null)
+                && attempt.expires_at >= query.values[10];
+              if (!valid) return { meta: { changes: 0 } };
+            }
+            integrationEvents.push([...query.values]);
+          }
           return { meta: { changes: 1 } };
         },
       };
       return statement;
     },
     async batch(statements) {
-      return Promise.all(statements.map((statement) => statement.run()));
+      const results = [];
+      let previousChanges = 0;
+      for (const statement of statements) {
+        if (
+          /^INSERT INTO google_integration_events/u.test(statement.sql)
+          && /WHERE changes\(\) = 1/u.test(statement.sql)
+          && previousChanges !== 1
+        ) {
+          results.push({ meta: { changes: 0 } });
+          previousChanges = 0;
+          continue;
+        }
+        const result = await statement.run();
+        results.push(result);
+        previousChanges = result.meta?.changes ?? 0;
+      }
+      return results;
     },
   };
   return database;
@@ -186,6 +240,20 @@ test("authorize starts OAuth with all four resource IDs absent while retaining O
     assert.match(body.authorizationUrl, /^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?/u);
     assert.equal(database.queries.filter((query) => /INSERT INTO google_oauth_attempts/u.test(query.sql)).length, 1);
     assert.equal(database.queries.filter((query) => /INSERT INTO google_integration_events/u.test(query.sql)).length, 1);
+  });
+
+  await t.test("a tenant reset between attempt creation and audit suppresses the stale event", async () => {
+    const database = fakeDatabase({ expireAttemptAfterInsert: true });
+    workspaceEnvironment(database);
+
+    const response = await authorizeRoute.POST(routeRequest(
+      "/api/v1/integrations/google/authorize",
+      ADMIN_EMAIL,
+      "POST",
+    ));
+    assert.equal(response.status, 409);
+    assert.equal(database.oauthAttempts[0].expires_at, 0);
+    assert.equal(database.integrationEvents.length, 0);
   });
 
   for (const prerequisite of [
@@ -290,6 +358,135 @@ test("OAuth callback completes the connect-first round trip without configured r
       )),
       true,
     );
+  } finally {
+    globalThis.fetch = callbackFetch;
+  }
+});
+
+test("OAuth callback records a pre-save mailbox failure on the stable workspace scope", async () => {
+  const database = fakeDatabase();
+  workspaceEnvironment(database);
+
+  const authorizeResponse = await authorizeRoute.POST(routeRequest(
+    "/api/v1/integrations/google/authorize",
+    ADMIN_EMAIL,
+    "POST",
+  ));
+  const authorizationUrl = new URL((await authorizeResponse.json()).authorizationUrl);
+  const state = authorizationUrl.searchParams.get("state");
+  const nonceMatch = authorizeResponse.headers.get("set-cookie")?.match(/fci_google_oauth_nonce=([^;]+)/u);
+  assert.ok(state);
+  assert.ok(nonceMatch);
+
+  const callbackFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url === "https://oauth2.googleapis.com/token") {
+      return Response.json({
+        access_token: "FCI_TEST_ACCESS_TOKEN",
+        // Deliberately omitted: the first connection cannot retain credentials
+        // when Google does not issue a refresh token.
+        scope: [
+          "openid",
+          "email",
+          "https://www.googleapis.com/auth/drive",
+          "https://www.googleapis.com/auth/gmail.modify",
+          "https://www.googleapis.com/auth/calendar.events",
+          "https://www.googleapis.com/auth/spreadsheets",
+        ].join(" "),
+      });
+    }
+    if (url === "https://openidconnect.googleapis.com/v1/userinfo") {
+      return Response.json({
+        sub: "FCI_TEST_UNSAVED_SUBJECT",
+        email: "operations@cherryhillfci.com",
+        email_verified: true,
+      });
+    }
+    throw new Error(`Unexpected provider request: ${url}`);
+  };
+
+  try {
+    const response = await callbackRoute.GET(routeRequest(
+      `/api/v1/integrations/google/callback?code=FCI_TEST_CODE&state=${encodeURIComponent(state)}`,
+      ADMIN_EMAIL,
+      "GET",
+      { fci_google_oauth_nonce: decodeURIComponent(nonceMatch[1]) },
+    ));
+    assert.equal(
+      response.headers.get("location"),
+      "https://fci.example.test/settings?section=google-workspace&google=connection-failed",
+    );
+    assert.equal(database.savedConnections.length, 0);
+    const failureEvent = database.queries.find((query) => (
+      /^INSERT INTO google_integration_events/u.test(query.sql)
+      && query.values[2] === "oauth.connection_failed"
+    ));
+    assert.ok(failureEvent);
+    assert.equal(failureEvent.values[1], "google-workspace");
+    assert.match(failureEvent.values[5], /^gmail_[a-f0-9]{64}$/u);
+    assert.equal(failureEvent.values[6], "refresh_token_missing");
+  } finally {
+    globalThis.fetch = callbackFetch;
+  }
+});
+
+test("a reset during the OAuth callback suppresses both the stale save and its failure event", async () => {
+  const database = fakeDatabase({ resetAfterAttemptConsume: true });
+  workspaceEnvironment(database);
+  const authorizeResponse = await authorizeRoute.POST(routeRequest(
+    "/api/v1/integrations/google/authorize",
+    ADMIN_EMAIL,
+    "POST",
+  ));
+  const authorizationUrl = new URL((await authorizeResponse.json()).authorizationUrl);
+  const state = authorizationUrl.searchParams.get("state");
+  const nonceMatch = authorizeResponse.headers.get("set-cookie")?.match(/fci_google_oauth_nonce=([^;]+)/u);
+  assert.ok(state);
+  assert.ok(nonceMatch);
+
+  const callbackFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url === "https://oauth2.googleapis.com/token") {
+      return Response.json({
+        access_token: "FCI_TEST_RESET_ACCESS_TOKEN",
+        refresh_token: "FCI TEST RESET REFRESH TOKEN",
+        scope: [
+          "openid",
+          "email",
+          "https://www.googleapis.com/auth/drive",
+          "https://www.googleapis.com/auth/gmail.modify",
+          "https://www.googleapis.com/auth/calendar.events",
+          "https://www.googleapis.com/auth/spreadsheets",
+        ].join(" "),
+      });
+    }
+    if (url === "https://openidconnect.googleapis.com/v1/userinfo") {
+      return Response.json({
+        sub: "FCI_TEST_RESET_SUBJECT",
+        email: "operations@cherryhillfci.com",
+        email_verified: true,
+      });
+    }
+    throw new Error(`Unexpected provider request: ${url}`);
+  };
+
+  try {
+    const response = await callbackRoute.GET(routeRequest(
+      `/api/v1/integrations/google/callback?code=FCI_TEST_CODE&state=${encodeURIComponent(state)}`,
+      ADMIN_EMAIL,
+      "GET",
+      { fci_google_oauth_nonce: decodeURIComponent(nonceMatch[1]) },
+    ));
+    assert.equal(
+      response.headers.get("location"),
+      "https://fci.example.test/settings?section=google-workspace&google=connection-failed",
+    );
+    assert.equal(database.oauthAttempts[0].expires_at, 0);
+    assert.equal(database.savedConnections.length, 0);
+    assert.equal(database.integrationEvents.length, 0,
+      "the reset-cleared attempt cannot recreate authorization or failure events");
   } finally {
     globalThis.fetch = callbackFetch;
   }
@@ -426,6 +623,7 @@ test("resources GET is admin-only, source-tagged, no-store, masked, and contains
   for (const forbidden of [configuredSecret, configuredEncryptionKey, connection.refresh_token_ciphertext]) {
     assert.equal(serialized.includes(forbidden), false);
   }
+  assert.equal(serialized.includes("authConnectionRefreshTokenCiphertext"), false);
 });
 
 test("resources include every blueprint spreadsheet with its honest role and registry state", async () => {
@@ -541,8 +739,11 @@ test("resources identity compares the actual stored connection account to the in
   assert.equal(body.identity.intakeMailboxMatches, false);
   const identityQueries = database.queries.filter((query) => /FROM google_connections/u.test(query.sql));
   assert.equal(identityQueries.length, 1);
-  assert.match(identityQueries[0].sql, /^SELECT google_email, status FROM google_connections/u);
+  assert.match(identityQueries[0].sql, /^SELECT id, connection_key, google_email, status FROM google_connections/u);
+  assert.match(identityQueries[0].sql, /WHERE lower\(google_email\) = \?/u);
   assert.doesNotMatch(identityQueries[0].sql, /refresh_token|scopes_json|google_subject/u);
+  assert.deepEqual(identityQueries[0].values, ["operations@cherryhillfci.com"]);
+  assert.doesNotMatch(JSON.stringify(body), /refresh_token|scopes_json|google_subject|encrypted-token/u);
 });
 
 test("resources preserve persisted Shared Drive restriction false values for honest verification", async () => {

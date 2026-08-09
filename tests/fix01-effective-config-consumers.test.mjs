@@ -57,7 +57,14 @@ const database = {
         if (/FROM workspace_resources WHERE connection_key = \? AND resource_type = \? AND resource_key = \?/u.test(sql)) {
           return state.resources.find((row) => row.connection_key === query.values[0] && row.resource_type === query.values[1] && row.resource_key === query.values[2]) ?? null;
         }
-        if (/FROM google_connections WHERE connection_key = \?/u.test(sql)) return state.connection;
+        if (/FROM google_connections WHERE connection_key = \?/u.test(sql)) {
+          return state.connection?.connection_key === query.values[0] ? state.connection : null;
+        }
+        if (/FROM google_connections WHERE lower\(google_email\) = \?/u.test(sql)) {
+          return state.connection?.google_email.toLowerCase() === query.values[0]
+            ? state.connection
+            : null;
+        }
         if (/FROM workspace_settings WHERE id = \?/u.test(sql)) return state.settings;
         return null;
       },
@@ -164,6 +171,7 @@ function configure({
   resources = [],
   ids = ENV_IDS,
   connected = true,
+  connectionStatus = "connected",
   resourceFailure = false,
   savedSettings = null,
   tokenFailure = false,
@@ -192,6 +200,8 @@ function configure({
   });
   state.connection = connected ? {
     id: "connection-1",
+    connection_key: "google-workspace",
+    google_subject: "google-subject-1",
     google_email: CONNECTION_EMAIL,
     refresh_token_ciphertext: refreshTokenCiphertext,
     key_version: "1",
@@ -201,7 +211,7 @@ function configure({
       "https://www.googleapis.com/auth/calendar.events",
       "https://www.googleapis.com/auth/spreadsheets",
     ]),
-    status: "connected",
+    status: connectionStatus,
   } : null;
   state.blueprint = blueprint ? {
     id: "blueprint-1",
@@ -324,6 +334,27 @@ test("Gmail resolves app-saved resources before environment values and preserves
   assert.equal(environment.config.drive.rootFolderId, ENV_IDS.drive);
   assert.equal(environment.config.clientDirectorySheetId, ENV_IDS.sheet);
   assert.equal(environment.config.clientAppointmentsCalendarId, ENV_IDS.appointments);
+});
+
+test("an exact stored mailbox stays runtime-ready after its save-time allowlist entry is removed", async () => {
+  configure({
+    overrides: {
+      GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: "replacement@other.example",
+      GOOGLE_WORKSPACE_ALLOWED_DOMAINS: "other.example",
+    },
+  });
+
+  const config = await oauthSites.getGoogleMailboxRuntimeConfig(CONNECTION_EMAIL);
+
+  assert.equal(config.connectionKey, "google-workspace");
+  assert.equal(config.selectedMailboxEmail, CONNECTION_EMAIL);
+  assert.equal(config.oauthReady, true);
+  assert.equal(
+    config.missingDetails.some(
+      ({ envVar }) => envVar === "GOOGLE_WORKSPACE_INTAKE_MAILBOX",
+    ),
+    false,
+  );
 });
 
 test("both Calendar routes use the app-saved calendar and retain env-only fallback", async () => {
@@ -489,7 +520,7 @@ test("Workspace readiness names the intake mailbox source beside its sibling pro
 // Review defect: the readiness label named BOTH addresses in full, and `missing`/
 // `missingDetails` are returned to every office user — while the same response masks the same
 // address one field away in `connection.account`.
-test("A mailbox/account mismatch label reaches non-admins without the unmasked connected address", async () => {
+test("selected-mailbox equality keeps a mismatched connection unusable and masked", async () => {
   const officeEmail = "office@cherryhillfci.com";
   const savedMailbox = "dispatch@cherryhillfci.com";
   configure({
@@ -505,16 +536,13 @@ test("A mailbox/account mismatch label reaches non-admins without the unmasked c
   const body = await response.text();
   const payload = JSON.parse(body);
 
-  const mismatch = payload.missingDetails.at(-1);
-  assert.equal(mismatch.label,
-    `Google Workspace intake mailbox ${savedMailbox} matching connected account op•••@cherryhillfci.com`);
-  assert.ok(payload.missing.includes(mismatch.label), "the flattened list carries the same masked label");
   assert.equal(body.includes(CONNECTION_EMAIL), false,
     "the unmasked connected address must not appear anywhere in a non-admin readiness payload");
-  // The mask is the one already used a field away, so the two agree.
+  assert.equal(body.includes(savedMailbox), false,
+    "the saved mailbox must not appear anywhere in a non-admin readiness payload");
+  assert.equal(payload.connected, false);
   assert.equal(payload.workspace.connectionAccount, "op•••@cherryhillfci.com");
-  // The saved mailbox stays readable: the office UI already shows the selector and its options.
-  assert.ok(body.includes(savedMailbox));
+  assert.equal(payload.workspace.gmailConnected, false);
 });
 
 test("Workspace readiness withholds the persisted tenant blueprint from non-admin office users", async () => {
@@ -723,7 +751,7 @@ test("effective-config lookup stays inside the optional post-create mirror bound
   }
 });
 
-test("Workspace summary separates connect-ready credentials from fully configured resources", async () => {
+test("Workspace summary separates connect-ready credentials, resources, and attached-mailbox readiness", async () => {
   configure({ resources: [], ids: null, connected: false });
   const connectReadyResponse = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"));
   const connectReady = await connectReadyResponse.json();
@@ -736,7 +764,29 @@ test("Workspace summary separates connect-ready credentials from fully configure
   const configured = await configuredResponse.json();
   assert.equal(configuredResponse.status, 200);
   assert.equal(configured.credentialsPresent, true);
-  assert.equal(configured.configured, true);
+  assert.equal(configured.configured, false,
+    "resources alone cannot make an unattached selected mailbox ready");
+
+  configure({ resources: appResources(), ids: null, connected: true });
+  const attachedResponse = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"));
+  const attached = await attachedResponse.json();
+  assert.equal(attachedResponse.status, 200);
+  assert.equal(attached.credentialsPresent, true);
+  assert.equal(attached.configured, true,
+    "the selected mailbox becomes ready only after its matching connection is attached");
+
+  configure({
+    resources: appResources(),
+    ids: null,
+    connected: true,
+    connectionStatus: "reauthorization-required",
+  });
+  const reauthorizationResponse = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"));
+  const reauthorization = await reauthorizationResponse.json();
+  assert.equal(reauthorizationResponse.status, 200);
+  assert.equal(reauthorization.credentialsPresent, true);
+  assert.equal(reauthorization.configured, false,
+    "a matching mailbox that needs reauthorization is not provider-ready");
 
   configure({
     resources: appResources(),

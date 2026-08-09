@@ -63,6 +63,11 @@ class SqliteD1Statement {
     return this.statement.get(...this.values) ?? null;
   }
 
+  async all() {
+    this.owner.reads.push({ sql: this.sql, values: [...this.values] });
+    return { results: this.statement.all(...this.values).map((row) => ({ ...row })) };
+  }
+
   async run() {
     this.owner.writes.push({ sql: this.sql, values: [...this.values] });
     const result = this.statement.run(...this.values);
@@ -85,15 +90,36 @@ class TenantDatabase {
         last_error_code TEXT, last_success_at INTEGER, created_by TEXT NOT NULL,
         created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, revoked_at INTEGER
       );
-      CREATE TABLE google_oauth_attempts (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL);
-      CREATE TABLE google_integration_events (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL);
+      CREATE TABLE google_oauth_attempts (
+        id TEXT PRIMARY KEY,
+        connection_key TEXT NOT NULL,
+        expires_at INTEGER NOT NULL DEFAULT 9999999999999,
+        consumed_at INTEGER
+      );
+      CREATE TABLE google_integration_events (
+        id TEXT PRIMARY KEY, connection_key TEXT NOT NULL,
+        event_type TEXT NOT NULL DEFAULT 'test.event', actor TEXT NOT NULL DEFAULT 'test-actor',
+        entity_type TEXT, entity_id TEXT, detail TEXT,
+        created_at INTEGER NOT NULL DEFAULT 0
+      );
       CREATE TABLE google_form_lead_reviews (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL);
       CREATE TABLE google_form_lead_intake_watermarks (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL);
       CREATE TABLE mail_items (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL);
       CREATE TABLE gmail_file_archives (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL);
       CREATE TABLE gmail_file_archive_artifacts (id TEXT PRIMARY KEY, archive_id TEXT NOT NULL);
       CREATE TABLE drive_folder_mappings (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL);
-      CREATE TABLE google_drive_operations (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL);
+      CREATE TABLE google_drive_operations (
+        id TEXT PRIMARY KEY,
+        connection_key TEXT NOT NULL,
+        operation_key TEXT UNIQUE,
+        project_id TEXT,
+        status TEXT,
+        lease_expires_at INTEGER,
+        last_error_code TEXT,
+        created_by TEXT,
+        created_at INTEGER,
+        updated_at INTEGER
+      );
       CREATE TABLE google_sheet_sync_state (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL);
       CREATE TABLE workspace_resources (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL);
       CREATE TABLE workspace_blueprints (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL);
@@ -222,7 +248,7 @@ function seedTenantData(database, status = "revoked") {
     id: "other-connection",
     connectionKey: OTHER_CONNECTION_KEY,
     subject: "other-google-subject",
-    email: "other@example.test",
+    email: "sales@grass.wedding",
     status: "revoked",
   });
   for (const table of KEYED_RESET_TABLES) {
@@ -237,9 +263,9 @@ function seedTenantData(database, status = "revoked") {
     INSERT INTO gmail_file_archive_artifacts (id, archive_id) VALUES
       ('artifact-old', 'gmail_file_archives-old'),
       ('artifact-other', 'gmail_file_archives-other');
-    INSERT INTO google_oauth_attempts (id, connection_key) VALUES
-      ('attempt-old', '${CONNECTION_KEY}'),
-      ('attempt-other', '${OTHER_CONNECTION_KEY}');
+    INSERT INTO google_oauth_attempts (id, connection_key, expires_at, consumed_at) VALUES
+      ('attempt-old', '${CONNECTION_KEY}', 9999999999999, 15),
+      ('attempt-other', '${OTHER_CONNECTION_KEY}', 9999999999999, 15);
     INSERT INTO clients (id, name, drive_folder_id, drive_url)
       VALUES ('client-1', 'Preserved client', 'old-client-folder', 'https://old.example/client');
     INSERT INTO projects (id, name, drive_folder_id, drive_url)
@@ -429,6 +455,7 @@ test("tenant reset requires admin, same-origin, disconnected state, and exact st
       available: false,
       connectionStatus: "connected",
       discardedTenant: OLD_TENANT,
+      mailboxCount: 2,
     });
 
     const connected = await tenantResetRoute.POST(request("POST", { confirmation: OLD_TENANT }));
@@ -456,15 +483,26 @@ test("workspace tenant reset clears every tenant surface per-table and preserves
       available: true,
       connectionStatus: "revoked",
       discardedTenant: OLD_TENANT,
+      mailboxCount: 2,
     });
 
     const response = await tenantResetRoute.POST(request("POST", { confirmation: OLD_TENANT }));
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { reset: true, discardedTenant: OLD_TENANT });
 
+    const everyMailboxKeyIsReset = new Set([
+      "mail_items",
+      "gmail_file_archives",
+      "google_drive_operations",
+      "google_integration_events",
+    ]);
     for (const table of KEYED_RESET_TABLES) {
       assert.equal(database.count(table, " WHERE connection_key = ?", CONNECTION_KEY), 0, `${table} old-tenant rows`);
-      assert.equal(database.count(table, " WHERE connection_key = ?", OTHER_CONNECTION_KEY), 1, `${table} unrelated rows`);
+      assert.equal(
+        database.count(table, " WHERE connection_key = ?", OTHER_CONNECTION_KEY),
+        everyMailboxKeyIsReset.has(table) ? 0 : 1,
+        `${table} second-mailbox rows`,
+      );
     }
     assert.equal(database.count(
       "gmail_file_archive_artifacts",
@@ -473,7 +511,7 @@ test("workspace tenant reset clears every tenant surface per-table and preserves
     assert.equal(database.count(
       "gmail_file_archive_artifacts",
       " WHERE archive_id = 'gmail_file_archives-other'",
-    ), 1);
+    ), 0);
 
     assert.deepEqual(database.row("SELECT name, drive_folder_id, drive_url FROM clients WHERE id = 'client-1'"), {
       name: "Preserved client",
@@ -497,8 +535,14 @@ test("workspace tenant reset clears every tenant surface per-table and preserves
     assert.equal(database.row("SELECT source_ref FROM tasks WHERE id = 'manual-task'").source_ref, "manual-reference");
     assert.equal(database.row("SELECT source_ref FROM tasks WHERE id = 'meeting-task'").source_ref, "meeting-reference");
     assert.equal(database.count("google_connections", " WHERE connection_key = ?", CONNECTION_KEY), 0);
-    assert.equal(database.count("google_connections", " WHERE connection_key = ?", OTHER_CONNECTION_KEY), 1);
+    assert.equal(database.count("google_connections", " WHERE connection_key = ?", OTHER_CONNECTION_KEY), 0);
     assert.equal(database.count("google_oauth_attempts", " WHERE connection_key = ?", CONNECTION_KEY), 1);
+    assert.equal(database.row(
+      "SELECT expires_at FROM google_oauth_attempts WHERE id = 'attempt-old'",
+    ).expires_at, 0);
+    assert.equal(database.row(
+      "SELECT expires_at FROM google_oauth_attempts WHERE id = 'attempt-other'",
+    ).expires_at, 0);
 
     const activities = database.rows("SELECT action, actor, detail FROM activity_events ORDER BY created_at");
     assert.equal(activities.length, 2);
@@ -506,13 +550,54 @@ test("workspace tenant reset clears every tenant surface per-table and preserves
     assert.deepEqual(activities.filter((event) => event.action === "google_workspace.tenant_reset"), [{
       action: "google_workspace.tenant_reset",
       actor: ADMIN_EMAIL,
-      detail: `Discarded Google Workspace tenant ${OLD_TENANT}.`,
+      detail: `Discarded Google Workspace tenant ${OLD_TENANT} and 2 mailbox connection(s).`,
     }]);
     assert.equal(database.writes.some(({ sql }) => /^DELETE FROM activity_events/u.test(sql)), false);
 
     const adapter = d1Oauth.createD1GoogleOauthPersistence(database);
     assert.equal(await adapter.findConnection(CONNECTION_KEY), null);
     assert.equal(await adapter.hasTenantScopedData(CONNECTION_KEY), false);
+    assert.equal(await adapter.writeOauthAttemptEvent({
+      attemptId: "attempt-old",
+      connectionKey: CONNECTION_KEY,
+      phase: "consumed",
+      event: {
+        id: "event-expired-attempt",
+        eventType: "oauth.connection_failed",
+        actor: ADMIN_EMAIL,
+        entityType: "connection",
+        entityId: CONNECTION_KEY,
+        detail: "stale_google_connection",
+        createdAt: 20,
+      },
+    }), false, "reset-expired OAuth attempts cannot recreate diagnostic events");
+    assert.equal(await adapter.saveConnection({
+      id: "stale-callback-connection",
+      connectionKey: CONNECTION_KEY,
+      workspaceConnectionKey: CONNECTION_KEY,
+      googleSubject: "stale-callback-subject",
+      googleEmail: OLD_TENANT,
+      scopesJson: "[]",
+      refreshTokenCiphertext: "stale-ciphertext",
+      keyVersion: "1",
+      credentialSource: "fresh",
+      oauthAttemptId: "attempt-old",
+      actor: ADMIN_EMAIL,
+      now: 20,
+      event: {
+        id: "event-stale-callback",
+        eventType: "oauth.connected",
+        actor: ADMIN_EMAIL,
+        entityType: "connection",
+        entityId: CONNECTION_KEY,
+        detail: "mode=workspace",
+        createdAt: 20,
+      },
+    }), "stale");
+    assert.equal(await adapter.findConnection(CONNECTION_KEY), null);
+    database.database.prepare(
+      "INSERT INTO google_oauth_attempts (id, connection_key, expires_at, consumed_at) VALUES (?, ?, ?, ?)",
+    ).run("attempt-new", CONNECTION_KEY, 9999999999999, 19);
     const tokenKey = Buffer.alloc(32, 0x19).toString("base64url");
     await oauth.saveGoogleConnection(
       oauth.getGoogleRuntimeConfig({ GOOGLE_INTEGRATION_MODE: "workspace" }),
@@ -528,6 +613,7 @@ test("workspace tenant reset clears every tenant surface per-table and preserves
         now: () => 20,
         randomUUID: () => "new-connection",
       },
+      "attempt-new",
     );
     assert.deepEqual(database.row(
       "SELECT google_subject, google_email, status FROM google_connections WHERE connection_key = ?",
@@ -537,6 +623,45 @@ test("workspace tenant reset clears every tenant surface per-table and preserves
       google_email: "operations@cherryhillfci.com",
       status: "connected",
     });
+    assert.equal(database.count(
+      "google_integration_events",
+      " WHERE event_type = 'oauth.connected'",
+    ), 1);
+    assert.equal(await adapter.saveConnection({
+      id: "stale-after-reconnect",
+      connectionKey: CONNECTION_KEY,
+      workspaceConnectionKey: CONNECTION_KEY,
+      googleSubject: "stale-callback-subject",
+      googleEmail: OLD_TENANT,
+      scopesJson: "[]",
+      refreshTokenCiphertext: "stale-after-reconnect-ciphertext",
+      keyVersion: "1",
+      credentialSource: "fresh",
+      oauthAttemptId: "attempt-old",
+      actor: ADMIN_EMAIL,
+      now: 20,
+      event: {
+        id: "event-stale-after-reconnect",
+        eventType: "oauth.connected",
+        actor: ADMIN_EMAIL,
+        entityType: "connection",
+        entityId: CONNECTION_KEY,
+        detail: "mode=workspace",
+        createdAt: 20,
+      },
+    }), "stale");
+    assert.deepEqual(database.row(
+      "SELECT google_subject, google_email, status FROM google_connections WHERE connection_key = ?",
+      CONNECTION_KEY,
+    ), {
+      google_subject: "new-google-subject",
+      google_email: "operations@cherryhillfci.com",
+      status: "connected",
+    });
+    assert.equal(database.count(
+      "google_integration_events",
+      " WHERE id IN ('event-expired-attempt', 'event-stale-callback', 'event-stale-after-reconnect')",
+    ), 0, "delayed pre-reset callbacks cannot write events before or after the new generation");
   } finally {
     database.close();
   }
@@ -556,6 +681,129 @@ test("reset batch is a no-op if the revoked tombstone reconnects before mutation
     assert.equal(database.count("mail_items", " WHERE connection_key = ?", CONNECTION_KEY), 1);
     assert.equal(database.row("SELECT status FROM google_connections WHERE connection_key = ?", CONNECTION_KEY).status, "connected");
     assert.equal(database.count("activity_events", " WHERE action = 'google_workspace.tenant_reset'"), 0);
+  } finally {
+    database.close();
+  }
+});
+
+test("tenant reset cannot overtake an in-flight Gmail filing and succeeds after the expired lease is terminal", async () => {
+  const database = new TenantDatabase();
+  configure(database);
+  seedTenantData(database);
+  try {
+    database.database.prepare(
+      "INSERT INTO google_drive_operations (id, connection_key, operation_key, status, lease_expires_at) VALUES (?, ?, ?, 'in-progress', ?)",
+    ).run("active-filing", CONNECTION_KEY, `${OTHER_CONNECTION_KEY}:file-gmail:message-1`, 1);
+
+    const blocked = await tenantResetRoute.POST(request("POST", { confirmation: OLD_TENANT }));
+    assert.equal(blocked.status, 409);
+    assert.match((await blocked.json()).error, /changed while the reset was being confirmed/u);
+    assert.equal(database.count("google_connections"), 2);
+    assert.equal(database.count("mail_items"), 2);
+    assert.equal(database.count("gmail_file_archives"), 2);
+    assert.equal(database.count("workspace_resources"), 2);
+    assert.equal(database.count("activity_events", " WHERE action = 'google_workspace.tenant_reset'"), 0);
+    assert.deepEqual(database.row(
+      "SELECT status, lease_expires_at FROM google_drive_operations WHERE id = 'active-filing'",
+    ), { status: "in-progress", lease_expires_at: 1 });
+
+    database.database.prepare(
+      "UPDATE google_drive_operations SET status = 'committing' WHERE id = 'active-filing'",
+    ).run();
+    const committingBlocked = await tenantResetRoute.POST(request("POST", { confirmation: OLD_TENANT }));
+    assert.equal(committingBlocked.status, 409);
+    assert.equal(database.count("google_connections"), 2);
+    assert.equal(database.count("activity_events", " WHERE action = 'google_workspace.tenant_reset'"), 0);
+
+    // The filing route's existing idempotent retry steals an expired lease and
+    // terminalizes it; this state is the reset handoff after that proven retry.
+    database.database.prepare(
+      "UPDATE google_drive_operations SET status = 'completed', lease_expires_at = NULL WHERE id = 'active-filing'",
+    ).run();
+    const reset = await tenantResetRoute.POST(request("POST", { confirmation: OLD_TENANT }));
+    assert.equal(reset.status, 200);
+    assert.equal(database.count("google_connections"), 0);
+    assert.equal(database.count("google_drive_operations"), 0);
+    assert.equal(database.count("activity_events", " WHERE action = 'google_workspace.tenant_reset'"), 1);
+  } finally {
+    database.close();
+  }
+});
+
+test("tenant reset recovers only an expired interrupted OAuth disconnect before clearing the tenant", async () => {
+  const database = new TenantDatabase();
+  configure(database);
+  seedTenantData(database);
+  try {
+    database.database.prepare(`UPDATE google_connections
+      SET status = 'connected', refresh_token_ciphertext = 'second-mailbox-ciphertext',
+          key_version = '1', revoked_at = NULL
+      WHERE connection_key = ?`).run(OTHER_CONNECTION_KEY);
+    database.database.prepare(`INSERT INTO google_drive_operations (
+      id, connection_key, operation_key, status, lease_expires_at,
+      last_error_code, updated_at
+    ) VALUES (?, ?, ?, 'in-progress', ?, NULL, ?)`)
+      .run(
+        "interrupted-oauth-disconnect",
+        CONNECTION_KEY,
+        `${CONNECTION_KEY}:oauth:disconnect`,
+        1,
+        1,
+      );
+
+    const adapter = d1Oauth.createD1GoogleOauthPersistence(database);
+    const disconnectedAt = Date.now();
+    assert.equal(await adapter.revokeConnection({
+      connectionId: "other-connection",
+      connectionKey: OTHER_CONNECTION_KEY,
+      workspaceConnectionKey: CONNECTION_KEY,
+      refreshTokenCiphertext: "second-mailbox-ciphertext",
+      operationId: "second-mailbox-disconnect",
+      operationKey: `${OTHER_CONNECTION_KEY}:oauth:disconnect`,
+      leaseExpiresAt: disconnectedAt + 300_000,
+      revokedAt: disconnectedAt,
+      event: {
+        id: "second-mailbox-disconnect-event",
+        eventType: "oauth.disconnected",
+        actor: ADMIN_EMAIL,
+        entityType: "connection",
+        entityId: OTHER_CONNECTION_KEY,
+        detail: "mode=workspace;google_revocation=pending;local_connection=revoked",
+      },
+    }), "revoked");
+    assert.deepEqual(database.row(
+      "SELECT status, last_error_code FROM google_drive_operations WHERE id = ?",
+      "interrupted-oauth-disconnect",
+    ), {
+      status: "failed",
+      last_error_code: "oauth_disconnect_interrupted",
+    }, "the second mailbox disconnect recovers the expired legacy stable-key lease");
+    assert.equal(await adapter.finishRevocationOperation({
+      operationId: "second-mailbox-disconnect",
+      operationKey: `${OTHER_CONNECTION_KEY}:oauth:disconnect`,
+      leaseExpiresAt: disconnectedAt + 300_000,
+      status: "completed",
+      errorCode: null,
+      now: disconnectedAt + 1,
+    }), true);
+    assert.equal(database.row(
+      "SELECT status FROM google_connections WHERE connection_key = ?",
+      OTHER_CONNECTION_KEY,
+    ).status, "revoked");
+
+    const response = await tenantResetRoute.POST(request("POST", { confirmation: OLD_TENANT }));
+    assert.equal(response.status, 200);
+    assert.equal(database.count("google_connections"), 0);
+    assert.equal(database.count("google_drive_operations"), 0);
+    assert.equal(database.count("activity_events", " WHERE action = 'google_workspace.tenant_reset'"), 1);
+    const recoveryWrite = database.writes.find(({ sql }) => (
+      /last_error_code = 'oauth_disconnect_interrupted'/u.test(sql)
+    ));
+    assert.deepEqual(recoveryWrite.values.slice(1, 4), [
+      CONNECTION_KEY,
+      OTHER_CONNECTION_KEY,
+      recoveryWrite.values[0],
+    ], "the executable reset uses workspace/mailbox keys before the lease cutoff");
   } finally {
     database.close();
   }
@@ -595,7 +843,7 @@ test("Settings exposes stored-email typed confirmation and the guide states file
   assert.match(callback, /google_tenant_reset_required[\s\S]*tenant-reset-required/u);
   assert.doesNotMatch(resetRoute, /(?:INSERT INTO|UPDATE|DELETE FROM) mail_items/iu);
   assert.match(resetRoute, /resetD1GoogleWorkspaceTenant\(env\.DB,/u);
-  assert.match(resetHelper, /DELETE FROM mail_items WHERE connection_key = \?/u);
+  assert.match(resetHelper, /DELETE FROM mail_items WHERE connection_key IN \(\$\{mailboxPlaceholders\}\)/u);
   assert.match(guide, /discards filed-email evidence/u);
   assert.match(guide, /Client and project business rows survive/u);
   assert.match(guide, /Drive folder IDs and Drive URLs are cleared/u);

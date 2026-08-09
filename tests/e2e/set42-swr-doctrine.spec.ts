@@ -80,6 +80,29 @@ function mainNavigation(page: Page) {
   return page.getByRole("navigation", { name: "Main navigation" });
 }
 
+async function mockConnectedMailbox(page: Page) {
+  await page.route("**/api/v1/integrations/google/connection", (route) => fulfillJson(route, {
+    runtimeMode: "simulation",
+    simulation: true,
+    enabledServices: ["drive", "gmail", "calendar", "sheets"],
+    connection: {
+      status: "connected",
+      account: "Local Workspace simulation",
+      grantedServices: null,
+      requiresReauthorization: false,
+    },
+    mailboxes: [{
+      email: "workspace-simulation@fci.example",
+      status: "connected",
+      connected: true,
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: null,
+      requiresReauthorization: false,
+      gmailReady: true,
+    }],
+  }));
+}
+
 test("focus and navigation reveal changed server data without a refresh and share one in-flight GET", async ({ page }) => {
   let client = { ...initialClient };
   let clientReads = 0;
@@ -132,6 +155,7 @@ test("Gmail message reads remain action-gated across focus and navigation", asyn
   let gmailMessageReads = 0;
 
   await mockShell(page, (route) => fulfillJson(route, { clients: [initialClient] }));
+  await mockConnectedMailbox(page);
   await page.route("**/api/v1/assistant/config", (route) => fulfillJson(route, {
     provider: "openai",
     keyState: "Configured",
@@ -196,23 +220,32 @@ test("the Google Workspace panel never auto-revalidates a Gmail read on focus, v
   // before it reads its `verification` parameter.
   let gmailMailboxReads = 0;
   let gmailVerificationReads = 0;
+  let workspaceReadinessReads = 0;
 
   await mockShell(page, (route) => fulfillJson(route, { clients: [initialClient] }));
-  await page.route("**/api/v1/google-workspace", (route) => fulfillJson(route, {
-    credentialsPresent: true,
-    missing: [],
-    missingDetails: [],
-    workspace: {
-      connectionStatus: "connected",
-      connectionAccount: "workspace-simulation@fci.example",
-      gmailConnected: true,
-      gmailEnabled: true,
-      calendarConnected: true,
-      calendarEnabled: true,
-      runtimeMode: "simulation",
-      simulation: true,
-    },
-  }));
+  await mockConnectedMailbox(page);
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    workspaceReadinessReads += 1;
+    if (workspaceReadinessReads === 1) {
+      await fulfillJson(route, { error: "FCI TEST — retry readiness after mailbox selection" }, 503);
+      return;
+    }
+    await fulfillJson(route, {
+      credentialsPresent: true,
+      missing: [],
+      missingDetails: [],
+      workspace: {
+        connectionStatus: "connected",
+        connectionAccount: "workspace-simulation@fci.example",
+        gmailConnected: true,
+        gmailEnabled: true,
+        calendarConnected: true,
+        calendarEnabled: true,
+        runtimeMode: "simulation",
+        simulation: true,
+      },
+    });
+  });
   await page.route("**/api/v1/integrations/google/gmail/messages?*", async (route) => {
     const url = new URL(route.request().url());
     if (url.searchParams.get("verification") === "status") {
@@ -226,6 +259,7 @@ test("the Google Workspace panel never auto-revalidates a Gmail read on focus, v
 
   await page.goto("/settings?section=google-workspace");
   await expect(page.getByRole("heading", { level: 2, name: "Google Workspace", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Retry status check", exact: true }).click();
   await expect.poll(() => gmailVerificationReads).toBe(1);
   expect(gmailMailboxReads).toBe(0);
 

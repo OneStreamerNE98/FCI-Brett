@@ -118,6 +118,11 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "mail_item_review_attribution",
       checksum: "sha256:0c6b26c3d062766b6a4cb80dc9b38cedd708fee8ec77fc871fdc5673168495ad",
     }),
+    Object.freeze({
+      version: 17,
+      name: "shared_mailboxes",
+      checksum: "sha256:73916455770603037831724f36d146c984ba5adfe7dc056837a6d9c43576d26f",
+    }),
   ]);
 
 /**

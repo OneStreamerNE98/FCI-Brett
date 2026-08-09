@@ -27,6 +27,7 @@ const message = {
   snippet: "Updated phasing plan for Westport Medical Center.",
   labelIds: ["INBOX"],
 };
+const mailboxEmail = message.to;
 
 const settingsPreferences = {
   displayTimezone: "America/New_York",
@@ -50,6 +51,30 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
     contentType: "application/json",
     body: JSON.stringify(body),
   });
+}
+
+function connectedMailboxPayload() {
+  return {
+    runtimeMode: "simulation",
+    simulation: true,
+    enabledServices: ["drive", "gmail", "calendar", "sheets"],
+    connection: {
+      connected: true,
+      status: "connected",
+      account: mailboxEmail,
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: { drive: true, gmail: true, calendar: true, sheets: true },
+      requiresReauthorization: false,
+    },
+    mailboxes: [{
+      email: mailboxEmail,
+      status: "connected",
+      connected: true,
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: { drive: true, gmail: true, calendar: true, sheets: true },
+      requiresReauthorization: false,
+    }],
+  };
 }
 
 async function mockInboxFoundation(
@@ -82,6 +107,8 @@ async function mockInboxFoundation(
       simulation: true,
     },
   }));
+  await page.route("**/api/v1/integrations/google/connection", (route) =>
+    fulfillJson(route, connectedMailboxPayload()));
   await page.route("**/api/v1/leads", (route) => fulfillJson(route, { leads: [] }));
   await page.route("**/api/v1/clients", (route) => fulfillJson(route, {
     clients: [{
@@ -124,12 +151,15 @@ async function mockInboxFoundation(
   }));
   await page.route(
     "**/api/v1/integrations/google/gmail/messages?*",
-    (route) => fulfillJson(route, {
-      bucket: "inbox",
-      messages: [message],
-      labelReady: true,
-      limit: 20,
-    }),
+    (route) => {
+      expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(mailboxEmail);
+      return fulfillJson(route, {
+        bucket: "inbox",
+        messages: [message],
+        labelReady: true,
+        limit: 20,
+      });
+    },
   );
 }
 
@@ -141,7 +171,8 @@ test("simulation suggests one message and preserves the existing human filing re
   let previewCalls = 0;
   let filingCalls = 0;
 
-  await page.route("**/api/v1/assistant/triage", async (route) => {
+  await page.route("**/api/v1/assistant/triage?*", async (route) => {
+    expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(mailboxEmail);
     triageBodies.push(route.request().postDataJSON());
     await fulfillJson(route, {
       suggestions: [{
@@ -155,6 +186,7 @@ test("simulation suggests one message and preserves the existing human filing re
   await page.route(
     `**/api/v1/integrations/google/gmail/messages/${message.id}/file*`,
     async (route) => {
+      expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(mailboxEmail);
       if (route.request().method() === "GET") {
         previewCalls += 1;
         await fulfillJson(route, {
@@ -272,7 +304,8 @@ test("AI suggestion state clears across mailbox changes and the action stays hon
   const delayedSuggestionStarted = new Promise<void>((resolve) => {
     markDelayedSuggestionStarted = resolve;
   });
-  await page.route("**/api/v1/assistant/triage", async (route) => {
+  await page.route("**/api/v1/assistant/triage?*", async (route) => {
+    expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(mailboxEmail);
     if (delayNextSuggestion) {
       markDelayedSuggestionStarted();
       await delayedSuggestionGate;
@@ -292,16 +325,17 @@ test("AI suggestion state clears across mailbox changes and the action stays hon
   await page.getByRole("button", { name: "Suggest with AI" }).click();
   await expect(page.getByText("AI suggestion · medium", { exact: false })).toBeVisible();
 
-  await page.getByRole("combobox", { name: "Mailbox" }).selectOption("intake");
-  await page.getByRole("combobox", { name: "Mailbox" }).selectOption("inbox");
+  const bucketPicker = page.getByRole("combobox", { name: "Mailbox", exact: true });
+  await bucketPicker.selectOption("intake");
+  await bucketPicker.selectOption("inbox");
   await expect(page.getByText("AI suggestion · medium", { exact: false })).toHaveCount(0);
 
   delayNextSuggestion = true;
   await page.getByRole("button", { name: "Suggest with AI" }).click();
   await delayedSuggestionStarted;
-  await page.getByRole("combobox", { name: "Mailbox" }).selectOption("intake");
+  await bucketPicker.selectOption("intake");
   releaseDelayedSuggestion();
-  await page.getByRole("combobox", { name: "Mailbox" }).selectOption("inbox");
+  await bucketPicker.selectOption("inbox");
   await expect(page.getByText("AI suggestion · medium", { exact: false })).toHaveCount(0);
 
   assistant.keyState = "Missing";
