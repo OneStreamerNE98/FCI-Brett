@@ -64,7 +64,13 @@ type StoredPreferences = {
 
 async function mockLegacySectionRecords(page: Page) {
   for (const [resource, body] of Object.entries(legacyRecordFixtures)) {
-    await page.route(`**/api/v1/${resource}`, async (route) => {
+    // Glob patterns don't match query strings in Playwright. The directory
+    // endpoints are now fetched with ?limit=100, so clients and projects need
+    // regex patterns. The others (leads, dashboard) are fine as globs.
+    const pattern = resource === "clients" || resource === "projects"
+      ? new RegExp(`/api/v1/${resource}(\\?.*)?$`)
+      : `**/api/v1/${resource}`;
+    await page.route(pattern, async (route) => {
       if (route.request().method() !== "GET") {
         await route.continue();
         return;
