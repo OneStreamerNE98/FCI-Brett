@@ -171,6 +171,7 @@ function configure({
   resources = [],
   ids = ENV_IDS,
   connected = true,
+  connectionStatus = "connected",
   resourceFailure = false,
   savedSettings = null,
   tokenFailure = false,
@@ -210,7 +211,7 @@ function configure({
       "https://www.googleapis.com/auth/calendar.events",
       "https://www.googleapis.com/auth/spreadsheets",
     ]),
-    status: "connected",
+    status: connectionStatus,
   } : null;
   state.blueprint = blueprint ? {
     id: "blueprint-1",
@@ -750,7 +751,7 @@ test("effective-config lookup stays inside the optional post-create mirror bound
   }
 });
 
-test("Workspace summary separates connect-ready credentials from fully configured resources", async () => {
+test("Workspace summary separates connect-ready credentials, resources, and attached-mailbox readiness", async () => {
   configure({ resources: [], ids: null, connected: false });
   const connectReadyResponse = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"));
   const connectReady = await connectReadyResponse.json();
@@ -763,7 +764,29 @@ test("Workspace summary separates connect-ready credentials from fully configure
   const configured = await configuredResponse.json();
   assert.equal(configuredResponse.status, 200);
   assert.equal(configured.credentialsPresent, true);
-  assert.equal(configured.configured, true);
+  assert.equal(configured.configured, false,
+    "resources alone cannot make an unattached selected mailbox ready");
+
+  configure({ resources: appResources(), ids: null, connected: true });
+  const attachedResponse = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"));
+  const attached = await attachedResponse.json();
+  assert.equal(attachedResponse.status, 200);
+  assert.equal(attached.credentialsPresent, true);
+  assert.equal(attached.configured, true,
+    "the selected mailbox becomes ready only after its matching connection is attached");
+
+  configure({
+    resources: appResources(),
+    ids: null,
+    connected: true,
+    connectionStatus: "reauthorization-required",
+  });
+  const reauthorizationResponse = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"));
+  const reauthorization = await reauthorizationResponse.json();
+  assert.equal(reauthorizationResponse.status, 200);
+  assert.equal(reauthorization.credentialsPresent, true);
+  assert.equal(reauthorization.configured, false,
+    "a matching mailbox that needs reauthorization is not provider-ready");
 
   configure({
     resources: appResources(),

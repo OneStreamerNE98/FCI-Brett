@@ -10,6 +10,7 @@ import {
   WORKSPACE_SETTINGS_ID,
 } from "../domain/workspace-settings";
 import type { WorkspaceSettingsRecord } from "../ports/workspace-settings-repository";
+import { maskGoogleAccountAddress } from "./google-account-mask.ts";
 import * as oauth from "./google-oauth";
 import { seedWorkspaceBlueprint, type WorkspaceBlueprint } from "./workspace-blueprint";
 import {
@@ -18,6 +19,8 @@ import {
   type EffectiveGoogleRuntimeConfig,
   type EffectiveWorkspaceResources,
 } from "./workspace-effective-config";
+
+const INTAKE_MAILBOX_ENV_VAR = "GOOGLE_WORKSPACE_INTAKE_MAILBOX";
 
 export * from "./google-oauth";
 
@@ -154,18 +157,37 @@ function applyConnectedMailboxReadiness(
   identity: GoogleConnectionIdentityRow | null,
   selectedMailboxEmail: string | undefined,
 ): EffectiveGoogleRuntimeConfig {
+  if (config.simulation) return config;
   const selected = normalizedMailboxEmail(selectedMailboxEmail);
   const connected = normalizedMailboxEmail(identity?.google_email);
-  if (
-    !identity
-    || identity.status === "revoked"
-    || !selected
-    || connected !== selected
-  ) {
-    return config;
+  const connectedMailboxReady = Boolean(
+    identity
+    && identity.status === "connected"
+    && selected
+    && connected === selected,
+  );
+  const hasIntakeMailboxDetail = config.missingDetails.some(
+    ({ envVar }) => envVar === INTAKE_MAILBOX_ENV_VAR,
+  );
+  if (!connectedMailboxReady) {
+    if (!selected || hasIntakeMailboxDetail) return config;
+    const missingDetails = Object.freeze([
+      ...config.missingDetails,
+      Object.freeze({
+        label: `Google Workspace intake mailbox ${maskGoogleAccountAddress(selected) ?? "the selected mailbox"} attached to this workspace`,
+        envVar: INTAKE_MAILBOX_ENV_VAR,
+        secret: false,
+      }),
+    ]);
+    return Object.freeze({
+      ...config,
+      missingDetails,
+      missing: Object.freeze(missingDetails.map(({ label }) => label)),
+      oauthReady: false,
+    });
   }
   const missingDetails = config.missingDetails.filter(
-    ({ envVar }) => envVar !== "GOOGLE_WORKSPACE_INTAKE_MAILBOX",
+    ({ envVar }) => envVar !== INTAKE_MAILBOX_ENV_VAR,
   );
   if (missingDetails.length === config.missingDetails.length) return config;
   return Object.freeze({
