@@ -1,0 +1,273 @@
+/* DES-19 — responsive layout primitives.
+ *
+ * The stylesheet contract for the five container-aware primitives in
+ * app/components/responsive-primitives.tsx. Every rule here answers to the
+ * August 4 responsive-layout audit (docs/design-reviews/2026-08-04-responsive-layout-audit.md):
+ *
+ * - Sizing is by CONTAINER (available width), never by viewport: each primitive
+ *   establishes a named inline-size container and its inner layout switches inside
+ *   @container blocks, so a half-width Overview column at 1280px behaves like a
+ *   narrow surface without waiting for a viewport breakpoint.
+ * - Target size is owned HERE, not by long selector allowlists: every interactive
+ *   control inside a primitive gets --target-min (44px phone tier). The dense
+ *   desktop variant is explicit and documented: data-density="dense" drops to
+ *   --control-compact, and the coarse-pointer media query restores 44px so the
+ *   dense variant can never under-size a touch target.
+ * - The no-wrap contract is mechanical: [data-no-wrap] titles and every action
+ *   label are single-line with ellipsis, so the dynamic-state guard can assert
+ *   "no unauthorized wrap" from geometry instead of taste.
+ * - DES-13 token discipline: spacing only var(--space-N), radii only
+ *   var(--radius-*), type from the scale, motion from the two durations and one
+ *   easing. tests/des13-design-token-drift.test.mjs enforces it.
+ *
+ * These classes are prefixed rp- and ship UNUSED by pinned pages until the
+ * DES-21 migration packet; the guard's browser fixture renders them directly.
+ */
+
+/* ---------- ResponsiveActionGroup ---------- */
+
+.rp-action-group {
+  container: rp-action-group / inline-size;
+  min-width: 0;
+  /* inline-size containment zeroes the element's intrinsic content width, so
+     as a flex item it would collapse to 0. Take the remaining space instead
+     and let the inner layout right-align the controls; as a block child it
+     simply fills its parent. The container queries then respond to the width
+     actually available to the group — which is the point of the primitive. */
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.rp-action-group-inner {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.rp-action-group-inner > :is(button, a) {
+  min-height: var(--target-min);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Documented dense desktop variant: --control-compact, but never below the
+   44px contract on coarse pointers. */
+.rp-action-group[data-density="dense"] .rp-action-group-inner > :is(button, a) {
+  min-height: var(--control-compact);
+}
+
+@media (pointer: coarse) {
+  .rp-action-group[data-density="dense"] .rp-action-group-inner > :is(button, a) {
+    min-height: var(--target-min);
+  }
+}
+
+/* Sanctioned narrow layouts: a stable two-per-row grid, then a single-column
+   stack. No control ever wraps its own label — the GROUP changes shape instead. */
+@container rp-action-group (max-width: 479px) {
+  .rp-action-group-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@container rp-action-group (max-width: 279px) {
+  .rp-action-group-inner {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container rp-action-group (max-width: 479px) {
+  .rp-action-group-inner > :is(button, a) {
+    width: 100%;
+  }
+}
+
+/* ---------- PageHeader / PanelHeader ---------- */
+
+.rp-page-header {
+  container: rp-page-header / inline-size;
+}
+
+.rp-panel-header {
+  container: rp-panel-header / inline-size;
+}
+
+.rp-page-header-inner,
+.rp-panel-header-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.rp-panel-header-inner {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rp-page-header-title,
+.rp-panel-header-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.rp-page-header-title h1 {
+  margin: 0;
+  font-size: var(--font-size-heading-lg);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+}
+
+.rp-panel-header-title h2 {
+  margin: 0;
+  font-size: var(--font-size-heading-sm);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+}
+
+.rp-eyebrow {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-ink-subtle);
+}
+
+.rp-page-header-text,
+.rp-panel-header-subtitle {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-ink-muted);
+}
+
+/* The no-wrap contract: single line, clipped with an ellipsis rather than a
+   second line. The guard fails any [data-no-wrap] element that measures taller
+   than one line. */
+.rp-page-header [data-no-wrap],
+.rp-panel-header [data-no-wrap],
+.rp-disclosure-header [data-no-wrap] {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@container rp-page-header (max-width: 559px) {
+  .rp-page-header-inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+}
+
+@container rp-panel-header (max-width: 479px) {
+  .rp-panel-header-inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ---------- ModalFooter ---------- */
+
+.rp-modal-footer {
+  container: rp-modal-footer / inline-size;
+  border-top: 1px solid var(--color-line);
+  padding-top: var(--space-4);
+}
+
+.rp-modal-footer-inner {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rp-modal-footer-inner > :is(button, a) {
+  min-height: var(--target-min);
+  white-space: nowrap;
+}
+
+.rp-modal-footer[data-density="dense"] .rp-modal-footer-inner > :is(button, a) {
+  min-height: var(--control-compact);
+}
+
+@media (pointer: coarse) {
+  .rp-modal-footer[data-density="dense"] .rp-modal-footer-inner > :is(button, a) {
+    min-height: var(--target-min);
+  }
+}
+
+/* Stacked phone layout keeps the primary action on top: column-reverse with
+   the DOM order unchanged, so tab order still reads Cancel-then-Submit. */
+@container rp-modal-footer (max-width: 479px) {
+  .rp-modal-footer-inner {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .rp-modal-footer-inner > :is(button, a) {
+    width: 100%;
+  }
+}
+
+/* ---------- DisclosureHeader ---------- */
+
+.rp-disclosure-header {
+  container: rp-disclosure-header / inline-size;
+}
+
+.rp-disclosure-header-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.rp-disclosure-trigger {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  border: 0;
+  background: transparent;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.rp-disclosure-trigger:hover {
+  background: var(--color-line-soft);
+}
+
+.rp-disclosure-chevron {
+  flex: 0 0 auto;
+  transition: transform var(--motion-duration-standard) var(--motion-ease);
+}
+
+.rp-disclosure-chevron[data-expanded="true"] {
+  transform: rotate(90deg);
+}
+
+@container rp-disclosure-header (max-width: 479px) {
+  .rp-disclosure-header-inner {
+    flex-wrap: wrap;
+  }
+
+  .rp-disclosure-header-inner > .rp-action-group {
+    flex: 1 1 100%;
+  }
+}
