@@ -72,7 +72,7 @@ type OperationsPayload = Readonly<{
   driveOperations: CategoryResult<DriveOperation>;
   failedArchives: CategoryResult<FailedArchive>;
   events: CategoryResult<IntegrationEvent>;
-  addressReviewClaims: CategoryResult<StaleAddressReviewClaim>;
+  addressReviewClaims?: CategoryResult<StaleAddressReviewClaim>;
 }>;
 
 type CategoryKey = "drive" | "archive" | "events";
@@ -315,7 +315,7 @@ function operationsCategoryUrl(category: CategoryKey, cursor?: string) {
 
 async function readOperationsPayload(url: string, force: boolean) {
   const body = await cachedGetJson<OperationsPayload>(url, { force });
-  if (!body || !("driveOperations" in body) || !("addressReviewClaims" in body)) {
+  if (!body || !("driveOperations" in body)) {
     throw new Error("Google operations could not be loaded.");
   }
   return body;
@@ -511,7 +511,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
     setDrive({ ...nextDrive.result, loadingMore: false });
     setArchive({ ...nextArchive.result, loadingMore: false });
     setEvents({ ...nextEvents.result, loadingMore: false });
-    setAddressReviewClaims(body.addressReviewClaims);
+    setAddressReviewClaims(body.addressReviewClaims ?? { items: [], hasMore: false });
     setReconciling(false);
   }, [
     failClosedOperations,
