@@ -425,7 +425,7 @@ test(
         kind: "company",
       };
       assert.deepEqual(
-        await repository.listProjectsForScope(forgedProjectManagerCompanyScope, now, 20),
+        (await repository.listProjectsForScope(forgedProjectManagerCompanyScope, now, 20)).items,
         [],
       );
 
@@ -434,7 +434,7 @@ test(
         includeFinancial: true,
       };
       assert.deepEqual(
-        await repository.listProjectsForScope(forgedOfficeFinancialScope, now, 20),
+        (await repository.listProjectsForScope(forgedOfficeFinancialScope, now, 20)).items,
         [],
       );
       assert.equal(
@@ -452,7 +452,7 @@ test(
         authorizationVersion: "2",
       };
       assert.deepEqual(
-        await repository.listProjectsForScope(staleProjectManagerScope, now, 20),
+        (await repository.listProjectsForScope(staleProjectManagerScope, now, 20)).items,
         [],
       );
       assert.equal(
@@ -472,7 +472,7 @@ test(
         [ids.projectManagerSession, new Date(now)],
       );
       assert.deepEqual(
-        await repository.listProjectsForScope(projectManagerScope, now, 20),
+        (await repository.listProjectsForScope(projectManagerScope, now, 20)).items,
         [],
       );
       assert.equal(
