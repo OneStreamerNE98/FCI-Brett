@@ -75,7 +75,7 @@ export function invalidateDirectoryGets() {
   for (const url of DIRECTORY_GET_URLS) invalidateCachedGet(url);
 }
 
-export function useDirectoryData({ displayTimezone, userEmail, userName }: { displayTimezone: string; userEmail: string; userName: string }) {
+export function useDirectoryData({ displayTimezone, userEmail, userName, onTerminalFailure }: { displayTimezone: string; userEmail: string; userName: string; onTerminalFailure: () => void }) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [projectItems, setProjectItems] = useState<Project[]>([]);
@@ -165,6 +165,7 @@ export function useDirectoryData({ displayTimezone, userEmail, userName }: { dis
         if (isTerminalCachedGetError(error)) {
           setLeads([]); setClients([]); setProjectItems([]); setDashboard(null);
           setSelectedLeadId(null); setSelectedClient(null); setSelectedProject(null);
+          onTerminalFailure();
         }
         setLiveDataState("error");
         setLiveDataError(error instanceof Error ? error.message : "Live application data could not be loaded.");
@@ -172,7 +173,7 @@ export function useDirectoryData({ displayTimezone, userEmail, userName }: { dis
     }).finally(() => {
       if (!silent) directoryVisibleLoadsInFlightRef.current -= 1;
     });
-  }, [userEmail, userName]);
+  }, [onTerminalFailure, userEmail, userName]);
 
   const refreshDashboardSnapshot = useCallback(async () => {
     const loadId = ++dashboardRefreshLoadIdRef.current;

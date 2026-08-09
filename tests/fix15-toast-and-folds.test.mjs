@@ -57,7 +57,7 @@ test("N7-7 fences every directory refresh outcome without merging AI-04 dashboar
   const loading = sliceBetween(refresh, "// Requests start synchronously", "return directoryRequests.then");
   const core = sliceBetween(refresh, "return directoryRequests.then", "void optionalRequests.then");
   const optional = sliceBetween(refresh, "void optionalRequests.then", "}).catch((error) => {");
-  const failure = sliceBetween(refresh, "}).catch((error) => {", "}, [userEmail, userName]);");
+  const failure = sliceBetween(refresh, "}).catch((error) => {", "}, [onTerminalFailure, userEmail, userName]);");
   const fence = "if (directoryLoadId !== directoryLoadIdRef.current) return;";
 
   assert.match(directoryController, /const directoryLoadIdRef = useRef\(0\);/u);

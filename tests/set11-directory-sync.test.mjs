@@ -33,7 +33,7 @@ test("SET-11 status revalidates automatically without triggering a sync", async 
   const statusRead = section(
     directoryController,
     "const refreshDirectoryData = useCallback(",
-    "}, [userEmail, userName]);",
+    "}, [onTerminalFailure, userEmail, userName]);",
     "directory status read",
   );
   assert.match(statusRead, /cachedGetJson<Record<string, unknown>>\(path, \{ force \}\)/);

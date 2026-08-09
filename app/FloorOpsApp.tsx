@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -10,20 +10,14 @@ import {
   LogOut, Search, Settings, ShieldCheck, Sparkles, Users, X, Zap,
 } from "lucide-react";
 import type { AppEnvironment } from "./lib/app-environment";
-import { AssistantView } from "./assistant/components/AssistantView";
 import { ClientDrawer } from "./clients/components/ClientDrawer";
 import { ClientModal, ClientEditConflictError, ContactEditConflictError } from "./clients/components/ClientModals";
-import { ClientsView } from "./clients/components/ClientsView";
 import { LeadDrawer } from "./leads/components/LeadDrawer";
 import { LeadEditConflictError, LeadModal } from "./leads/components/LeadModal";
-import { LeadsView } from "./leads/components/LeadsView";
 import { ProjectDrawer } from "./projects/components/ProjectDrawer";
 import { NewProjectModal, ProjectEditConflictError, optionalFlooringCategory, projectManagerLabel } from "./projects/components/ProjectModals";
-import { ProjectsView } from "./projects/components/ProjectsView";
-import { ScheduleView } from "./schedule/components/ScheduleView";
 import { invalidateDirectoryGets, mapLeadRecord, optionalProjectTimestamp, optionalRecordNumber, useDirectoryData } from "./application/use-directory-data";
-import { useCurrentUserSettings } from "./application/use-current-user-settings";
-import { InboxView } from "./inbox/components/InboxView";
+import { type CurrentUserSettingsPayload, useCurrentUserSettings } from "./application/use-current-user-settings";
 import type { InboxLeadProposal } from "./inbox/components/InboxView";
 import { DEFAULT_FILING_RULES, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
@@ -136,6 +130,29 @@ const managementNavItems: { label: OperationsView; icon: typeof LayoutDashboard 
   { label: "Settings", icon: Settings },
 ];
 
+const loadAssistantView = () => import("./assistant/components/AssistantView");
+const loadClientsView = () => import("./clients/components/ClientsView");
+const loadInboxView = () => import("./inbox/components/InboxView");
+const loadLeadsView = () => import("./leads/components/LeadsView");
+const loadProjectsView = () => import("./projects/components/ProjectsView");
+const loadScheduleView = () => import("./schedule/components/ScheduleView");
+
+const LazyAssistantView = lazy(() => loadAssistantView().then((module) => ({ default: module.AssistantView })));
+const LazyClientsView = lazy(() => loadClientsView().then((module) => ({ default: module.ClientsView })));
+const LazyInboxView = lazy(() => loadInboxView().then((module) => ({ default: module.InboxView })));
+const LazyLeadsView = lazy(() => loadLeadsView().then((module) => ({ default: module.LeadsView })));
+const LazyProjectsView = lazy(() => loadProjectsView().then((module) => ({ default: module.ProjectsView })));
+const LazyScheduleView = lazy(() => loadScheduleView().then((module) => ({ default: module.ScheduleView })));
+
+function preloadMajorView(view: OperationsView) {
+  if (view === "AI Assistant") void loadAssistantView();
+  else if (view === "Clients") void loadClientsView();
+  else if (view === "Inbox") void loadInboxView();
+  else if (view === "Leads") void loadLeadsView();
+  else if (view === "Projects") void loadProjectsView();
+  else if (view === "Schedule") void loadScheduleView();
+}
+
 function projectLifecycleFilter(value: string): ProjectLifecycleFilter | null {
   const normalizedStatus = value.toLowerCase();
   return PROJECT_LIFECYCLE_FILTERS.find((status) => status === normalizedStatus) ?? null;
@@ -166,6 +183,11 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [leadOpen, setLeadOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [clientOpen, setClientOpen] = useState(false);
+  const closeRecordOverlays = useCallback(() => {
+    setLeadOpen(false);
+    setClientOpen(false);
+    setProjectOpen(false);
+  }, []);
   const { notifications, notify, dismissNotification } = useNotificationQueue();
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<WorkspaceSearchResult[]>([]);
@@ -194,7 +216,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     refreshDashboardSnapshot, refreshDirectoryData,
     setClients, setFilingRules, setLeads, setProjectItems, setSheetMirror, setSheetSyncing,
     setSelectedLeadId, setSelectedProject, setSelectedClient,
-  } = useDirectoryData({ displayTimezone, userEmail, userName });
+  } = useDirectoryData({ displayTimezone, userEmail, userName, onTerminalFailure: closeRecordOverlays });
   const topbarRef = useRef<HTMLElement>(null);
   const topbarHiddenRef = useRef(false);
   const topbarLastScrollYRef = useRef(0);
@@ -235,12 +257,6 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     if (view !== "Settings" || isAdmin || settingsArea === "My settings") return;
     router.replace(operationsHref("Settings", { settingsSection: "My settings" }), { scroll: false });
   }, [isAdmin, router, settingsArea, view]);
-
-  useEffect(() => {
-    if (selectedLeadId === null) setLeadOpen(false);
-    if (selectedClient === null) setClientOpen(false);
-    if (selectedProject === null) setProjectOpen(false);
-  }, [selectedClient, selectedLeadId, selectedProject]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 820px)");
@@ -1117,9 +1133,9 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         <button ref={mobileNavigationCloseRef} className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
         <nav className="main-nav" aria-label="Main navigation">
           <p>Workspace</p>
-          {workspaceNavItems.map(({ label, icon: Icon }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={label} title={label}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}
+          {workspaceNavItems.map(({ label, icon: Icon }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onMouseEnter={() => preloadMajorView(label)} onFocus={() => preloadMajorView(label)} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={label} title={label}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}
           <p>Management</p>
-          {managementNavItems.filter(({ label }) => label !== "Settings" || isAdmin).map(({ label, icon: Icon }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={label} title={label}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}
+          {managementNavItems.filter(({ label }) => label !== "Settings" || isAdmin).map(({ label, icon: Icon }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onMouseEnter={() => preloadMajorView(label)} onFocus={() => preloadMajorView(label)} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={label} title={label}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}
           {isAdmin && <a href="/management/access" aria-label="People & Access" title="People & Access"><ShieldCheck size={18} /><span className="nav-label">People &amp; Access</span></a>}
         </nav>
         <div ref={workspaceMenuRef} className="sidebar-menu-wrap workspace-menu-wrap">
@@ -1185,15 +1201,17 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
           <AppErrorBoundary key={view}>
             {development && <section className="development-banner" role="status" aria-label="Development environment; test data only"><ShieldCheck size={17} /><div><strong>Development environment · Test data only</strong><span>Use approved test records while this working copy moves toward production readiness.</span></div></section>}
             <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData(false, true)} />
+            <Suspense fallback={<MajorViewLoading view={view} />}>
             {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.overview} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("overview", layout)} onView={navigateToView} onProject={openProject} onLead={openLead} />}
-            {view === "Leads" && <LeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal({})} onAdvance={advanceLead} onLead={openLead} />}
-            {view === "Clients" && <ClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
-            {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} filter={projectStatus} lifecycle={projectLifecycle} onFilter={navigateToProjectStatus} onNewProject={() => openNewProject()} onProject={openProject} />}
-            {view === "Schedule" && <ScheduleView dashboard={dashboard} onSettings={() => navigateToSettings("Workflow & notifications")} />}
-            {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} onCreateLead={openInboxLead} />}
-            {view === "AI Assistant" && <AssistantView projects={projectItems} />}
+            {view === "Leads" && <LazyLeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal({})} onAdvance={advanceLead} onLead={openLead} />}
+            {view === "Clients" && <LazyClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
+            {view === "Projects" && <LazyProjectsView projects={projectItems} state={liveDataState} filter={projectStatus} lifecycle={projectLifecycle} onFilter={navigateToProjectStatus} onNewProject={() => openNewProject()} onProject={openProject} />}
+            {view === "Schedule" && <LazyScheduleView dashboard={dashboard} onSettings={() => navigateToSettings("Workflow & notifications")} />}
+            {view === "Inbox" && <LazyInboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} onCreateLead={openInboxLead} />}
+            {view === "AI Assistant" && <LazyAssistantView projects={projectItems} />}
             {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.reports} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("reports", layout)} />}
             {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} onCurrentUserSettingsLoaded={reconcileCurrentUserSettings} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} onImportConfirmed={refreshDirectoryData} syncingSheet={sheetSyncing} />}
+            </Suspense>
           </AppErrorBoundary>
         </div>
       </main>
@@ -1219,6 +1237,16 @@ function LiveDataBanner({ state, error, onRetry }: { state: LiveDataState; error
     loadingDetail="Reading leads, clients, projects, activity, and Google directory status."
     errorTitle="Live records could not be loaded"
     retryLabel="Try again"
+  />;
+}
+
+function MajorViewLoading({ view }: { view: OperationsView }) {
+  return <ClientDataNotice
+    state="loading"
+    error=""
+    onRetry={() => window.location.reload()}
+    loadingTitle={`Loading ${view}`}
+    loadingDetail="Preparing this workspace view."
   />;
 }
 

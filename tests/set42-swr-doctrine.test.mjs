@@ -510,7 +510,8 @@ test("terminal authorization failures clear every custom materialized privileged
   assert.match(checklist, /isTerminalCachedGetError\(checklistResult\.reason\)[\s\S]{0,160}setLaunchChecklist\(null\)[\s\S]{0,100}setCanAttest\(false\)/u);
   assert.match(assistant, /isTerminalCachedGetError\(error\)[\s\S]{0,160}setMeetings\(\[\]\)[\s\S]{0,100}setMeetingId\(""\)/u);
   assert.match(directoryController, /isTerminalCachedGetError\(error\)[\s\S]{0,500}setSelectedLeadId\(null\)[\s\S]{0,160}setSelectedProject\(null\)/u);
-  assert.match(app, /selectedLeadId === null\) setLeadOpen\(false\)[\s\S]{0,180}selectedProject === null\) setProjectOpen\(false\)/u);
+  assert.match(directoryController, /setSelectedProject\(null\);[\s\S]{0,80}onTerminalFailure\(\)/u);
+  assert.match(app, /const closeRecordOverlays = useCallback[\s\S]{0,180}setProjectOpen\(false\)/u);
   assert.match(currentUserSettings, /isTerminalCachedGetError\(error\)[\s\S]{0,180}failClosedCurrentUserSettings\(\)/u);
   assert.match(inbox, /isTerminalCachedGetError\(connectionError\)[\s\S]{0,480}setMessages\(\[\]\)[\s\S]{0,320}setReplyMessage\(null\)/u);
   assert.match(activity, /error\.status === 403[\s\S]{0,160}setActivityPage\(null\)[\s\S]{0,100}setAppliedRequest\(null\)/u);
