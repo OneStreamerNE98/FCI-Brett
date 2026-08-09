@@ -9,6 +9,7 @@ import {
   parseStoredUserNotificationPreferences,
 } from "../app/lib/user-settings.ts";
 import { defaultPageLayouts } from "../app/lib/page-layouts.ts";
+import { DEFAULT_RECORD_LIST_PREFERENCES } from "../app/lib/record-list-preferences.ts";
 
 const ADMIN_EMAIL = "admin@cherryhillfci.com";
 const OFFICE_EMAIL = "office@cherryhillfci.com";
@@ -166,12 +167,14 @@ test("GET and PATCH read and write only the authenticated identity row", async (
     replySignature: "Admin signature",
     notificationPreferences: notificationPreferences("lead.created"),
     pageLayouts: pageLayouts("lead-pipeline", "gmail-project-inbox", "projects-by-status", "future-reports"),
+    recordListPreferences: DEFAULT_RECORD_LIST_PREFERENCES,
   };
   const officePreferences = {
     displayTimezone: "America/Denver",
     replySignature: "Office signature",
     notificationPreferences: notificationPreferences("calendar.schedule_changed"),
     pageLayouts: pageLayouts("active-projects", "lead-pipeline", "business-kpis", "summary-metrics"),
+    recordListPreferences: DEFAULT_RECORD_LIST_PREFERENCES,
   };
 
   const adminWrite = await route.PATCH(routeRequest(ADMIN_EMAIL, "PATCH", adminPreferences));
@@ -184,6 +187,7 @@ test("GET and PATCH read and write only the authenticated identity row", async (
   const officeBeforeBody = await officeBefore.json();
   assert.deepEqual(officeBeforeBody.preferences.notificationPreferences, defaultUserNotificationPreferences());
   assert.deepEqual(officeBeforeBody.preferences.pageLayouts, defaultPageLayouts(false));
+  assert.deepEqual(officeBeforeBody.preferences.recordListPreferences, DEFAULT_RECORD_LIST_PREFERENCES);
   assert.equal(database.queries.at(-1).values[0], OFFICE_EMAIL);
 
   const officeWrite = await route.PATCH(routeRequest(OFFICE_EMAIL, "PATCH", officePreferences));

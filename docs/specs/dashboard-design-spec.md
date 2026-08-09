@@ -113,7 +113,23 @@ never a dependency-cleanup-only deletion.
 - **A full Outlook/Gmail-style calendar** remains the Schedule page's future,
   behind the scheduling acceptance gate + WS-14. Out of this series.
 
-## 6. Layout-editor polish (DES-06)
+## 6. Record-page list views (owner-approved amendment, August 3, 2026)
+
+Leads keeps its board as the default and adds a persisted Board/List choice. The list
+reuses the same lead-row content as the existing status panels; it is not a second record
+action. Leads, Clients, and Projects use sortable row grids at 821 px and wider, with a
+search field and compact sort controls in the card band. Every visible data column sorts
+in both directions, desktop headers expose `aria-sort`, and every control keeps the
+44 px target minimum. Client and Project results reveal progressively so an unbounded
+record set is never reconciled in one render.
+
+This is the deliberate, owner-approved exception to the rule against adding a second way
+to do an existing action: the Board/List toggle and sortable headers are alternate views
+of the same records, while whole-row activation remains the single way to open one. View
+and sort choices are per-user settings stored with the existing page-layout
+personalization data, not a separate browser-only preference system.
+
+## 7. Layout-editor polish (DES-06)
 
 Icon-only Edit button (`Settings2` only, `aria-label` byte-identical — e2e
 selects by it — plus `title` tooltip, ≥44 px target; the Retry error variant
@@ -123,7 +139,7 @@ styling); the unreachable "All available sections are shown." branch is deleted.
 `PageTitle` wraps its `action` in `.title-actions`; Overview adopts `PageTitle`
 so the Edit control sits in the identical place on both pages.
 
-## 7. Test discipline (every packet)
+## 8. Test discipline (every packet)
 
 Golden SHA256 hashes in `tests/e2e/page-layouts.spec.ts` regenerate only as a
 sanctioned event available to ANY packet whose PR includes owner-approved
@@ -151,7 +167,7 @@ DES-16 in the same ledger. This spec's component grammar is unchanged by the
 direction; where a future value choice here is ambiguous, Apple's Human Interface
 Guidelines are the tiebreaker.
 
-## 8. Order & interleaving (with the SET-30…34 series running in parallel)
+## 9. Order & interleaving (with the SET-30…34 series running in parallel)
 
 ```
 globals.css lock (ONE holder at a time): DES-01 → DES-02 → DES-03(.brand) → DES-04 → DES-05 → DES-07
