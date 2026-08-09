@@ -118,7 +118,7 @@ async function loadProjectContext(config: GoogleRuntimeConfig, blueprint: Worksp
   // Only a root mapped by the active connection profile may be used. Filing never
   // provisions folders: that remains a separate, explicit project setup action.
   const projectRoot = await env.DB.prepare("SELECT drive_file_id, drive_url FROM drive_folder_mappings WHERE connection_key = ? AND entity_type = 'project' AND entity_id = ? AND folder_key = 'project-root'")
-    .bind(config.connectionKey, project.id)
+    .bind(config.workspaceConnectionKey, project.id)
     .first<DriveMappingRow>();
   if (!projectRoot) {
     throw new GoogleIntegrationError("project_drive_workspace_required", "Create and verify this project's managed Drive workspace before filing email. No folders were created.", 409);
@@ -177,7 +177,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ mes
     const { messageId } = await context.params;
     const safeMessageId = validateGmailMessageId(messageId);
     const selectedProjectId = projectId(request.nextUrl.searchParams.get("projectId"));
-    const { config, client, blueprint } = await getWorkspaceGmailClient();
+    const { config, client, blueprint } = await getWorkspaceGmailClient(
+      request.nextUrl.searchParams.get("mailbox"),
+    );
     const [existing, workspace, message] = await Promise.all([
       findArchive(config, safeMessageId),
       loadProjectContext(config, blueprint, selectedProjectId),
@@ -243,7 +245,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
     selectedProjectId = projectId(body.projectId);
     const { messageId } = await context.params;
     const safeMessageId = validateGmailMessageId(messageId);
-    const gmail = await getWorkspaceGmailClient();
+    const gmail = await getWorkspaceGmailClient(
+      request.nextUrl.searchParams.get("mailbox"),
+    );
     config = gmail.config;
     const [existing, workspace, message] = await Promise.all([
       findArchive(config, safeMessageId),
@@ -261,8 +265,23 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
     // the single archive row with separate leases.
     const operationKey = `${config.connectionKey}:file-gmail:${safeMessageId}`;
     const operationLeaseExpiresAt = now + FILING_LEASE_MS;
-    const operation = await env.DB.prepare("INSERT INTO google_drive_operations (id, connection_key, operation_key, project_id, status, lease_expires_at, last_error_code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, 'in-progress', ?, NULL, ?, ?, ?) ON CONFLICT(operation_key) DO UPDATE SET status = 'in-progress', lease_expires_at = excluded.lease_expires_at, last_error_code = NULL, created_by = excluded.created_by, updated_at = excluded.updated_at WHERE google_drive_operations.status != 'in-progress' OR google_drive_operations.lease_expires_at < ?")
-      .bind(crypto.randomUUID(), config.connectionKey, operationKey, selectedProjectId, operationLeaseExpiresAt, auth.user.email, now, now, now)
+    const operation = await env.DB.prepare("INSERT INTO google_drive_operations (id, connection_key, operation_key, project_id, status, lease_expires_at, last_error_code, created_by, created_at, updated_at) SELECT ?, ?, ?, ?, 'in-progress', ?, NULL, ?, ?, ? WHERE (? = 1 OR EXISTS (SELECT 1 FROM google_connections WHERE id = ? AND connection_key = ? AND lower(google_email) = ? AND refresh_token_ciphertext = ? AND status = 'connected')) ON CONFLICT(operation_key) DO UPDATE SET status = 'in-progress', lease_expires_at = excluded.lease_expires_at, last_error_code = NULL, created_by = excluded.created_by, updated_at = excluded.updated_at WHERE google_drive_operations.status != 'in-progress' OR google_drive_operations.lease_expires_at < ?")
+      .bind(
+        crypto.randomUUID(),
+        config.connectionKey,
+        operationKey,
+        selectedProjectId,
+        operationLeaseExpiresAt,
+        auth.user.email,
+        now,
+        now,
+        config.simulation ? 1 : 0,
+        config.authConnectionId ?? "",
+        config.authConnectionKey,
+        config.authConnectionEmail ?? "",
+        config.authConnectionRefreshTokenCiphertext ?? "",
+        now,
+      )
       .run();
     if (operation.meta.changes !== 1) {
       throw new GoogleIntegrationError("gmail_file_in_progress", "This email is already being filed for the selected project. Refresh shortly before trying again.", 409);

@@ -6,6 +6,7 @@ import {
   acquireWorkspaceSetupLease,
   completeWorkspaceSetupLease,
   failWorkspaceSetupLease,
+  googleConnectionLeaseFence,
 } from "../../../../../../../adapters/d1/workspace-setup-leases";
 import { upsertWorkspaceResource } from "../../../../../../../adapters/d1/workspace-resources";
 import { parseBoundedJsonObject } from "../../../../../../../lib/api-json-body";
@@ -158,6 +159,7 @@ export async function POST(request: NextRequest) {
     scopeKey: key,
     actor: auth.user.email,
     now,
+    connectionFence: googleConnectionLeaseFence(config),
   });
   if (!lease) return response({ error: "A rename request is already in progress for this folder. Try again shortly.", code: "workspace_setup_lease_conflict" }, 409);
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildGoogleAuthorizationUrl, createGoogleOauthAttempt, getEffectiveGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth-sites";
+import { buildGoogleAuthorizationUrl, createGoogleOauthAttempt, getEffectiveGoogleRuntimeConfig, writeGoogleOauthAttemptEvent } from "../../../../../lib/google-oauth-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 
@@ -26,7 +26,21 @@ export async function POST(request: NextRequest) {
   const oauthStartConfig = Object.freeze({ ...config, oauthReady: config.connectReady });
   const browserNonce = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
   const attempt = await createGoogleOauthAttempt(oauthStartConfig, auth.user.email, browserNonce);
-  await writeGoogleIntegrationEvent(oauthStartConfig, "oauth.authorization_started", auth.user.email, "connection", config.connectionKey, "mode=workspace");
+  const eventWritten = await writeGoogleOauthAttemptEvent(
+    oauthStartConfig,
+    attempt.attemptId,
+    "pending",
+    "oauth.authorization_started",
+    auth.user.email,
+    "connection",
+    config.connectionKey,
+    "mode=workspace",
+  );
+  if (!eventWritten) {
+    return NextResponse.json({
+      error: "Google authorization changed while the connection was starting. Try again.",
+    }, { status: 409 });
+  }
   const response = NextResponse.json({ authorizationUrl: buildGoogleAuthorizationUrl(oauthStartConfig, attempt.state, attempt.codeChallenge) });
   response.cookies.set({
     name: OAUTH_NONCE_COOKIE,

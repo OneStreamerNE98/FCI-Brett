@@ -9,6 +9,10 @@ const rootPath = fileURLToPath(root);
 const ADMIN_EMAIL = "owner@cherryhillfci.com";
 const OFFICE_EMAIL = "office@cherryhillfci.com";
 const CONNECTION_KEY = "google-workspace";
+const AUTH_CONNECTION_KEY = CONNECTION_KEY;
+const AUTH_CONNECTION_ID = "google-connection-ai10-review-queue";
+const AUTH_CONNECTION_EMAIL = "operations@cherryhillfci.com";
+const AUTH_CONNECTION_CIPHERTEXT = "encrypted-ai10-review-queue-refresh-token";
 const SIMULATION_CONNECTION_KEY = "workspace-simulation";
 const CLIENT_ID = "11111111-1111-4111-8111-111111111111";
 const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
@@ -161,6 +165,49 @@ class ReviewQueueDatabase {
         last_error_code TEXT,
         created_by TEXT NOT NULL,
         created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE google_connections (
+        id TEXT PRIMARY KEY,
+        connection_key TEXT NOT NULL UNIQUE,
+        google_subject TEXT NOT NULL,
+        google_email TEXT NOT NULL,
+        scopes_json TEXT NOT NULL,
+        refresh_token_ciphertext TEXT NOT NULL,
+        key_version TEXT NOT NULL,
+        status TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO google_connections
+        (id, connection_key, google_subject, google_email, scopes_json,
+         refresh_token_ciphertext, key_version, status, updated_at)
+      VALUES
+        ('${AUTH_CONNECTION_ID}', '${AUTH_CONNECTION_KEY}',
+         'google-subject-ai10-review-queue', '${AUTH_CONNECTION_EMAIL}',
+         '["openid","email","https://www.googleapis.com/auth/gmail.modify"]',
+         '${AUTH_CONNECTION_CIPHERTEXT}', '1', 'connected', 1);
+      CREATE TABLE workspace_resources (
+        id TEXT PRIMARY KEY,
+        connection_key TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_key TEXT NOT NULL,
+        external_id TEXT NOT NULL,
+        parent_external_id TEXT,
+        external_url TEXT,
+        origin TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE workspace_blueprints (
+        id TEXT PRIMARY KEY,
+        connection_key TEXT NOT NULL UNIQUE,
+        version INTEGER NOT NULL,
+        blueprint_json TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_by TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
       CREATE TABLE workspace_settings (
@@ -363,6 +410,10 @@ function sweepInput(database, client, provider, overrides = {}) {
       config: {
         simulation: false,
         connectionKey: CONNECTION_KEY,
+        authConnectionKey: AUTH_CONNECTION_KEY,
+        authConnectionId: AUTH_CONNECTION_ID,
+        authConnectionEmail: AUTH_CONNECTION_EMAIL,
+        authConnectionRefreshTokenCiphertext: AUTH_CONNECTION_CIPHERTEXT,
       },
       client,
     },

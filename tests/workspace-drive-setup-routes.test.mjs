@@ -139,6 +139,9 @@ function fakeDatabase({
           if (/FROM google_sheet_sync_state WHERE connection_key = \?/u.test(sql)) {
             return { results: state.sheetStates.filter((row) => row.connection_key === query.values[0]) };
           }
+          if (/FROM google_connections ORDER BY lower\(google_email\), connection_key/u.test(sql)) {
+            return { results: state.connection ? [state.connection] : [] };
+          }
           if (/^SELECT c\.id, c\.client_code/u.test(sql) || /^SELECT p\.id, p\.project_number/u.test(sql)) {
             return { results: [] };
           }
@@ -160,7 +163,15 @@ function fakeDatabase({
               && row.resource_key === query.values[2]
             )) ?? null;
           }
-          if (/FROM google_connections WHERE connection_key = \?/u.test(sql)) return state.connection;
+          if (/FROM google_connections WHERE connection_key = \?/u.test(sql)) {
+            return state.connection?.connection_key === query.values[0] ? state.connection : null;
+          }
+          if (/FROM google_connections WHERE google_subject = \?/u.test(sql)) {
+            return state.connection?.google_subject === query.values[0] ? state.connection : null;
+          }
+          if (/FROM google_connections WHERE lower\(google_email\) = \?/u.test(sql)) {
+            return state.connection?.google_email.toLowerCase() === query.values[0] ? state.connection : null;
+          }
           if (/FROM projects p JOIN clients c/u.test(sql)) return state.project;
           if (/FROM drive_folder_mappings/u.test(sql)) {
             return state.mapping ?? state.mappings.find((mapping) => (
@@ -202,7 +213,16 @@ function fakeDatabase({
             return { meta: { changes: 1 } };
           }
           if (sql.startsWith("INSERT INTO google_drive_operations")) {
-            const [id, connectionKey, operationKey, projectId, leaseExpiresAt, actor, createdAt, updatedAt, now] = query.values;
+            const [id, connectionKey, operationKey, projectId, leaseExpiresAt, actor, createdAt, updatedAt] = query.values;
+            const bypassConnectionFence = query.values[8] === 1;
+            const connectionFenceMatches = bypassConnectionFence || (
+              state.connection?.id === query.values[9]
+              && state.connection?.connection_key === query.values[10]
+              && state.connection?.google_email.toLowerCase() === query.values[11]
+              && state.connection?.status === "connected"
+            );
+            if (!connectionFenceMatches) return { meta: { changes: 0 } };
+            const now = query.values.at(-1);
             const current = state.leases.get(operationKey);
             if (current?.status === "in-progress" && current.leaseExpiresAt >= now) return { meta: { changes: 0 } };
             state.leases.set(operationKey, {
@@ -349,6 +369,8 @@ async function workspaceEnvironment(database, overrides = {}) {
   const config = oauthModule.getGoogleRuntimeConfig(values);
   database.state.connection = {
     id: "connection-1",
+    connection_key: config.connectionKey,
+    google_subject: "subject-operations",
     google_email: "operations@cherryhillfci.com",
     refresh_token_ciphertext: await oauthModule.encryptGoogleSecret(
       "FCI_TEST_REFRESH_TOKEN",

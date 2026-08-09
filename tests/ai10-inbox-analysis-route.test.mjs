@@ -11,6 +11,9 @@ const rootPath = fileURLToPath(root);
 const ADMIN_EMAIL = "owner@cherryhillfci.com";
 const OFFICE_EMAIL = "office@cherryhillfci.com";
 const CONNECTION_KEY = "google-workspace";
+const AUTH_CONNECTION_ID = "google-connection-ai10";
+const AUTH_CONNECTION_EMAIL = "operations@cherryhillfci.com";
+const AUTH_CONNECTION_CIPHERTEXT = "encrypted-ai10-refresh-token";
 const SIMULATION_CONNECTION_KEY = "workspace-simulation";
 const CLIENT_ID = "11111111-1111-4111-8111-111111111111";
 const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
@@ -166,6 +169,17 @@ class InboxAnalysisDatabase {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
+      CREATE TABLE google_connections (
+        id TEXT PRIMARY KEY,
+        connection_key TEXT NOT NULL UNIQUE,
+        google_email TEXT NOT NULL,
+        refresh_token_ciphertext TEXT NOT NULL,
+        status TEXT NOT NULL
+      );
+      INSERT INTO google_connections
+        (id, connection_key, google_email, refresh_token_ciphertext, status)
+      VALUES
+        ('${AUTH_CONNECTION_ID}', '${CONNECTION_KEY}', '${AUTH_CONNECTION_EMAIL}', '${AUTH_CONNECTION_CIPHERTEXT}', 'connected');
       CREATE TABLE workspace_settings (
         id TEXT PRIMARY KEY,
         shared_drive_id TEXT,
@@ -331,6 +345,10 @@ function sweepInput(database, client, provider, overrides = {}) {
       config: {
         simulation: false,
         connectionKey: CONNECTION_KEY,
+        authConnectionKey: CONNECTION_KEY,
+        authConnectionId: AUTH_CONNECTION_ID,
+        authConnectionEmail: AUTH_CONNECTION_EMAIL,
+        authConnectionRefreshTokenCiphertext: AUTH_CONNECTION_CIPHERTEXT,
       },
       client,
     },

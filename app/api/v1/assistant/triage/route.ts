@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const [{ client }, projects] = await Promise.all([
-      getWorkspaceGmailClient(),
+      getWorkspaceGmailClient(request.nextUrl.searchParams.get("mailbox")),
       readTriageProjectCandidates(database),
     ]);
     // Isolate every summary fetch so one deleted or inaccessible message (listed,
