@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 44 not started · 4 in progress · 1 in review · 2 blocked · 133 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 43 not started · 4 in progress · 1 in review · 2 blocked · 134 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -63,7 +63,7 @@ row holds the full text. Packets without a status line are not started.
 | DES-23 | Leads board phone presentation (medium; after DES-15) | — | agent-plan |
 | DES-24 | Settings surface-depth grammar: end the card tunnel (medium; after DES-13) | — | agent-plan |
 | DES-25 | Retire the dead webfont loading and migrate the last inline-style island (small; after DES-13) | Complete — PR #318, August 5, 2026. | agent-plan |
-| DES-26 | The vanishing retry: background revalidation unmounts an error notice mid-click (small-medium; after SET-42) | In progress — `deepseek/des26-stable-retry-affordance` | agent-plan |
+| DES-26 | The vanishing retry: background revalidation unmounts an error notice mid-click (small-medium; after SET-42) | Complete — PR #348 | agent-plan |
 | DOC-06 | Deployment procedure runbook (small, no deps) | Complete — PR #271, July 31, 2026. | agent-plan |
 | EDIT-01 | Lead edit auditing, and recording the authorization gap honestly (small, no deps) | Complete — PR #222, July 27, 2026. | agent-plan |
 | EDIT-02 | `phone-call` meeting type PostgreSQL parity (RETIRED — filed on a false premise) | Resolved in PR #135, July 23, 2026. | agent-plan |
@@ -126,7 +126,7 @@ row holds the full text. Packets without a status line are not started.
 | NFIX-09 | Every merge to main cancels the previous merge's verification (small; CI only) | Complete — PR #331, August 7, 2026. | agent-plan |
 | NFIX-10 | 256 type errors nobody runs (medium; quality gate) | — | agent-plan |
 | NFIX-11 | Error boundaries: one crash currently unmounts the whole app (medium; quality gate) | Superseded — absorbed into DES-17 | agent-plan |
-| NFIX-12 | Execute the remaining direct-route coverage gaps (small-medium) | — | agent-plan |
+| NFIX-12 | Execute the remaining direct-route coverage gaps (small-medium) | In progress — `deepseek/nfix12-route-coverage-gaps` | agent-plan |
 | NFIX-13 | Paginate the clients and projects list endpoints (medium) | — | agent-plan |
 | NFIX-14 | AI/provider failure observability: the bare catch and the 503 that ate its error (small-medium) | — | agent-plan |
 | NFIX-15 | Upload boundary and stored-byte round-trip coverage (small) | — | agent-plan |
