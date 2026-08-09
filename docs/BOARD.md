@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 46 not started · 3 in progress · 2 blocked · 133 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 45 not started · 4 in progress · 2 blocked · 133 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -132,7 +132,7 @@ row holds the full text. Packets without a status line are not started.
 | NFIX-15 | Upload boundary and stored-byte round-trip coverage (small) | — | agent-plan |
 | NFIX-16 | E2E hygiene batch: assertions that cannot fail, waits that lie, and the missing golden path (medium) | — | agent-plan |
 | NFIX-17 | Atomic D1 task-reference guards; defer the foreign-key rebuild (small-medium) | — | agent-plan |
-| NFIX-18 | Address review release is best-effort with no compensation (small-medium) | — | agent-plan |
+| NFIX-18 | Address review release is best-effort with no compensation (small-medium) | In progress — `codex/nfix18-address-review-compensation` | agent-plan |
 | NFIX-19 | FIX-09 stage-4 verification race (resolved) | Resolved in PR #330 | agent-plan |
 | NFIX-20 | DevOps hygiene batch (medium) | — | agent-plan |
 | NFIX-21 | Worker-isolate rate limiter is a per-isolate limit (small; hardening) | — | agent-plan |
