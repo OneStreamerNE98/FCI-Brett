@@ -49,6 +49,15 @@ type IntegrationEvent = Readonly<{
   createdAt: number;
 }>;
 
+type StaleAddressReviewClaim = Readonly<{
+  id: string | null;
+  actorId: string | null;
+  entityKind: string | null;
+  targetId: string | null;
+  consumedAt: number;
+  expiresAt: number;
+}>;
+
 type CategoryResult<T> = Readonly<{
   items: T[];
   hasMore: boolean;
@@ -63,6 +72,7 @@ type OperationsPayload = Readonly<{
   driveOperations: CategoryResult<DriveOperation>;
   failedArchives: CategoryResult<FailedArchive>;
   events: CategoryResult<IntegrationEvent>;
+  addressReviewClaims?: CategoryResult<StaleAddressReviewClaim>;
 }>;
 
 type CategoryKey = "drive" | "archive" | "events";
@@ -318,6 +328,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
   const [drive, setDrive] = useState<AccumulatedCategory<DriveOperation>>(emptyAccumulator);
   const [archive, setArchive] = useState<AccumulatedCategory<FailedArchive>>(emptyAccumulator);
   const [events, setEvents] = useState<AccumulatedCategory<IntegrationEvent>>(emptyAccumulator);
+  const [addressReviewClaims, setAddressReviewClaims] = useState<CategoryResult<StaleAddressReviewClaim>>({ items: [], hasMore: false });
   const [reconciling, setReconciling] = useState(false);
   const { state, error, run: runLoad } = useClientLoadState(
     "Google operations could not be loaded.",
@@ -340,6 +351,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
     setDrive(emptyAccumulator());
     setArchive(emptyAccumulator());
     setEvents(emptyAccumulator());
+    setAddressReviewClaims({ items: [], hasMore: false });
     setReconciling(false);
   }, []);
 
@@ -499,6 +511,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
     setDrive({ ...nextDrive.result, loadingMore: false });
     setArchive({ ...nextArchive.result, loadingMore: false });
     setEvents({ ...nextEvents.result, loadingMore: false });
+    setAddressReviewClaims(body.addressReviewClaims ?? { items: [], hasMore: false });
     setReconciling(false);
   }, [
     failClosedOperations,
@@ -601,10 +614,11 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
   const driveOperations = drive.items;
   const failedArchives = archive.items;
   const eventItems = events.items;
-  const failureCount = driveOperations.length + failedArchives.length;
+  const staleAddressClaims = addressReviewClaims.items;
+  const failureCount = driveOperations.length + failedArchives.length + staleAddressClaims.length;
   const hasStuckDriveLease = driveOperations.some((operation) => operation.condition === "stuck");
   const hasFailedDriveOperation = driveOperations.some((operation) => operation.condition === "failed");
-  const moreFailures = drive.hasMore || archive.hasMore;
+  const moreFailures = drive.hasMore || archive.hasMore || addressReviewClaims.hasMore;
   const moreEvents = events.hasMore;
   const anyLoading = state === "loading" || reconciling || drive.loadingMore || archive.loadingMore || events.loadingMore;
 
@@ -615,7 +629,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
         : "Recorded Google work for the current company connection. This does not contact Google."}</p>
     </div>
 
-    {state === "loading" && !driveOperations.length && !failedArchives.length && !eventItems.length
+    {state === "loading" && !driveOperations.length && !failedArchives.length && !staleAddressClaims.length && !eventItems.length
       ? <p className={styles.message} role="status">Loading recorded Google operations…</p>
       : null}
     {state === "error" ? <SettingsDataNotice
@@ -625,19 +639,19 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
       onRetry={() => void load(true)}
     /> : null}
 
-    {state === "ready" || driveOperations.length > 0 || failedArchives.length > 0 || eventItems.length > 0 ? <>
+    {state === "ready" || driveOperations.length > 0 || failedArchives.length > 0 || staleAddressClaims.length > 0 || eventItems.length > 0 ? <>
       <section className={styles.section} aria-labelledby="workspace-operations-failures-heading">
         <div className={styles.sectionHeading}>
           <div>
             <h5 id="workspace-operations-failures-heading" ref={failuresHeadingRef} tabIndex={-1}>Needs attention</h5>
-            <span>{failureCount === 0 ? "No stuck leases or failed archives" : `${failureCount}${moreFailures ? "+" : ""} recorded issue${failureCount === 1 ? "" : "s"}`}</span>
+            <span>{failureCount === 0 ? "No stuck leases, failed archives, or stale address-review claims" : `${failureCount}${moreFailures ? "+" : ""} recorded issue${failureCount === 1 ? "" : "s"}`}</span>
           </div>
           {failureCount === 0
             ? <CheckCircle2 className={styles.successIcon} size={18} aria-label="No recorded failures" />
             : <CircleAlert className={styles.warningIcon} size={18} aria-label="Recorded failures need attention" />}
         </div>
         {failureCount === 0
-          ? <p className={styles.empty}>No failed archive or expired Drive-operation lease is recorded for this connection.</p>
+          ? <p className={styles.empty}>No failed archive, expired Drive-operation lease, or stale address-review claim is recorded.</p>
           : <OperationsDataTable
             className={styles.table}
             columns={FAILURE_COLUMNS}
@@ -674,6 +688,23 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
               </OperationsDataTableCell>
               <OperationsDataTableCell label="Last update">
                 <span>{formatTime(archive.updatedAt)}</span>
+              </OperationsDataTableCell>
+            </tr>)}
+            {staleAddressClaims.map((claim) => <tr key={`address-review-${claim.id}`}>
+              <OperationsDataTableCell label="Work item">
+                <strong>Stale address-review claim</strong>
+                <small>Review release needs reconciliation</small>
+              </OperationsDataTableCell>
+              <OperationsDataTableCell label="Record">
+                <span>{recordLabel(claim.entityKind, claim.targetId)}</span>
+                <small>{claim.actorId ?? "Unknown actor"} · {claim.id ?? "No review ID"}</small>
+              </OperationsDataTableCell>
+              <OperationsDataTableCell label="Recorded problem">
+                <code>address_review_claim_stale</code>
+              </OperationsDataTableCell>
+              <OperationsDataTableCell label="Last update">
+                <span>Claimed {formatTime(claim.consumedAt)}</span>
+                <small>Review expired {formatTime(claim.expiresAt)}</small>
               </OperationsDataTableCell>
             </tr>)}
           </OperationsDataTable>}
@@ -724,6 +755,7 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
         {hasStuckDriveLease && <p className={styles.guidance}><strong>Stuck lease:</strong> wait out the five-minute lease before retrying. Never hand-edit Drive to clear it.</p>}
         {hasFailedDriveOperation && <p className={styles.guidance}><strong>Failed Drive operation:</strong> keep the recorded error code and retry only through the original app action. Never repair Drive or app records by hand.</p>}
         {failedArchives.length > 0 && <p className={styles.guidance}><strong>Failed archive:</strong> return to the Gmail project inbox and repeat Review & copy. The saved archive identity makes the retry idempotent.</p>}
+        {staleAddressClaims.length > 0 && <p className={styles.guidance}><strong>Stale address review:</strong> ask the recorded user to review the address again before retrying the original save. Do not reopen review rows by hand.</p>}
         {failedArchives.length > 0 && <a className="soft-button" href="/inbox">Open Gmail project inbox</a>}
       </section>
 
