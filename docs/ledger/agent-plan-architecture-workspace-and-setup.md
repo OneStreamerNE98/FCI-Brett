@@ -4294,6 +4294,7 @@ DES-13. Sequencing below is binding; none of these dispatch before their named
 predecessors merge.
 
 ### DES-19 · Responsive layout primitives and the dynamic-state guard (medium-large; after DES-13 and DES-14)
+**Status:** In progress — `kimi/des19-responsive-primitives`
 
 **Why:** audit P1 #1, P3 "viewport patches" (11 breakpoint values, 142 local layout
 rules, 9 wrapping), and P3 "tests weak on state transitions" — conditional states break
