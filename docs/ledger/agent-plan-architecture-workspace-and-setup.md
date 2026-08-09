@@ -4918,20 +4918,11 @@ Also: archived/terminal-status records are excluded from AI candidate queries an
 surfaces as a suggestion — shared with EDIT-05/06.
 
 ### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
-**Status:** In progress — `kimi/ai11d-activity-attribution`
-**SUB-SCOPES (a) AND (b) ARE COMPLETE — (a) PR #255, July 31, 2026; (b) PR #277, August 3,
-2026; (c) PR #300, August 4, 2026. All source-only and undeployed. ONLY (d) REMAINS
-CLAIMABLE.** This packet
-deliberately carries **no status line**: it is not complete while (c) and (d) are open, the
-grammar has no partial-completion form, and any status line here would make the dispatch law
-read (c) and (d) as unavailable when they are in fact open. Sub-scope completion is therefore
-recorded in this body, and a claimant must read this paragraph rather than the absent status
-line. Take **(c) or (d) only, in that order**. Do not rebuild (a) or (b).
-**If you claim (c) or (d), add `**Status:** In progress — \`your/branch\`` in your own PR as
-usual — and delete it again on merge, recording your sub-scope here.** That is the convention
-this packet runs on, and the reason is worth restating: a status line left behind on a
-sub-scoped packet silently blocks every sibling sub-scope. It happened to (b) in PR #277 and
-was caught in review.
+**Status:** Complete — PR #255 + PR #277 + PR #300 + PR #340, August 9, 2026. All four sub-scopes shipped: (a) PR #255, July 31, 2026; (b) PR #277, August 3, 2026; (c) PR #300, August 4, 2026; (d) review activity attribution — the L1–L4a write spine plus the activity read and settings view — PR #340, August 9, 2026.
+**ALL SUB-SCOPES (a)–(d) ARE COMPLETE.** This packet ran a no-status-line convention while
+sub-scopes were open — a status line would have made the dispatch law read open sub-scopes as
+unavailable. With (d) merged, no sub-scope remains claimable, so the packet now carries an
+ordinary Complete status line and the convention is retired.
 
 **(b), merged in PR #277 — do not redo:** the administrator AI controls moved (not
 duplicated) out of *Workflow & notifications* into a dedicated **AI assistant** Settings

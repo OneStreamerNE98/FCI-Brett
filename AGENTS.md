@@ -143,8 +143,15 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   and pull again after the owner merges anything. Never build on a stale clone — a
   stale-based PR conflicts with everything.
 - **One branch per agent per task, always agent-prefixed** (`codex/*`, `claude/*`,
-  `kimi/*`). Never commit directly to `main`. The PR history doubles as the attribution
-  log of which agent did what — keep the prefixes honest.
+  `kimi/*`, `deepseek/*`). Never commit directly to `main`. The PR history doubles as the
+  attribution log of which agent did what — keep the prefixes honest. All four prefixes
+  carry the same server-side branch protection: force-push and branch deletion are
+  blocked, no bypass, enforced even for the owner (recorded August 8, 2026, after a
+  session continuing a `kimi/*` branch committed under an unconfigured identity and
+  three different stories about who built what diverged — see the PR #340 disposition).
+  A session picking up work on another agent's branch either pushes to its own
+  agent-prefixed branch instead, or explicitly sets that agent's identity and says so in
+  the PR body — never commit there under a default identity.
 - **Pull requests are the only merge point.** The owner (Jason) reviews and merges;
   agents never merge their own or another agent's PR unless the owner explicitly
   delegates it for a named PR.
@@ -202,6 +209,15 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   and the correction lands as a dated amendment banner (orchestrator-authored, or
   proposed in the PR body for the orchestrator to place). A PR never edits the
   criteria it is graded against (rule recorded August 4, 2026, after EDIT-09).
+- **DeepSeek — implementer (added August 8, 2026):** a fourth build agent under every
+  implementer law that governs Codex — packets exactly as written, one packet per draft
+  PR, `deepseek/*` branches, its own clone, the post-merge ledger flip duty, and the
+  prohibition on editing the criteria it is graded against. No senior or advisory track
+  (that structure is Kimi-specific); DeepSeek claims only packets the orchestrator's
+  dispatch names for it, same as Codex. Standing communication channel:
+  [GitHub issue #345](https://github.com/OneStreamerNE98/FCI-Brett/issues/345) — the
+  orchestrator posts instructions there as `@DeepSeek`-tagged comments for anything not
+  tied to one open PR; PR-specific feedback stays on that PR's thread.
 - **Kimi — implementer, senior track (added August 4, 2026; role revised the same day
   after adversarial design review):** a third build agent under every implementer law —
   packets exactly as written, one packet per draft PR, `kimi/*` branches, its own clone,
@@ -254,9 +270,9 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   never force-pushes over another agent's commits. Fast-forward pushes only during fix
   work.
 - **Per-agent git identity.** Each agent's clone sets its own `git config user.name`
-  (e.g. "Codex (agent)", "Kimi (agent)") so commit attribution matches the branch
-  prefix. A commit on an agent-prefixed branch whose committer identity names a
-  different agent is a review-blocking finding.
+  (e.g. "Codex (agent)", "Kimi (agent)", "DeepSeek (agent)") so commit attribution
+  matches the branch prefix. A commit on an agent-prefixed branch whose committer
+  identity names a different agent is a review-blocking finding.
 - No agent merges another agent's PR without the owner explicitly delegating
   that PR by number. Review findings are addressed by the branch's owning agent.
 
