@@ -4081,6 +4081,7 @@ apart from path-only source pins; golden hashes byte-identical; `npm test`,
 **Effort:** medium-large. **Cost:** $0.
 
 ### NFIX-24 · FloorOps shell state ownership and major-view code splitting (large; FloorOpsApp queue)
+**Status:** In review — PR #357
 
 **Why:** filed August 7, 2026 from the August 6 review (F5/F6), after DES-14 and DES-14b
 moved the record views and overlay cluster out. The remaining file is 108,430 bytes / 1,810
@@ -5365,6 +5366,10 @@ DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI (in
 SET-26 UI (blocked on SET-23) → HINT-02-B.
 **Every named packet above is now merged. DES-14 completed in PR #327 and DES-14b
 completed in PR #328, releasing the slot to the tail below.**
+
+**Current active claim:** NFIX-24 owns the single `app/FloorOpsApp.tsx` queue slot on
+`codex/nfix24-floorops-shell-splitting`. It follows completed DES-17 and must release
+the slot before another packet edits the shell.
 
 **Tail added August 3, 2026 — five open packets were flagged for this slot and none of them
 were on the list.** A packet-assessment pass found that the claim list, which `AGENTS.md:54-58`

@@ -138,7 +138,7 @@ row holds the full text. Packets without a status line are not started.
 | NFIX-21 | Worker-isolate rate limiter is a per-isolate limit (small; hardening) | In review — PR #360 | agent-plan |
 | NFIX-22 | Decompose InboxView and centralize inbox contracts (medium-large) | — | agent-plan |
 | NFIX-23 | Decompose GoogleWorkspacePanel and centralize Workspace contracts (medium-large, after NFIX-22) | — | agent-plan |
-| NFIX-24 | FloorOps shell state ownership and major-view code splitting (large; FloorOpsApp queue) | — | agent-plan |
+| NFIX-24 | FloorOps shell state ownership and major-view code splitting (large; FloorOpsApp queue) | In review — PR #357 | agent-plan |
 | NFIX-25 | Bound the filing-rule catalog on both engines (small-medium) | Blocked — awaiting owner-approved filing-rule catalog limit | agent-plan |
 | SET-01 | Extract the eight Settings panels into `app/settings/components/` (large, complete in source in PR #35; not deployed) — DO FIRST in the SET workstream | Complete — PR #35, July 19, 2026. | agent-plan |
 | SET-02 | Expose `isAdmin`; render admin-only controls honestly (small, after SET-01; merged in PR #37, not deployed) | Complete — PR #37, July 19, 2026. | agent-plan |

@@ -424,8 +424,9 @@ test("authorization denials evict stale privileged data and notify without retry
 });
 
 test("keeps the bounded initial-load and rendering optimizations in place", async () => {
-  const [app, recordDisplay, css, dataSecurity, myAccount, googleWorkspace] = await Promise.all([
+  const [app, directoryController, recordDisplay, css, dataSecurity, myAccount, googleWorkspace] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
+    read("app/application/use-directory-data.ts"),
     read("app/lib/record-display.ts"),
     read("app/globals.css"),
     read("app/settings/components/DataSecurityPanel.tsx"),
@@ -452,8 +453,8 @@ test("keeps the bounded initial-load and rendering optimizations in place", asyn
   assert.match(dataSecurity, /const PhoneInstallPanel = dynamic\(/);
   assert.match(dataSecurity, /import\("\.\.\/\.\.\/PhoneInstallPanel"\)/);
   assert.doesNotMatch(dataSecurity, /import \{ PhoneInstallPanel \} from/);
-  assert.match(rootComponent, /void refreshDirectoryData\(\);\s*\}, \[refreshDirectoryData\]\)/);
-  assert.doesNotMatch(rootComponent, /setTimeout\(\(\) => \{ void refreshDirectoryData/);
+  assert.match(directoryController, /void refreshDirectoryData\(\);\s*\}, \[refreshDirectoryData\]\)/);
+  assert.doesNotMatch(directoryController, /setTimeout\(\(\) => \{ void refreshDirectoryData/);
   assert.doesNotMatch(rootComponent, /currentTime|setCurrentTime/);
   assert.match(overviewComponent, /setInterval\(\(\) => setCurrentTime\(Date\.now\(\)\), 60_000\)/);
   assert.match(app, /for \(const project of projectItems\)/);

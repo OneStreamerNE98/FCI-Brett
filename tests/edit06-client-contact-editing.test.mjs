@@ -931,16 +931,17 @@ test("new editing routes expose no core-record DELETE and authenticate before pa
 });
 
 test("FloorOps composes create plus independent changed-key client and contact editors", async () => {
-  const [app, clientModals] = await Promise.all([
+  const [app, directoryData, clientModals] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
+    read("app/application/use-directory-data.ts"),
     read("app/clients/components/ClientModals.tsx"),
   ]);
   assert.match(
-    app,
+    directoryData,
     /function mapClientRecord[\s\S]*primary_contact_phone[\s\S]*primary_contact_role[\s\S]*primary_contact_version[\s\S]*normalizeRecordVersion\(record\.version\)/u,
   );
   assert.match(
-    app,
+    directoryData,
     // "Commercial" is the shipped DES-08a1 row-chip default and is also pinned by
     // tests/e2e/des08a1-industry-surfacing.spec.ts ("UNSPEC-001 · Commercial"). Pinned
     // here too so a regression fails in seconds on Node rather than only in Playwright.
