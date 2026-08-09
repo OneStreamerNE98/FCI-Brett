@@ -85,14 +85,14 @@ test("DES-19 no-wrap assertion passes a single-line title and fails a wrapped on
 
 test("DES-19 one-scroll-owner assertion passes a single owner and fails a split stack", () => {
   assert.deepEqual(findScrollOwnerViolations([
-    { id: "drawer", top: false, visibleScrollbars: [] },
-    { id: "modal", top: true, visibleScrollbars: ["modal panel"] },
+    { id: "drawer", top: false, scrollableRegions: [] },
+    { id: "modal", top: true, scrollableRegions: ["modal panel"] },
   ]), []);
 
-  // The audit's P2 photograph: drawer and edit modal both scroll visibly.
+  // The audit's P2 photograph: drawer and edit modal both own scrollable regions.
   const split = findScrollOwnerViolations([
-    { id: "drawer", top: false, visibleScrollbars: ["drawer body"] },
-    { id: "modal", top: true, visibleScrollbars: ["modal panel"] },
+    { id: "drawer", top: false, scrollableRegions: ["drawer body"] },
+    { id: "modal", top: true, scrollableRegions: ["modal panel"] },
   ]);
   assert.ok(split.length >= 1);
   assert.ok(split.every((violation) => violation.assertion === "one-scroll-owner"));

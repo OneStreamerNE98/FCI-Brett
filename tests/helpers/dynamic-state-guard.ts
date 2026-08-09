@@ -40,8 +40,16 @@ export type ElementFact = Readonly<{
 export type OverlayFact = Readonly<{
   id: string;
   top: boolean;
-  /** Scroll containers inside this overlay that show a layout scrollbar. */
-  visibleScrollbars: ReadonlyArray<string>;
+  /**
+   * Scroll containers inside this overlay whose content overflows vertically
+   * (overflow-y auto/scroll AND scrollHeight > clientHeight). Scroll OWNERSHIP
+   * is measured, not scrollbar visibility: headless Chromium paints zero-gutter
+   * overlay scrollbars, so a layout-gutter heuristic (offsetHeight minus
+   * clientHeight) can never see them — while the dual-scroll state the audit
+   * photographed is exactly "two panels whose content overflows at once".
+   * Scrollability is deterministic across platforms; visibility is not.
+   */
+  scrollableRegions: ReadonlyArray<string>;
 }>;
 
 export type Violation = Readonly<{ assertion: string; message: string }>;
@@ -132,21 +140,21 @@ export function findUnauthorizedWraps(facts: ReadonlyArray<ElementFact>): Violat
     }));
 }
 
-/** Assertion class 4 — one visible scroll owner per overlay stack. */
+/** Assertion class 4 — one scroll owner per overlay stack. */
 export function findScrollOwnerViolations(overlays: ReadonlyArray<OverlayFact>): Violation[] {
   const violations: Violation[] = [];
-  const owners = overlays.filter((overlay) => overlay.visibleScrollbars.length > 0);
+  const owners = overlays.filter((overlay) => overlay.scrollableRegions.length > 0);
   if (owners.length > 1) {
     violations.push({
       assertion: "one-scroll-owner",
-      message: `${owners.length} overlays show scrollbars at once: ${owners.map((owner) => owner.id).join(", ")}`,
+      message: `${owners.length} overlays own scrollable regions at once: ${owners.map((owner) => owner.id).join(", ")}`,
     });
   }
   for (const overlay of overlays) {
-    if (overlay.visibleScrollbars.length > 1) {
+    if (overlay.scrollableRegions.length > 1) {
       violations.push({
         assertion: "one-scroll-owner",
-        message: `${overlay.id} shows ${overlay.visibleScrollbars.length} scrollbars: ${overlay.visibleScrollbars.join(", ")}`,
+        message: `${overlay.id} owns ${overlay.scrollableRegions.length} scrollable regions: ${overlay.scrollableRegions.join(", ")}`,
       });
     }
   }
@@ -154,7 +162,7 @@ export function findScrollOwnerViolations(overlays: ReadonlyArray<OverlayFact>):
   if (hiddenOwner) {
     violations.push({
       assertion: "one-scroll-owner",
-      message: `${hiddenOwner.id} is not the top overlay but still owns a visible scrollbar`,
+      message: `${hiddenOwner.id} is not the top overlay but still owns a scrollable region`,
     });
   }
   return violations;
@@ -293,16 +301,13 @@ export function collectLayoutFacts(args: {
   const panels = [...document.querySelectorAll(".accessible-overlay-panel")];
   const topPanel = panels.at(-1) ?? null;
   for (const panel of panels) {
-    const visibleScrollbars: string[] = [];
+    const scrollableRegions: string[] = [];
     for (const candidate of [panel, ...panel.querySelectorAll("*")]) {
       const style = getComputedStyle(candidate);
       const scrollable = /^(scroll|auto)$/u.test(style.overflowY) && candidate.scrollHeight > candidate.clientHeight + 1;
-      if (!scrollable) continue;
-      const borders = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
-      const scrollbarVisible = candidate.offsetHeight - candidate.clientHeight - borders > 2;
-      if (scrollbarVisible) visibleScrollbars.push(describe(candidate));
+      if (scrollable) scrollableRegions.push(describe(candidate));
     }
-    overlays.push({ id: describe(panel), top: panel === topPanel, visibleScrollbars });
+    overlays.push({ id: describe(panel), top: panel === topPanel, scrollableRegions });
   }
 
   const labels: string[] = [];

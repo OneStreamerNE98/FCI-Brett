@@ -22,8 +22,9 @@ import {
 // scrollbar) are LIVE violations whose fixes belong to the DES-21 migration and
 // the DES-24 overlay packet. So on the two real states this spec enforces the
 // classes that hold today — clipping escapes, action-group shape, and label
-// stability — and runs the wrap and scroll-owner classes informationally,
-// attaching their findings to the report. Every class is proven to FAIL on a
+// stability — and pins the wrap and scroll-owner classes to the exact known
+// P1/P2 violation set (KNOWN_LIVE_VIOLATIONS): any new violation fails CI, and
+// the fixing packet zeroes the baseline. Every class is proven to FAIL on a
 // deliberately broken variant in tests/des19-dynamic-state-guard.test.mjs, so
 // the guard cannot silently pass everywhere. On the primitives fixture all
 // five classes are enforced: the primitives are built to satisfy them.
@@ -39,6 +40,61 @@ const VIEWPORTS = [
 const PAGE_SCROLLERS = [".sidebar", ".main-nav", ".tabs", ".board", ".operations-data-table-frame", ".business-kpi-table-wrap"];
 const OVERLAY_SCROLLERS = [".drawer-body", ".client-drawer-body", ".modal", ".project-drawer > nav"];
 const LABEL_SELECTOR = "button, a[href], [role='button']";
+
+// Orchestrator review (PR #349, Finding 1): the deferral of the audit's P1/P2
+// fixes to DES-21/DES-24 is approved, but purely informational reporting leaves
+// no CI signal if those states regress further. So the guard pins the EXACT
+// known-violation set per state, class, and viewport: a NEW wrap or scroll-owner
+// violation fails CI immediately, and when DES-21/DES-24 fix a known one this
+// baseline must be zeroed in the same PR — the pin failing is the prompt.
+// Keyed `${state}:${assertionClass}:${viewportWidth}`; entries are sorted
+// `assertion|message`. Keys absent from the record assert an EMPTY violation
+// set — only states with known live violations need an entry.
+// Project numbers in drawer-edit messages are normalized to <project> before
+// comparison because the test creates its project fresh each run.
+const KNOWN_LIVE_VIOLATIONS: Readonly<Record<string, readonly string[]>> = {
+  // The audit's P2: the drawer behind the edit modal still owns a scrollable
+  // region at every viewport; at 390 and 1181 the modal itself overflows too.
+  // DES-24 scope; zero these entries in that PR.
+  "drawer-edit:scroll-owner:390": [
+    "one-scroll-owner|<project> FCI TEST — DO NOT USE — DES-19 project is not the top overlay but still owns a scrollable region",
+    "one-scroll-owner|2 overlays own scrollable regions at once: <project> FCI TEST — DO NOT USE — DES-19 project, Edit <project>",
+  ],
+  "drawer-edit:scroll-owner:820": [
+    "one-scroll-owner|<project> FCI TEST — DO NOT USE — DES-19 project is not the top overlay but still owns a scrollable region",
+  ],
+  "drawer-edit:scroll-owner:834": [
+    "one-scroll-owner|<project> FCI TEST — DO NOT USE — DES-19 project is not the top overlay but still owns a scrollable region",
+  ],
+  "drawer-edit:scroll-owner:1181": [
+    "one-scroll-owner|<project> FCI TEST — DO NOT USE — DES-19 project is not the top overlay but still owns a scrollable region",
+    "one-scroll-owner|2 overlays own scrollable regions at once: <project> FCI TEST — DO NOT USE — DES-19 project, Edit <project>",
+  ],
+  "drawer-edit:scroll-owner:1280": [
+    "one-scroll-owner|<project> FCI TEST — DO NOT USE — DES-19 project is not the top overlay but still owns a scrollable region",
+  ],
+};
+
+function violationKeys(violations: ReadonlyArray<{ assertion: string; message: string }>): string[] {
+  return violations.map((violation) => `${violation.assertion}|${violation.message}`).sort();
+}
+
+async function expectBaselineViolations(
+  testInfo: TestInfo,
+  attachmentName: string,
+  baselineKey: string,
+  violations: ReadonlyArray<{ assertion: string; message: string }>,
+) {
+  await attachCalibration(testInfo, attachmentName, violations);
+  if (process.env.DES19_DUMP_BASELINE === "1") {
+    console.log(`DES19-BASELINE ${baselineKey} ${JSON.stringify(violationKeys(violations))}`);
+    return;
+  }
+  expect(
+    violationKeys(violations),
+    `${baselineKey} drifted from the pinned P1/P2 baseline — a new entry is a new defect; a missing entry means DES-21/DES-24 landed and the baseline must be zeroed in the same PR`,
+  ).toEqual([...(KNOWN_LIVE_VIOLATIONS[baselineKey] ?? [])].sort());
+}
 
 const legacyRecordFixtures = {
   leads: { leads: [] },
@@ -139,9 +195,9 @@ test("Overview edit state holds the calibrated guard classes across the audit vi
       expect(findUnsanctionedActionGroups(after.actionGroups), `${viewport.width}px action groups`).toEqual([]);
       expect(findLabelDrift(before.labels, after.labels, ["Edit Overview layout"]), `${viewport.width}px label drift`).toEqual([]);
 
-      // Informational until DES-21/DES-24 fix the audited live violations.
-      await attachCalibration(testInfo, `wrap-${viewport.width}`, findUnauthorizedWraps(after.elements));
-      await attachCalibration(testInfo, `scroll-owner-${viewport.width}`, findScrollOwnerViolations(after.overlays));
+      // Baseline-pinned until DES-21/DES-24 fix the audited live violations.
+      await expectBaselineViolations(testInfo, `wrap-${viewport.width}`, `overview-edit:wrap:${viewport.width}`, findUnauthorizedWraps(after.elements));
+      await expectBaselineViolations(testInfo, `scroll-owner-${viewport.width}`, `overview-edit:scroll-owner:${viewport.width}`, findScrollOwnerViolations(after.overlays));
       await recordScreenshot(page, testInfo, `overview-edit-${viewport.width}`);
     });
   }
@@ -221,10 +277,16 @@ test("project drawer edit state holds the calibrated guard classes across the au
         expect(findUnsanctionedActionGroups(after.actionGroups), `${viewport.width}px action groups`).toEqual([]);
         expect(findLabelDrift(before.labels, after.labels, ["Edit project"]), `${viewport.width}px label drift`).toEqual([]);
 
-        // Informational: the audit photographed this exact stack owning two
-        // scrollbars (P2). The fix is DES-24 scope; the class is unit-proven.
-        await attachCalibration(testInfo, `wrap-${viewport.width}`, findUnauthorizedWraps(after.elements));
-        await attachCalibration(testInfo, `scroll-owner-${viewport.width}`, findScrollOwnerViolations(after.overlays));
+        // Baseline-pinned: the audit photographed this exact stack owning two
+        // scrollable regions (P2). The fix is DES-24 scope; the pin fails CI on
+        // any drift in either direction until then. The project number is
+        // generated per run, so messages are normalized before comparison.
+        const normalizeProjectNumber = (violations: ReadonlyArray<{ assertion: string; message: string }>) => violations.map((violation) => ({
+          assertion: violation.assertion,
+          message: violation.message.split(project.projectNumber).join("<project>"),
+        }));
+        await expectBaselineViolations(testInfo, `wrap-${viewport.width}`, `drawer-edit:wrap:${viewport.width}`, normalizeProjectNumber(findUnauthorizedWraps(after.elements)));
+        await expectBaselineViolations(testInfo, `scroll-owner-${viewport.width}`, `drawer-edit:scroll-owner:${viewport.width}`, normalizeProjectNumber(findScrollOwnerViolations(after.overlays)));
         await recordScreenshot(page, testInfo, `drawer-edit-${viewport.width}`);
 
         await page.keyboard.press("Escape");
