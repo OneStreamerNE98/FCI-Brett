@@ -32,6 +32,7 @@ const EXISTING_TARGET = "Raise: this family already used the 44px target law and
 const G = "app/globals.css\t";
 const A = "app/assistant/components/AssistantTaskReview.module.css\t";
 const R = "app/settings/components/WorkspaceDriveResourceActions.module.css\t";
+const P = "app/responsive-primitives.css\t";
 
 // This literal map is the reviewable phone-density contract. A new --control-* family
 // fails the census until its selector and an explicit rationale are added here.
@@ -135,6 +136,22 @@ const KEPT_BELOW_44_FAMILIES = new Map([
     "Keep: this legacy generic row is hidden on phones; visible live-message variants are raised explicitly.",
   ],
   [`${G}.search-shortcut`, "Keep: the keyboard shortcut is hidden at <=820px and has no phone target."],
+  [
+    `${P}.rp-action-group[data-density="dense"] .rp-action-group-inner > button`,
+    "Keep: DES-19 dense is an explicit opt-in desktop variant; the pointer:coarse query restores the 44px --target-min, so touch is never under-sized.",
+  ],
+  [
+    `${P}.rp-action-group[data-density="dense"] .rp-action-group-inner > a`,
+    "Keep: DES-19 dense is an explicit opt-in desktop variant; the pointer:coarse query restores the 44px --target-min, so touch is never under-sized.",
+  ],
+  [
+    `${P}.rp-modal-footer[data-density="dense"] .rp-modal-footer-inner > button`,
+    "Keep: DES-19 dense is an explicit opt-in desktop variant; the pointer:coarse query restores the 44px --target-min, so touch is never under-sized.",
+  ],
+  [
+    `${P}.rp-modal-footer[data-density="dense"] .rp-modal-footer-inner > a`,
+    "Keep: DES-19 dense is an explicit opt-in desktop variant; the pointer:coarse query restores the 44px --target-min, so touch is never under-sized.",
+  ],
 ]);
 
 function mediaRules(source, query) {
