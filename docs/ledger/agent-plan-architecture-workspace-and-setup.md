@@ -4155,7 +4155,7 @@ reason given; both golden constants byte-identical; `npm test`, `npm run test:e2
 **Effort:** large. **Cost:** $0. **Takes the FloorOpsApp slot after DES-14 releases it.**
 
 ### DES-15 · Record-page list views with sorting and search (medium-large, after DES-14)
-**Status:** In progress — `codex/des15-record-list-views`
+**Status:** In review — PR #358
 
 **Why:** owner request August 3, 2026, decision D2 approved the design-spec amendment the
 same day. Active leads render board-only; **no sorting exists anywhere in the app**; the
