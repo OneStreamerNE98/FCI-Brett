@@ -1,4 +1,5 @@
 import {
+  MAX_ASSISTANT_LABEL_ROWS,
   MAX_ASSISTANT_LABELS,
   normalizeAssistantLabelSlug,
 } from "../../domain/assistant-label-definition";
@@ -15,6 +16,7 @@ import {
 } from "../../domain/mail-item";
 import type {
   MailItemRepository,
+  MailItemReviewActivityLabelCount,
   MailItemUpsertResult,
 } from "../../ports/mail-item-repository";
 import {
@@ -68,6 +70,23 @@ function boundedId(value: unknown) {
     && Boolean(value.trim())
     && value.length <= 512
     && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function reviewActivityLabelCount(
+  row: Readonly<Record<string, unknown>>,
+): MailItemReviewActivityLabelCount {
+  const slug = normalizeAssistantLabelSlug(row.slug);
+  const acceptedCount = Number(row.accepted_count);
+  const dismissedCount = Number(row.dismissed_count);
+  if (
+    !Number.isSafeInteger(acceptedCount)
+    || acceptedCount < 0
+    || !Number.isSafeInteger(dismissedCount)
+    || dismissedCount < 0
+  ) {
+    throw new Error("D1 mail item review activity count was invalid");
+  }
+  return Object.freeze({ slug, acceptedCount, dismissedCount });
 }
 
 async function referenceExists(
@@ -166,6 +185,17 @@ function normalizedIntentSlugs(intentSlugs: readonly string[]) {
   return normalized;
 }
 
+function normalizedActivityLabelSlugs(labelSlugs: readonly string[]) {
+  if (!Array.isArray(labelSlugs) || labelSlugs.length > MAX_ASSISTANT_LABEL_ROWS) {
+    throw new TypeError("Mail item review activity label catalog is invalid");
+  }
+  const normalized = labelSlugs.map(normalizeAssistantLabelSlug);
+  if (new Set(normalized).size !== normalized.length) {
+    throw new TypeError("Mail item review activity labels must be unique");
+  }
+  return normalized;
+}
+
 export function createD1MailItemRepository(database: D1Database): MailItemRepository {
   return {
     async findById(id) {
@@ -218,6 +248,77 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
         items: result.results.map(normalizeStoredMailItem),
         totalCount,
       });
+    },
+
+    async listReviewActivity(connectionKey, limit) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const result = await database
+        .prepare(
+          "SELECT mail_items.*, COUNT(*) OVER () AS total_count FROM mail_items WHERE connection_key = ? AND status IN ('accepted', 'dismissed') ORDER BY updated_at DESC, id LIMIT ?",
+        )
+        .bind(normalizedConnectionKey, boundedLimit(limit))
+        .all<Record<string, unknown> & { total_count: unknown }>();
+      const totalCount = Number(result.results[0]?.total_count ?? 0);
+      if (!Number.isSafeInteger(totalCount) || totalCount < 0) {
+        throw new Error("D1 mail item review activity count was invalid");
+      }
+      return Object.freeze({
+        items: result.results.map(normalizeStoredMailItem),
+        totalCount,
+      });
+    },
+
+    async listReviewActivityLabelCounts(connectionKey, labelSlugs) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const normalizedSlugs = normalizedActivityLabelSlugs(labelSlugs);
+      if (normalizedSlugs.length === 0) return [];
+      const result = await database
+        .prepare(
+          `WITH requested_labels(slug) AS (
+  SELECT value
+  FROM json_each(?)
+  WHERE type = 'text'
+),
+attributed_outcomes AS (
+  SELECT id, accepted_intent AS slug, 1 AS accepted_count, 0 AS dismissed_count
+  FROM mail_items
+  WHERE connection_key = ?
+    AND status = 'accepted'
+    AND reviewed_by IS NOT NULL
+    AND reviewed_at IS NOT NULL
+    AND accepted_intent IN (SELECT slug FROM requested_labels)
+  UNION ALL
+  SELECT DISTINCT item.id, proposed.value AS slug, 0 AS accepted_count, 1 AS dismissed_count
+  FROM mail_items AS item
+  JOIN json_each(
+    CASE WHEN json_valid(item.analysis_payload) THEN item.analysis_payload ELSE '{}' END,
+    '$.intents'
+  ) AS proposed
+  WHERE item.connection_key = ?
+    AND item.status = 'dismissed'
+    AND item.reviewed_by IS NOT NULL
+    AND item.reviewed_at IS NOT NULL
+    AND json_type(
+      CASE WHEN json_valid(item.analysis_payload) THEN item.analysis_payload ELSE '{}' END,
+      '$.intents'
+    ) = 'array'
+    AND proposed.type = 'text'
+    AND proposed.value IN (SELECT slug FROM requested_labels)
+)
+SELECT slug,
+       SUM(accepted_count) AS accepted_count,
+       SUM(dismissed_count) AS dismissed_count
+FROM attributed_outcomes
+GROUP BY slug
+ORDER BY slug`,
+        )
+        .bind(
+          JSON.stringify(normalizedSlugs),
+          normalizedConnectionKey,
+          normalizedConnectionKey,
+        )
+        .all<Record<string, unknown>>();
+      return result.results.map(reviewActivityLabelCount);
     },
 
     async listRetryableAnalysisRows(
@@ -310,12 +411,56 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
     async dismissNeedsReview(id, connectionKey, updatedAt, reviewedBy, outcome = "dismissed", acceptedIntent = undefined) {
       if (!boundedId(id)) return false;
       if (outcome !== "accepted" && outcome !== "dismissed") return false;
+      const normalizedAcceptedIntent = acceptedIntent === undefined
+        ? null
+        : normalizeAssistantLabelSlug(acceptedIntent);
+      if (
+        (outcome === "accepted" && normalizedAcceptedIntent === null)
+        || (outcome === "dismissed" && normalizedAcceptedIntent !== null)
+      ) return false;
       const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
       const result = await database
         .prepare(
-          "UPDATE mail_items SET status = ?, reviewed_by = ?, reviewed_at = ?, accepted_intent = ?, attempted_label_definition_version = NULL, failure_attempts = 0, error_code = NULL, updated_at = ? WHERE id = ? AND connection_key = ? AND status = 'needs-review'",
+          `UPDATE mail_items
+SET status = ?,
+    reviewed_by = ?,
+    reviewed_at = ?,
+    accepted_intent = ?,
+    attempted_label_definition_version = NULL,
+    failure_attempts = 0,
+    error_code = NULL,
+    updated_at = ?
+WHERE id = ?
+  AND connection_key = ?
+  AND status = 'needs-review'
+  AND (
+    ? = 'dismissed'
+    OR EXISTS (
+      SELECT 1
+      FROM json_each(
+        CASE WHEN json_valid(analysis_payload) THEN analysis_payload ELSE '{}' END,
+        '$.intents'
+      ) AS proposed
+      WHERE json_type(
+          CASE WHEN json_valid(analysis_payload) THEN analysis_payload ELSE '{}' END,
+          '$.intents'
+        ) = 'array'
+        AND proposed.type = 'text'
+        AND proposed.value = ?
+    )
+  )`,
         )
-        .bind(outcome, reviewedBy, updatedAt, acceptedIntent ?? null, updatedAt, id, normalizedConnectionKey)
+        .bind(
+          outcome,
+          reviewedBy,
+          updatedAt,
+          normalizedAcceptedIntent,
+          updatedAt,
+          id,
+          normalizedConnectionKey,
+          outcome,
+          normalizedAcceptedIntent,
+        )
         .run();
       return Number(result.meta.changes ?? 0) === 1;
     },

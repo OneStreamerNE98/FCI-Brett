@@ -34,8 +34,8 @@ import {
 } from "../../domain/assistant-label-definition";
 import {
   cachedGetJson,
-  invalidateCachedGet,
   invalidateGmailFilingReadCaches,
+  invalidateInboxAnalysisReadCaches,
   invalidateTaskReadCaches,
   invalidateWorkspaceOperationsReadCache,
   isTerminalCachedGetError,
@@ -834,7 +834,7 @@ export function InboxView({
           setAnalysisCoverage(coverage);
           setAnalysisFailed(false);
         }
-        invalidateCachedGet("/api/v1/inbox-analysis", { notify: false });
+        invalidateInboxAnalysisReadCaches({ notify: false });
         return coverage;
       } catch {
         if (analysisMountedRef.current) {
@@ -1051,7 +1051,7 @@ export function InboxView({
         );
       }
       const retriedCount = Number(body.retriedCount);
-      invalidateCachedGet("/api/v1/inbox-analysis", { notify: false });
+      invalidateInboxAnalysisReadCaches({ notify: false });
       if (retriedCount === 0) {
         await loadReviewQueue();
         notify(
@@ -1133,7 +1133,7 @@ export function InboxView({
       if (!response.ok) {
         throw new Error(body.error ?? "The message could not be marked reviewed.");
       }
-      invalidateCachedGet("/api/v1/inbox-analysis", { notify: false });
+      invalidateInboxAnalysisReadCaches({ notify: false });
       if (requestId !== reviewQueueRequestIdRef.current) return false;
       removeReviewRow(row);
       setLeadRetirementErrorIds((current) => {
@@ -1316,7 +1316,7 @@ export function InboxView({
       ) {
         throw new Error(data.error ?? "The task could not be created.");
       }
-      invalidateCachedGet("/api/v1/inbox-analysis", { notify: false });
+      invalidateInboxAnalysisReadCaches({ notify: false });
       invalidateTaskReadCaches();
       setTaskProposal(null);
       removeReviewRow(proposal.row);

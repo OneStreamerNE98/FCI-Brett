@@ -549,7 +549,9 @@ test("mutation invalidations refresh dependent projections and explicit retries 
   assert.match(activity, /invalidateCachedGetPrefix\("\/api\/v1\/admin\/audit\?", \{ notify: false \}\)/u);
 
   assert.match(cache, /function invalidateWorkspaceOperationsReadCache\(\) \{\s*invalidateCachedGet\("\/api\/v1\/integrations\/google\/operations"\);\s*\}/u);
-  assert.match(cache, /function invalidateGmailFilingReadCaches\([^)]+\) \{\s*invalidateCachedGet\("\/api\/v1\/dashboard"\);\s*invalidateCachedGet\("\/api\/v1\/inbox-analysis"\);\s*if \(options\.includeOperations !== false\) invalidateWorkspaceOperationsReadCache\(\);\s*\}/u);
+  assert.match(cache, /function invalidateInboxAnalysisReadCaches\([^)]+\) \{\s*invalidateCachedGet\("\/api\/v1\/inbox-analysis", options\);\s*invalidateCachedGet\("\/api\/v1\/inbox-analysis\/activity", options\);\s*\}/u);
+  assert.match(cache, /function invalidateGmailFilingReadCaches\([^)]+\) \{\s*invalidateCachedGet\("\/api\/v1\/dashboard"\);\s*invalidateInboxAnalysisReadCaches\(\);\s*if \(options\.includeOperations !== false\) invalidateWorkspaceOperationsReadCache\(\);\s*\}/u);
+  assert.equal((inbox.match(/invalidateInboxAnalysisReadCaches\(\{ notify: false \}\)/gu) ?? []).length, 4);
   assert.equal((`${inbox}\n${google}`.match(/invalidateGmailFilingReadCaches\(\{ includeOperations: false \}\)/gu) ?? []).length, 2);
 
   const simulationResetInvalidations = cache.slice(
@@ -558,11 +560,11 @@ test("mutation invalidations refresh dependent projections and explicit retries 
   );
   for (const endpoint of [
     "/api/v1/dashboard",
-    "/api/v1/inbox-analysis",
     "/api/v1/integrations/google/forms/leads",
     "/api/v1/admin/audit",
     "/api/v1/integrations/google/setup/blueprint",
   ]) assert.match(simulationResetInvalidations, new RegExp(endpoint.replaceAll("/", "\\/"), "u"));
+  assert.match(simulationResetInvalidations, /invalidateInboxAnalysisReadCaches\(\)/u);
   assert.match(simulationResetInvalidations, /if \(options\.includeOperations !== false\) invalidateWorkspaceOperationsReadCache\(\)/u);
 
   const tenantResetInvalidations = cache.slice(cache.indexOf("export function invalidateWorkspaceTenantResetReadCaches"));

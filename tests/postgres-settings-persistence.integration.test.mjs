@@ -380,6 +380,52 @@ test(
         false,
       );
 
+      const attributedReview = {
+        ...item,
+        id: "mail-attributed-review",
+        gmailMessageId: "gmail-attributed-review",
+        clientId: null,
+        suggestedProjectId: null,
+        approvedProjectId: null,
+        status: "needs-review",
+        analysisPayload: { intents: ["lead"] },
+        matchReason: "A new sales opportunity.",
+        acceptedIntent: null,
+        reviewedAt: null,
+        reviewedBy: null,
+        createdAt: NOW + 8_000,
+        updatedAt: NOW + 8_000,
+      };
+      assert.deepEqual(await mailItems.upsert(attributedReview), { outcome: "saved" });
+      assert.equal(await mailItems.dismissNeedsReview(
+        attributedReview.id,
+        "google-workspace",
+        NOW + 9_000,
+        "reviewer@example.test",
+        "accepted",
+        "lead",
+      ), true);
+      assert.deepEqual(await mailItems.findById(attributedReview.id), {
+        ...attributedReview,
+        status: "accepted",
+        acceptedIntent: "lead",
+        reviewedAt: NOW + 9_000,
+        reviewedBy: "reviewer@example.test",
+        updatedAt: NOW + 9_000,
+      });
+      const reviewActivity = await mailItems.listReviewActivity(
+        "google-workspace",
+        500,
+      );
+      assert.equal(reviewActivity.items.some(({ id }) => id === attributedReview.id), true);
+      assert.deepEqual(
+        await mailItems.listReviewActivityLabelCounts(
+          "google-workspace",
+          ["lead", "schedule"],
+        ),
+        [{ slug: "lead", acceptedCount: 1, dismissedCount: 0 }],
+      );
+
       const missingReferenceCases = [
         {
           id: "mail-orphan-client",
