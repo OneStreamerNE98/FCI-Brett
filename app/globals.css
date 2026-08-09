@@ -216,6 +216,10 @@ button { color:inherit; }
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:0ms!important}.topbar{transition:none!important}}
 
+/* Shared utilities — keep these minimal. */
+@keyframes icon-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.icon-spin{animation:icon-spin .8s linear infinite}
+
 /* Small-organization People & Access administration. */
 .sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
 .main-nav>a{border:0;background:transparent;color:var(--color-ink-muted);width:100%;min-height:var(--control-standard);padding:0 var(--space-3);display:flex;align-items:center;gap:var(--space-3);border-radius:var(--radius-control);cursor:pointer;text-align:left;margin:1px 0;text-decoration:none}.main-nav>a:hover{background:var(--color-line-soft);color:var(--ink)}.main-nav>a.active{color:var(--ink);background:var(--color-line);box-shadow:inset 3px 0 var(--stone)}.main-nav>a .nav-label{flex:1;font-size:var(--font-size-body);font-weight:var(--font-weight-semibold)}.main-nav>a>.feature-state{font-size:var(--font-size-caption);padding:var(--space-1) var(--space-1);min-height:20px}.sidebar.collapsed .main-nav>a span{display:none}.sidebar.collapsed .main-nav>a{justify-content:center;min-height:var(--target-min);padding:0;margin:3px 0}

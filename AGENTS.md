@@ -34,11 +34,20 @@ archived August 2026; read it for history, not for current status.)
 ## Required workflow
 
 1. Start from an up-to-date, clean `main` branch.
-2. Create an agent-prefixed branch: `codex/<short-feature-name>` for Codex, `claude/<short-feature-name>` for Claude, `kimi/<short-feature-name>` for Kimi.
+2. Create an agent-prefixed branch: `codex/<short-feature-name>` for Codex, `claude/<short-feature-name>` for Claude, `kimi/<short-feature-name>` for Kimi, `deepseek/<short-feature-name>` for DeepSeek.
 3. Keep changes scoped and preserve unrelated user work.
 4. Run the relevant tests during development and run `npm test` before handoff.
 5. Open a pull request with a concise summary, verification evidence, and data/security impact note.
 6. Do not deploy, change hosted configuration, migrate data, or merge to production without owner approval.
+- **Parallelize what is independent, and say so explicitly (owner directive, August 9,
+  2026).** When a dispatch names multiple genuinely independent parts — separate files to
+  check, separate suites to run, separate lenses on one PR — the dispatch says so and the
+  receiving agent runs them concurrently rather than one after another: multiple tool calls
+  in one turn, or its own subagents where it has them. **This does not apply uniformly.**
+  DeepSeek's Anthropic-compatible endpoint does not support parallel tool calls (verified
+  against DeepSeek's own API documentation, August 8, 2026) — a dispatch to DeepSeek states
+  its independent parts as an explicit ordered sequence instead of a parallel instruction
+  that endpoint cannot honor.
 - **Verification is a CI run id, not a number you typed (the verification block,
   recorded August 5, 2026, after FIX-20 reported four failures on a `main` whose own
   run had one).** This is what item 5's "verification evidence" means; the Handoff
@@ -212,9 +221,13 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
 - **DeepSeek — implementer (added August 8, 2026):** a fourth build agent under every
   implementer law that governs Codex — packets exactly as written, one packet per draft
   PR, `deepseek/*` branches, its own clone, the post-merge ledger flip duty, and the
-  prohibition on editing the criteria it is graded against. No senior or advisory track
-  (that structure is Kimi-specific); DeepSeek claims only packets the orchestrator's
-  dispatch names for it, same as Codex. Standing communication channel:
+  prohibition on editing the criteria it is graded against. No senior-implementer track
+  (that gate is Kimi-specific and untested for DeepSeek). It IS eligible for the
+  cross-agent first-level review below, dry-run first — the "Kimi-specific" line this
+  entry carried before August 9, 2026 was corrected the same day the review track was
+  generalized; see that law rather than trust an older memory of this sentence.
+  DeepSeek claims only packets the orchestrator's dispatch names for it, same as Codex.
+  Standing communication channel:
   [GitHub issue #345](https://github.com/OneStreamerNE98/FCI-Brett/issues/345) — the
   orchestrator posts instructions there as `@DeepSeek`-tagged comments for anything not
   tied to one open PR; PR-specific feedback stays on that PR's thread.
@@ -253,6 +266,49 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   dispatch (relayed by the owner) names for it — the branch prefix on the claim line is
   the assignment record. Precedence everywhere: owner > orchestrator verdict > CI >
   advisory comments.
+- **Cross-agent first-level review (owner directive, August 9, 2026: "if a packet needs
+  2 levels of review... send the packet to another agent for 1st level of review before
+  your final review").** Generalizes the mechanism above from Kimi-only to all three
+  implementers. The build layer now spans four model families (Claude, OpenAI/Codex,
+  Moonshot/Kimi, DeepSeek); the review layer being entirely Claude except for one
+  reviewer was always a bottleneck of headcount, not of who was qualified — this makes
+  every implementer eligible to be that second family on a packet it did not build.
+  - **When it applies.** Any packet that already qualifies as large or safety-critical
+    under the standing review-tiering rule (a database migration, shared/cache
+    infrastructure, an authorization boundary, or a large diff) gets a first-level
+    review from a different implementer BEFORE the orchestrator's final verdict. Medium
+    and small packets are unchanged — the orchestrator reviews those directly, as
+    tiering already specifies, to keep the added cost where the risk actually is.
+  - **Who reviews whom.** Never the packet's own builder. Prefer a different model
+    family than the builder's, for the same reason Kimi's track exists: an independent
+    reviewer catches what a same-family fleet systematically misses. **DeepSeek's
+    assignments are scoped to what its Anthropic-compatible endpoint can actually do**
+    (verified August 8, 2026): no packet whose Accept depends on visual/screenshot
+    evidence (responsive-layout work, golden-hash pages) and nothing requiring MCP
+    tool use — assign those to Codex or Kimi instead.
+  - **Onboarding.** Any agent without an established reviewer track record starts
+    dry-run, exactly as Kimi did: findings go to the orchestrator privately and are
+    scored for precision before the channel goes live on PR threads. As of August 9,
+    2026 that is Codex and DeepSeek; Kimi already graduated past its one scored
+    dry-run.
+  - **Mechanism.** The orchestrator posts the assignment on the reviewing agent's own
+    inbox issue — Kimi: [#337](https://github.com/OneStreamerNE98/FCI-Brett/issues/337);
+    DeepSeek: [#345](https://github.com/OneStreamerNE98/FCI-Brett/issues/345); Codex:
+    [#350](https://github.com/OneStreamerNE98/FCI-Brett/issues/350) — naming the PR.
+    Live findings post on that PR's thread, prefixed with the reviewer's own literal
+    token (`KIMI-ADVISORY:`, `CODEX-ADVISORY:`, `DEEPSEEK-ADVISORY:`) so a finding's
+    origin is identifiable from the comment alone, matching the reviewer's git identity
+    and inbox channel rather than a claim anyone could type.
+  - **Every boundary already stated for Kimi's advisory track applies to every
+    reviewer under this law without restatement**: comment, never fix; non-blocking —
+    no step of any merge sequence waits on or names a reviewer, so the orchestrator
+    seeks the first-level pass before its own but does not stall the pipeline
+    indefinitely if it does not arrive; findings count only if posted before the
+    orchestrator's verdict; a reviewer's findings about another agent's work are never
+    an input to packet routing; a reviewer never pushes to another agent's branch and
+    never opens a PR touching files under another agent's open claim; a reviewer never
+    merges anything. Precedence unchanged: owner > orchestrator verdict > CI > advisory
+    comments from any agent.
 - **Owner (Jason) — merge authority and gates:** merges PRs (may delegate a named PR),
   and holds every owner gate: new scopes, API keys, billing, live resources,
   deployment, second user, real data.
