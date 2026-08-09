@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 49 not started · 2 in progress · 2 blocked · 131 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 48 not started · 3 in progress · 2 blocked · 131 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -203,5 +203,5 @@ row holds the full text. Packets without a status line are not started.
 | WS-17 | Google credential severance on employee disable/offboarding (small-medium) | Complete — PR #241, July 30, 2026. | agent-plan |
 | WS-18 | Decouple filed-email evidence reads from the connection key (small-medium) | Complete — PR #246, July 30, 2026. | agent-plan |
 | WS-19 | Tenant cutover — make a Workspace switch survivable (medium) | Complete — PR #288, August 4, 2026. | agent-plan |
-| WS-20 | Attach additional shared mailboxes to the workspace (medium-large) | — | agent-plan |
+| WS-20 | Attach additional shared mailboxes to the workspace (medium-large) | In progress — `codex/ws20-shared-mailboxes` | agent-plan |
 | WS-21 | Per-person shared-inbox access grants (small-medium, after WS-20) | — | agent-plan |

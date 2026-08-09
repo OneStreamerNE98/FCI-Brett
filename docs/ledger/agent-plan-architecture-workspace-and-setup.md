@@ -1583,6 +1583,7 @@ afterwards provisions cleanly; the settings guide states the evidence-loss conse
 **Effort:** medium. **Cost:** $0.
 
 ### WS-20 · Attach additional shared mailboxes to the workspace (medium-large)
+**Status:** In progress — `codex/ws20-shared-mailboxes`
 **Why:** owner request, August 3, 2026 — staff should be able to work shared inboxes
 (`ops@`, `info@`, `sales@`) rather than the single connection mailbox, and eventually see
 their own mail. **Those are two different features with very different costs, and this packet
