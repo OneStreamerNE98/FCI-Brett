@@ -1174,6 +1174,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   }
 
   function openProject(project: Project, returnFocusTarget: HTMLElement | null = null) {
+    revealMobileTopbar();
     projectDrawerReturnFocusRef.current = returnFocusTarget;
     setSelectedProject(project);
     setLeadOpen(false);
