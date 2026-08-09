@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 43 not started · 3 in progress · 1 in review · 2 blocked · 135 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 42 not started · 3 in progress · 2 in review · 2 blocked · 135 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -138,7 +138,7 @@ row holds the full text. Packets without a status line are not started.
 | NFIX-21 | Worker-isolate rate limiter is a per-isolate limit (small; hardening) | — | agent-plan |
 | NFIX-22 | Decompose InboxView and centralize inbox contracts (medium-large) | — | agent-plan |
 | NFIX-23 | Decompose GoogleWorkspacePanel and centralize Workspace contracts (medium-large, after NFIX-22) | — | agent-plan |
-| NFIX-24 | FloorOps shell state ownership and major-view code splitting (large; FloorOpsApp queue) | — | agent-plan |
+| NFIX-24 | FloorOps shell state ownership and major-view code splitting (large; FloorOpsApp queue) | In review — PR #357 | agent-plan |
 | NFIX-25 | Bound the filing-rule catalog on both engines (small-medium) | Blocked — awaiting owner-approved filing-rule catalog limit | agent-plan |
 | SET-01 | Extract the eight Settings panels into `app/settings/components/` (large, complete in source in PR #35; not deployed) — DO FIRST in the SET workstream | Complete — PR #35, July 19, 2026. | agent-plan |
 | SET-02 | Expose `isAdmin`; render admin-only controls honestly (small, after SET-01; merged in PR #37, not deployed) | Complete — PR #37, July 19, 2026. | agent-plan |

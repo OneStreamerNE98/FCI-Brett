@@ -538,8 +538,9 @@ test("project PATCH auth and origin failures are no-store", async () => {
 });
 
 test("project edit source keeps legacy operations isolated and reloads D1 creation before editing", async () => {
-  const [app, projectModals, collectionRoute, itemRoute, operations, creation, recordOperation] = await Promise.all([
+  const [app, directoryData, projectModals, collectionRoute, itemRoute, operations, creation, recordOperation] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
+    read("app/application/use-directory-data.ts"),
     read("app/projects/components/ProjectModals.tsx"),
     read("app/api/v1/projects/route.ts"),
     read("app/api/v1/projects/[projectId]/route.ts"),
@@ -556,7 +557,7 @@ test("project edit source keeps legacy operations isolated and reloads D1 creati
       < addProject.indexOf("setProjectModal(false);"),
     "D1 creation must refresh the collection GET before the versioned edit surface can open",
   );
-  assert.match(app, /version: normalizeRecordVersion\(project\.version\) \?\? undefined/u);
+  assert.match(directoryData, /version: normalizeRecordVersion\(project\.version\) \?\? undefined/u);
   assert.match(projectModals, /Re-apply changes/u);
   assert.match(projectModals, /Saved value: \{displayValue\}/u);
   assert.match(app, /throw new ProjectEditConflictError/u);

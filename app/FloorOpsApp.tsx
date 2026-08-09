@@ -1,6 +1,7 @@
 "use client";
 
 import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -10,19 +11,14 @@ import {
   LogOut, Search, Settings, ShieldCheck, Sparkles, Users, X, Zap,
 } from "lucide-react";
 import type { AppEnvironment } from "./lib/app-environment";
-import { AssistantView } from "./assistant/components/AssistantView";
 import { ClientDrawer } from "./clients/components/ClientDrawer";
 import { ClientModal, ClientEditConflictError, ContactEditConflictError } from "./clients/components/ClientModals";
-import { ClientsView } from "./clients/components/ClientsView";
 import { LeadDrawer } from "./leads/components/LeadDrawer";
 import { LeadEditConflictError, LeadModal } from "./leads/components/LeadModal";
-import { LeadsView } from "./leads/components/LeadsView";
 import { ProjectDrawer } from "./projects/components/ProjectDrawer";
 import { NewProjectModal, ProjectEditConflictError, optionalFlooringCategory, projectManagerLabel } from "./projects/components/ProjectModals";
-import { ProjectsView } from "./projects/components/ProjectsView";
-import { ScheduleView } from "./schedule/components/ScheduleView";
-import { localDayRolloverDelay } from "./application/today-project-meetings";
-import { InboxView } from "./inbox/components/InboxView";
+import { invalidateDirectoryGets, mapLeadRecord, optionalProjectTimestamp, optionalRecordNumber, useDirectoryData } from "./application/use-directory-data";
+import { type CurrentUserSettingsPayload, useCurrentUserSettings } from "./application/use-current-user-settings";
 import type { InboxLeadProposal } from "./inbox/components/InboxView";
 import { DEFAULT_FILING_RULES, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
@@ -39,20 +35,12 @@ import { normalizeJobSiteLocation, type JobSiteMapsRuntimeConfig } from "./featu
 import {
   cachedGetJson,
   invalidateCachedGet,
-  isTerminalCachedGetError,
 } from "./lib/client-get-cache";
-import {
-  useCachedGetSubscription,
-} from "./lib/client-get-hooks";
 import { clientIndustryReportState } from "./lib/client-industries";
 import {
-  defaultPageLayouts,
   isDefaultPageLayout,
-  normalizePageLayoutsForRead,
   resolveArrangedSpans,
   type PageLayout,
-  type PageLayoutPage,
-  type PageLayouts,
 } from "./lib/page-layouts";
 import type { SheetMirrorStatus } from "./lib/sheet-mirror-status";
 import {
@@ -115,11 +103,6 @@ type LeadModalRequest = Readonly<{
   afterCreate?: () => Promise<void>;
 }>;
 type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: string; title: string; subtitle: string; clientId?: string; projectId?: string };
-type CurrentUserSettingsPayload = {
-  preferences?: { displayTimezone?: unknown; pageLayouts?: unknown };
-  isAdmin?: unknown;
-};
-
 const projectLifecycleOrder = [...PROJECT_LIFECYCLE_FILTERS];
 const PIPELINE_ACTIONABLE_COLUMNS = ["Client / opportunity", "Stage", "Est. value", "Next action"] as const;
 const MOBILE_TOPBAR_SCROLL_THRESHOLD = 8;
@@ -148,99 +131,51 @@ const managementNavItems: { label: OperationsView; icon: typeof LayoutDashboard 
   { label: "Settings", icon: Settings },
 ];
 
-function optionalRecordNumber(value: unknown) {
-  const number = value === null || value === undefined || value === "" ? Number.NaN : Number(value);
-  return Number.isFinite(number) ? number : null;
-}
+const loadAssistantView = () => import("./assistant/components/AssistantView");
+const loadClientsView = () => import("./clients/components/ClientsView");
+const loadInboxView = () => import("./inbox/components/InboxView");
+const loadLeadsView = () => import("./leads/components/LeadsView");
+const loadProjectsView = () => import("./projects/components/ProjectsView");
+const loadScheduleView = () => import("./schedule/components/ScheduleView");
 
-function optionalRecordText(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
+type MajorViewDynamicLoadingProps = Readonly<{
+  error?: Error | null;
+  isLoading?: boolean;
+  retry?: () => void;
+}>;
 
-function mapLeadRecord(record: Record<string, unknown>): Lead {
-  const estimatedValue = Number(record.estimatedValue ?? 0);
-  const company = String(record.company ?? "");
-  return {
-    id: String(record.id),
-    number: String(record.leadNumber ?? "Lead"),
-    company,
-    contact: String(record.contactName ?? ""),
-    contactEmail: optionalRecordText(record.contactEmail),
-    contactPhone: optionalRecordText(record.contactPhone),
-    project: String(record.projectName ?? ""),
-    value: money(estimatedValue),
-    estimatedValue,
-    stage: String(record.stage ?? ""),
-    source: String(record.source ?? ""),
-    next: String(record.nextAction ?? ""),
-    nextActionAt: optionalRecordText(record.nextActionAt),
-    ownerEmail: optionalRecordText(record.ownerEmail),
-    site: String(record.site ?? ""),
-    status: String(record.status ?? "active"),
-    initials: recordInitials(company),
-    color: "sage",
-    createdAt: optionalRecordNumber(record.createdAt),
-    updatedAt: optionalRecordNumber(record.updatedAt),
-    version: normalizeRecordVersion(record.version) ?? undefined,
+function createMajorViewLoading(view: OperationsView) {
+  return function MajorViewDynamicLoading({ error, isLoading, retry }: MajorViewDynamicLoadingProps) {
+    return <MajorViewLoading view={view} error={error} isLoading={isLoading} retry={retry} />;
   };
 }
 
-function mapClientRecord(record: Record<string, unknown>): Client {
-  const name = String(record.name ?? "");
-  const industryRaw = optionalRecordText(record.industry);
-  const contactId = optionalRecordText(record.primary_contact_id);
-  return {
-    id: String(record.id),
-    code: String(record.client_code),
-    name,
-    contact: String(record.primary_contact_name ?? "Primary contact pending"),
-    contactId: contactId ?? undefined,
-    contactPhone: optionalRecordText(record.primary_contact_phone),
-    contactRole: String(record.primary_contact_role ?? "Primary contact"),
-    contactVersion: normalizeRecordVersion(record.primary_contact_version) ?? undefined,
-    email: String(record.primary_contact_email ?? ""),
-    // "Commercial", not "Unspecified": the row chip's default is an owner-approved
-    // DES-08a1 decision and is pinned by an e2e gate ("UNSPEC-001 · Commercial").
-    // Only the Reports bucket says Unspecified, and it reads industryRaw, which
-    // stays null — so the split survives this extraction.
-    industry: industryRaw ?? "Commercial",
-    industryRaw,
-    status: displayStatus(record.status, "Active"),
-    initials: recordInitials(name),
-    color: "sage",
-    googleStatus: record.drive_folder_id ? "Ready" : "Setup pending",
-    jobSite: normalizeJobSiteLocation({
-      address: record.site_address ?? record.address,
-      latitude: record.latitude,
-      longitude: record.longitude,
-    }),
-    version: normalizeRecordVersion(record.version) ?? undefined,
-    driveFolderId: record.drive_folder_id ? String(record.drive_folder_id) : undefined,
-    driveUrl: record.drive_url ? String(record.drive_url) : undefined,
-  };
+function retryMajorViewLoad(retry?: () => void) {
+  retry?.();
+  window.location.reload();
 }
 
-function optionalProjectTimestamp(value: unknown) {
-  const timestamp = optionalRecordNumber(value);
-  return timestamp !== null && Number.isSafeInteger(timestamp) && timestamp >= 0 && !Number.isNaN(new Date(timestamp).getTime()) ? timestamp : null;
+const LazyAssistantView = dynamic(() => loadAssistantView().then((module) => module.AssistantView), { ssr: false, loading: createMajorViewLoading("AI Assistant") });
+const LazyClientsView = dynamic(() => loadClientsView().then((module) => module.ClientsView), { ssr: false, loading: createMajorViewLoading("Clients") });
+const LazyInboxView = dynamic(() => loadInboxView().then((module) => module.InboxView), { ssr: false, loading: createMajorViewLoading("Inbox") });
+const LazyLeadsView = dynamic(() => loadLeadsView().then((module) => module.LeadsView), { ssr: false, loading: createMajorViewLoading("Leads") });
+const LazyProjectsView = dynamic(() => loadProjectsView().then((module) => module.ProjectsView), { ssr: false, loading: createMajorViewLoading("Projects") });
+const LazyScheduleView = dynamic(() => loadScheduleView().then((module) => module.ScheduleView), { ssr: false, loading: createMajorViewLoading("Schedule") });
+
+function preloadMajorView(view: OperationsView) {
+  const preload = view === "AI Assistant" ? loadAssistantView
+    : view === "Clients" ? loadClientsView
+      : view === "Inbox" ? loadInboxView
+        : view === "Leads" ? loadLeadsView
+          : view === "Projects" ? loadProjectsView
+            : view === "Schedule" ? loadScheduleView
+              : null;
+  if (preload) void preload().catch(() => undefined);
 }
 
 function projectLifecycleFilter(value: string): ProjectLifecycleFilter | null {
   const normalizedStatus = value.toLowerCase();
   return PROJECT_LIFECYCLE_FILTERS.find((status) => status === normalizedStatus) ?? null;
-}
-
-const DIRECTORY_GET_URLS = [
-  "/api/v1/filing-rules",
-  "/api/v1/integrations/google/sheets/status",
-  "/api/v1/leads",
-  "/api/v1/clients",
-  "/api/v1/projects",
-  "/api/v1/dashboard",
-] as const;
-
-function invalidateDirectoryGets() {
-  for (const url of DIRECTORY_GET_URLS) invalidateCachedGet(url);
 }
 
 export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, userEmail, accessLabel, signOutHref }: { initialView: OperationsView; environment: AppEnvironment; jobSiteMaps: JobSiteMapsRuntimeConfig; userName: string; userEmail: string; accessLabel: "Admin" | "Office"; signOutHref: string }) {
@@ -265,43 +200,43 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [projectModal, setProjectModal] = useState(false);
   const [projectModalClientId, setProjectModalClientId] = useState<string | null>(null);
   const [ruleModal, setRuleModal] = useState(false);
-  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [leadOpen, setLeadOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [clientOpen, setClientOpen] = useState(false);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [projectItems, setProjectItems] = useState<Project[]>([]);
-  const [filingRules, setFilingRules] = useState<FilingRuleDraft[]>([]);
-  const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
-  const [liveDataState, setLiveDataState] = useState<LiveDataState>("loading");
-  const [liveDataError, setLiveDataError] = useState("");
+  const closeRecordOverlays = useCallback(() => {
+    setLeadOpen(false);
+    setClientOpen(false);
+    setProjectOpen(false);
+  }, []);
   const { notifications, notify, dismissNotification } = useNotificationQueue();
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<WorkspaceSearchResult[]>([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
   const [searching, setSearching] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [sheetMirror, setSheetMirror] = useState<SheetMirrorStatus | null>(null);
-  const [sheetSyncing, setSheetSyncing] = useState(false);
-  const [displayTimezone, setDisplayTimezone] = useState("America/New_York");
   // The server-rendered access label and /settings/me both originate from the same
   // office identity policy but arrive over different transports. Seed from the
   // server prop for the first render, then let the authenticated settings response
   // drive every shell and content gate; an unavailable response fails closed in UI.
   // accessLabel remains server-owned display metadata, never an authorization gate.
-  const [isAdmin, setIsAdmin] = useState(accessLabel === "Admin");
-  const [pageLayouts, setPageLayouts] = useState<PageLayouts>(() => defaultPageLayouts(isAdmin));
-  const [pageLayoutsReady, setPageLayoutsReady] = useState(false);
-  const [pageLayoutsError, setPageLayoutsError] = useState("");
-  const pageLayoutsLoadIdRef = useRef(0);
-  const directoryLoadIdRef = useRef(0);
-  const directoryVisibleLoadsInFlightRef = useRef(0);
-  const dashboardRefreshLoadIdRef = useRef(0);
-  const dashboardAppliedLoadIdRef = useRef(0);
-  const dashboardTimezoneRef = useRef(displayTimezone);
+  const {
+    displayTimezone,
+    isAdmin,
+    pageLayouts,
+    pageLayoutsReady,
+    pageLayoutsError,
+    reconcileCurrentUserSettings,
+    retryPageLayouts,
+    savePageLayout,
+    setDisplayTimezone,
+  } = useCurrentUserSettings(accessLabel === "Admin");
+  const {
+    leads, clients, projectItems, filingRules, dashboard, liveDataState, liveDataError,
+    sheetMirror, sheetSyncing, selectedLeadId, selectedProject, selectedClient,
+    refreshDashboardSnapshot, refreshDirectoryData,
+    setClients, setFilingRules, setLeads, setProjectItems, setSheetMirror, setSheetSyncing,
+    setSelectedLeadId, setSelectedProject, setSelectedClient,
+  } = useDirectoryData({ displayTimezone, userEmail, userName, onTerminalFailure: closeRecordOverlays });
   const topbarRef = useRef<HTMLElement>(null);
   const topbarHiddenRef = useRef(false);
   const topbarLastScrollYRef = useRef(0);
@@ -328,23 +263,6 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     setTopbarHidden(false);
   }, []);
 
-  const reconcileCurrentUserSettings = useCallback((data: CurrentUserSettingsPayload) => {
-    const nextIsAdmin = data?.isAdmin === true;
-    const timezone = data?.preferences?.displayTimezone;
-    if (typeof timezone === "string") setDisplayTimezone(timezone);
-    setIsAdmin(nextIsAdmin);
-    setPageLayouts(normalizePageLayoutsForRead(data?.preferences?.pageLayouts, nextIsAdmin));
-    setPageLayoutsReady(true);
-    setPageLayoutsError("");
-  }, []);
-
-  const failClosedCurrentUserSettings = useCallback(() => {
-    setIsAdmin(false);
-    setPageLayouts((current) => normalizePageLayoutsForRead(current, false));
-    setPageLayoutsReady(false);
-    setPageLayoutsError("Your saved layout could not be loaded. Retry before editing.");
-  }, []);
-
   useEffect(() => {
     // The Workspace panel consumes its one-time OAuth result before normal
     // route canonicalization so these two URL updates cannot race on mount.
@@ -359,201 +277,6 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     if (view !== "Settings" || isAdmin || settingsArea === "My settings") return;
     router.replace(operationsHref("Settings", { settingsSection: "My settings" }), { scroll: false });
   }, [isAdmin, router, settingsArea, view]);
-
-  const refreshDirectoryData = useCallback((silent = false, force = false) => {
-    if (silent && directoryVisibleLoadsInFlightRef.current > 0) return Promise.resolve();
-    if (!silent) directoryVisibleLoadsInFlightRef.current += 1;
-    const directoryLoadId = ++directoryLoadIdRef.current;
-    const dashboardLoadId = ++dashboardRefreshLoadIdRef.current;
-    const getJson = (path: string) => cachedGetJson<Record<string, unknown>>(path, { force });
-    const optionalRequests = Promise.allSettled([
-      getJson("/api/v1/filing-rules"),
-      getJson("/api/v1/integrations/google/sheets/status"),
-    ]);
-    const directoryRequests = Promise.all([
-      getJson("/api/v1/leads"),
-      getJson("/api/v1/clients"),
-      getJson("/api/v1/projects"),
-      getJson("/api/v1/dashboard"),
-    ]);
-    // Requests start synchronously; loading state moves to a microtask so the
-    // mount effect does not cause a cascading render before I/O begins.
-    if (!silent) void Promise.resolve().then(() => {
-      if (directoryLoadId !== directoryLoadIdRef.current) return;
-      setLiveDataState("loading");
-      setLiveDataError("");
-    });
-    return directoryRequests.then(([leadData, clientData, projectData, dashboardData]) => {
-      if (directoryLoadId !== directoryLoadIdRef.current) return;
-      const leadRows = Array.isArray(leadData.leads) ? leadData.leads as Record<string, unknown>[] : [];
-      const clientRows = Array.isArray(clientData.clients) ? clientData.clients as Record<string, unknown>[] : [];
-      const projectRows = Array.isArray(projectData.projects) ? projectData.projects as Record<string, unknown>[] : [];
-      const nextLeads = leadRows.map(mapLeadRecord);
-      const nextClients = clientRows.map(mapClientRecord);
-      const nextProjects = projectRows.map((project) => {
-        const managerId = typeof project.project_manager_id === "string" && project.project_manager_id.trim()
-          ? project.project_manager_id.trim().toLowerCase()
-          : null;
-        const estimatedValue = optionalRecordNumber(project.estimated_value);
-        const squareFeet = optionalRecordNumber(project.square_feet);
-        const contractValue = optionalRecordNumber(project.contract_value);
-        const installationStartedAt = optionalProjectTimestamp(project.installation_started_at);
-        const installationCompletedAt = optionalProjectTimestamp(project.installation_completed_at);
-        const callbackNote = typeof project.callback_note === "string" && project.callback_note.trim() ? project.callback_note.trim() : null;
-        const jobSite = normalizeJobSiteLocation({ address: project.site, latitude: project.latitude, longitude: project.longitude });
-        return { id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory: optionalFlooringCategory(project.flooring_category), squareFeet: squareFeet !== null && Number.isSafeInteger(squareFeet) && squareFeet > 0 ? squareFeet : null, contractValue: contractValue !== null && Number.isSafeInteger(contractValue) && contractValue >= 0 ? contractValue : null, segment: resolveProjectSegment(project.segment), installationStartedAt, installationCompletedAt, hadCallback: project.had_callback === true || project.had_callback === 1, callbackNote, site: jobSite?.address ?? "Site pending", jobSite, managerId, lead: projectManagerLabel(managerId, userEmail, userName), date: "Not scheduled", accent: "sage", createdAt: optionalRecordNumber(project.created_at), updatedAt: optionalRecordNumber(project.updated_at), version: normalizeRecordVersion(project.version) ?? undefined, driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined };
-      });
-      setLeads(nextLeads);
-      setClients(nextClients);
-      setProjectItems(nextProjects);
-      setSelectedLeadId((current) => current && nextLeads.some(({ id }) => id === current)
-        ? current
-        : null);
-      setSelectedClient((current) => current
-        ? nextClients.find(({ id }) => id === current.id) ?? null
-        : null);
-      setSelectedProject((current) => current
-        ? nextProjects.find(({ id }) => id === current.id) ?? null
-        : null);
-      if (dashboardLoadId > dashboardAppliedLoadIdRef.current) {
-        dashboardAppliedLoadIdRef.current = dashboardLoadId;
-        setDashboard(dashboardData as unknown as DashboardSummary);
-      }
-      setLiveDataState("ready");
-
-      void optionalRequests.then(([ruleResult, mirrorResult]) => {
-        if (directoryLoadId !== directoryLoadIdRef.current) return;
-        if (ruleResult.status === "fulfilled") {
-          const ruleRows = Array.isArray(ruleResult.value.rules) ? ruleResult.value.rules as Record<string, unknown>[] : [];
-          setFilingRules(ruleRows.filter((rule) => rule && typeof rule === "object").map((rule) => ({ id: rule.id ? String(rule.id) : undefined, name: String(rule.name), enabled: Boolean(rule.enabled), priority: Number(rule.priority), matchSummary: String(rule.matchSummary ?? rule.match_summary), action: String(rule.action) as FilingRuleDraft["action"], targetCategory: String(rule.targetCategory ?? rule.target_category), approvalRequired: Boolean(rule.approvalRequired ?? rule.approval_required) })));
-        }
-        if (mirrorResult.status === "fulfilled") {
-          setSheetMirror(mirrorResult.value.mirror ? mirrorResult.value.mirror as SheetMirrorStatus : null);
-        }
-      }).catch(() => {
-        // Rules and the Sheet mirror are optional integrations. Their failures
-        // must never replace successfully loaded CRM records with a global error.
-      });
-    }).catch((error) => {
-      if (directoryLoadId !== directoryLoadIdRef.current) return;
-      if (!silent || isTerminalCachedGetError(error)) {
-        if (isTerminalCachedGetError(error)) {
-          setLeads([]);
-          setClients([]);
-          setProjectItems([]);
-          setSelectedLeadId(null);
-          setSelectedClient(null);
-          setSelectedProject(null);
-          setLeadOpen(false);
-          setClientOpen(false);
-          setProjectOpen(false);
-          setDashboard(null);
-        }
-        setLiveDataState("error");
-        setLiveDataError(error instanceof Error ? error.message : "Live application data could not be loaded.");
-      }
-    }).finally(() => {
-      if (!silent) directoryVisibleLoadsInFlightRef.current -= 1;
-    });
-  }, [userEmail, userName]);
-
-  const refreshDashboardSnapshot = useCallback(async () => {
-    const loadId = ++dashboardRefreshLoadIdRef.current;
-    const data = await cachedGetJson<Record<string, unknown>>("/api/v1/dashboard", { force: true });
-    if (loadId > dashboardAppliedLoadIdRef.current) {
-      dashboardAppliedLoadIdRef.current = loadId;
-      setDashboard(data as unknown as DashboardSummary);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshDirectoryData();
-  }, [refreshDirectoryData]);
-
-  useCachedGetSubscription(DIRECTORY_GET_URLS, () => refreshDirectoryData(true));
-
-  useEffect(() => {
-    const previousTimeZone = dashboardTimezoneRef.current;
-    dashboardTimezoneRef.current = displayTimezone;
-    if (previousTimeZone === displayTimezone) return;
-    void refreshDashboardSnapshot().catch(() => {
-      // Keep the last honest snapshot when an isolated refresh fails. The next
-      // app-open, manual retry, or local-midnight refresh tries again.
-    });
-  }, [displayTimezone, refreshDashboardSnapshot]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timeoutId: number | null = null;
-    const schedule = () => {
-      if (cancelled) return;
-      timeoutId = window.setTimeout(() => {
-        void refreshDashboardSnapshot()
-          .catch(() => {
-            // Preserve the prior snapshot and re-arm the same single refresh model.
-          })
-          .finally(schedule);
-      }, localDayRolloverDelay(Date.now(), displayTimezone));
-    };
-    schedule();
-    return () => {
-      cancelled = true;
-      if (timeoutId !== null) window.clearTimeout(timeoutId);
-    };
-  }, [displayTimezone, refreshDashboardSnapshot]);
-
-  useEffect(() => {
-    const loadId = ++pageLayoutsLoadIdRef.current;
-    void cachedGetJson<CurrentUserSettingsPayload>("/api/v1/settings/me")
-      .then((data) => {
-        if (loadId !== pageLayoutsLoadIdRef.current) return;
-        reconcileCurrentUserSettings(data);
-      })
-      .catch(() => {
-        if (loadId === pageLayoutsLoadIdRef.current) failClosedCurrentUserSettings();
-      });
-    return () => { pageLayoutsLoadIdRef.current += 1; };
-  }, [failClosedCurrentUserSettings, reconcileCurrentUserSettings]);
-
-  useCachedGetSubscription(["/api/v1/settings/me"], async () => {
-    const loadId = ++pageLayoutsLoadIdRef.current;
-    try {
-      const data = await cachedGetJson<CurrentUserSettingsPayload>("/api/v1/settings/me");
-      if (loadId === pageLayoutsLoadIdRef.current) reconcileCurrentUserSettings(data);
-    } catch (error) {
-      // Transient background failures preserve the last authenticated snapshot;
-      // revoked/expired access must remove its role and layout material immediately.
-      if (loadId === pageLayoutsLoadIdRef.current && isTerminalCachedGetError(error)) {
-        failClosedCurrentUserSettings();
-      }
-    }
-  });
-
-  const retryPageLayouts = useCallback(async () => {
-    const loadId = ++pageLayoutsLoadIdRef.current;
-    setPageLayoutsReady(false);
-    setPageLayoutsError("");
-    try {
-      const data = await cachedGetJson<CurrentUserSettingsPayload>("/api/v1/settings/me", { force: true });
-      if (loadId !== pageLayoutsLoadIdRef.current) return;
-      reconcileCurrentUserSettings(data);
-    } catch {
-      if (loadId === pageLayoutsLoadIdRef.current) failClosedCurrentUserSettings();
-    }
-  }, [failClosedCurrentUserSettings, reconcileCurrentUserSettings]);
-
-  const savePageLayout = useCallback(async (page: PageLayoutPage, layout: PageLayout) => {
-    const nextPageLayouts = { ...pageLayouts, [page]: layout };
-    const response = await fetch("/api/v1/settings/me", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pageLayouts: nextPageLayouts }),
-    });
-    const data = await response.json().catch(() => ({})) as { preferences?: { pageLayouts?: unknown }; error?: string };
-    if (!response.ok) throw new Error(data.error ?? `The ${page === "overview" ? "Overview" : "Reports"} layout could not be saved.`);
-    invalidateCachedGet("/api/v1/settings/me");
-    setPageLayouts(normalizePageLayoutsForRead(data.preferences?.pageLayouts ?? nextPageLayouts, isAdmin));
-  }, [isAdmin, pageLayouts]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 820px)");
@@ -1430,9 +1153,9 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         <button ref={mobileNavigationCloseRef} className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
         <nav className="main-nav" aria-label="Main navigation">
           <p>Workspace</p>
-          {workspaceNavItems.map(({ label, icon: Icon }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={label} title={label}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}
+          {workspaceNavItems.map(({ label, icon: Icon }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onMouseEnter={() => preloadMajorView(label)} onFocus={() => preloadMajorView(label)} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={label} title={label}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}
           <p>Management</p>
-          {managementNavItems.filter(({ label }) => label !== "Settings" || isAdmin).map(({ label, icon: Icon }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={label} title={label}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}
+          {managementNavItems.filter(({ label }) => label !== "Settings" || isAdmin).map(({ label, icon: Icon }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onMouseEnter={() => preloadMajorView(label)} onFocus={() => preloadMajorView(label)} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={label} title={label}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}
           {isAdmin && <a href="/management/access" aria-label="People & Access" title="People & Access"><ShieldCheck size={18} /><span className="nav-label">People &amp; Access</span></a>}
         </nav>
         <div ref={workspaceMenuRef} className="sidebar-menu-wrap workspace-menu-wrap">
@@ -1499,12 +1222,12 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
             {development && <section className="development-banner" role="status" aria-label="Development environment; test data only"><ShieldCheck size={17} /><div><strong>Development environment · Test data only</strong><span>Use approved test records while this working copy moves toward production readiness.</span></div></section>}
             <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData(false, true)} />
             {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.overview} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("overview", layout)} onView={navigateToView} onProject={openProject} onLead={openLead} />}
-            {view === "Leads" && <LeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal({})} onAdvance={advanceLead} onLead={openLead} />}
-            {view === "Clients" && <ClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
-            {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} filter={projectStatus} lifecycle={projectLifecycle} onFilter={navigateToProjectStatus} onNewProject={() => openNewProject()} onProject={openProject} />}
-            {view === "Schedule" && <ScheduleView dashboard={dashboard} onSettings={() => navigateToSettings("Workflow & notifications")} />}
-            {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} onCreateLead={openInboxLead} />}
-            {view === "AI Assistant" && <AssistantView projects={projectItems} />}
+            {view === "Leads" && <LazyLeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal({})} onAdvance={advanceLead} onLead={openLead} />}
+            {view === "Clients" && <LazyClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
+            {view === "Projects" && <LazyProjectsView projects={projectItems} state={liveDataState} filter={projectStatus} lifecycle={projectLifecycle} onFilter={navigateToProjectStatus} onNewProject={() => openNewProject()} onProject={openProject} />}
+            {view === "Schedule" && <LazyScheduleView dashboard={dashboard} onSettings={() => navigateToSettings("Workflow & notifications")} />}
+            {view === "Inbox" && <LazyInboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} onCreateLead={openInboxLead} />}
+            {view === "AI Assistant" && <LazyAssistantView projects={projectItems} />}
             {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.reports} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("reports", layout)} />}
             {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} onCurrentUserSettingsLoaded={reconcileCurrentUserSettings} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} onImportConfirmed={refreshDirectoryData} syncingSheet={sheetSyncing} />}
           </AppErrorBoundary>
@@ -1532,6 +1255,25 @@ function LiveDataBanner({ state, error, onRetry }: { state: LiveDataState; error
     loadingDetail="Reading leads, clients, projects, activity, and Google directory status."
     errorTitle="Live records could not be loaded"
     retryLabel="Try again"
+  />;
+}
+
+function MajorViewLoading({ view, error, isLoading = true, retry }: MajorViewDynamicLoadingProps & { view: OperationsView }) {
+  if (error || isLoading === false) {
+    return <ClientDataNotice
+      state="error"
+      error={`The ${view} workspace view could not be prepared. Try again.`}
+      onRetry={() => retryMajorViewLoad(retry)}
+      errorTitle={`${view} could not be loaded`}
+      retryLabel="Try again"
+    />;
+  }
+  return <ClientDataNotice
+    state="loading"
+    error=""
+    onRetry={() => window.location.reload()}
+    loadingTitle={`Loading ${view}`}
+    loadingDetail="Preparing this workspace view."
   />;
 }
 
