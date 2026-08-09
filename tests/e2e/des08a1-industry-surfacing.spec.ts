@@ -91,12 +91,12 @@ async function mockIndustryRecords(page: Page, clientRows = clients) {
     contentType: "application/json",
     body: JSON.stringify({ leads: [] }),
   }));
-  await page.route("**/api/v1/clients", (route) => route.fulfill({
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({ clients: clientRows }),
   }));
-  await page.route("**/api/v1/projects", (route) => route.fulfill({
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({ projects: [] }),
@@ -216,7 +216,7 @@ test("Clients by industry never presents an unknown or failed client count as ze
   const clientsGate = new Promise<void>((resolve) => {
     releaseClients = resolve;
   });
-  await page.route("**/api/v1/clients", async (route) => {
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, async (route) => {
     await clientsGate;
     await route.fulfill({
       status: 503,

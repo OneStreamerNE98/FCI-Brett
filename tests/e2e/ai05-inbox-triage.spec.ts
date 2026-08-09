@@ -110,7 +110,7 @@ async function mockInboxFoundation(
   await page.route("**/api/v1/integrations/google/connection", (route) =>
     fulfillJson(route, connectedMailboxPayload()));
   await page.route("**/api/v1/leads", (route) => fulfillJson(route, { leads: [] }));
-  await page.route("**/api/v1/clients", (route) => fulfillJson(route, {
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, (route) => fulfillJson(route, {
     clients: [{
       id: project.client_id,
       client_code: "AI05-ATLAS",
@@ -121,7 +121,7 @@ async function mockInboxFoundation(
       primary_contact_email: "contact@example.test",
     }],
   }));
-  await page.route("**/api/v1/projects", (route) => fulfillJson(route, {
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, (route) => fulfillJson(route, {
     projects: [project],
   }));
   await page.route("**/api/v1/dashboard", (route) => fulfillJson(route, {

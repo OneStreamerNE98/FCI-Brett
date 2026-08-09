@@ -84,7 +84,7 @@ async function mockOverview(page: Page, dashboardState: { value: ReturnType<type
     });
   });
   await page.route("**/api/v1/leads", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ leads: [] }) }));
-  await page.route("**/api/v1/clients", (route) => route.fulfill({
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({
@@ -99,7 +99,7 @@ async function mockOverview(page: Page, dashboardState: { value: ReturnType<type
       }],
     }),
   }));
-  await page.route("**/api/v1/projects", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ projects: [project] }) }));
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ projects: [project], nextCursor: null }) }));
   await page.route("**/api/v1/dashboard", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(dashboardState.value) }));
   await page.route("**/api/v1/filing-rules", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [] }) }));
   await page.route("**/api/v1/integrations/google/sheets/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: null }) }));

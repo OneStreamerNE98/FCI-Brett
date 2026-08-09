@@ -68,8 +68,8 @@ async function mockShell(
     },
   }));
   await page.route("**/api/v1/leads", (route) => fulfillJson(route, { leads: [] }));
-  await page.route("**/api/v1/clients", readClients);
-  await page.route("**/api/v1/projects", (route) => fulfillJson(route, { projects: [] }));
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, readClients);
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, (route) => fulfillJson(route, { projects: [] }));
   await page.route("**/api/v1/dashboard", (route) => fulfillJson(route, dashboard()));
   await page.route("**/api/v1/filing-rules", (route) => fulfillJson(route, { rules: [] }));
   await page.route("**/api/v1/integrations/google/sheets/status", (route) =>

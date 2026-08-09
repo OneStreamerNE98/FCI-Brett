@@ -271,9 +271,9 @@ test("SET-25 refreshes imported records after confirmation even when the import 
 
   await routeDirectoryMirror(page);
   await page.route("**/api/v1/leads", (route) => fulfillJson(route, { leads: [] }));
-  await page.route("**/api/v1/projects", (route) => fulfillJson(route, { projects: [] }));
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, (route) => fulfillJson(route, { projects: [] }));
   await page.route("**/api/v1/dashboard", (route) => fulfillJson(route, {}));
-  await page.route("**/api/v1/clients", async (route) => {
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, async (route) => {
     clientReads += 1;
     if (clientReads === 1) await initialClientReadGate;
     await fulfillJson(route, {

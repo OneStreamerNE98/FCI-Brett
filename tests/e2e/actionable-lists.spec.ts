@@ -185,7 +185,7 @@ test("actionable rows preserve decision-useful metadata without responsive overf
 
 test("empty record responses keep messages outside empty actionable lists", async ({ page }) => {
   for (const resource of ["leads", "clients", "projects"] as const) {
-    await page.route(`**/api/v1/${resource}`, async (route) => {
+    await page.route(new RegExp(`/api/v1/${resource}(\\?.*)?$`), async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ [resource]: [] }) });
         return;

@@ -57,7 +57,7 @@ test("project and client drawers render simulation and no-address map states wit
   await page.keyboard.press("Escape");
   await expect(projectDrawer).toHaveCount(0);
 
-  await page.route("**/api/v1/clients", async (route) => {
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, async (route) => {
     if (route.request().method() !== "GET") {
       await route.continue();
       return;

@@ -25,7 +25,7 @@ test("a deliberate descendant render failure shows recovery instead of a blank p
 });
 
 test("an already-active empty project filter offers creation instead of a no-op filter action", async ({ page }) => {
-  await page.route("**/api/v1/projects", async (route) => {
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, async (route) => {
     if (route.request().method() !== "GET") {
       await route.continue();
       return;

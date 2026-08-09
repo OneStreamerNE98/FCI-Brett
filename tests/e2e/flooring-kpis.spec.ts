@@ -32,8 +32,8 @@ async function mockKpiRecords(page: Page, isAdmin: boolean, projectRows = projec
     if (route.request().method() === "GET") await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ leads }) });
     else await route.continue();
   });
-  await page.route("**/api/v1/projects", async (route) => {
-    if (route.request().method() === "GET") await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ projects: projectRows.map((project) => ({ ...project, contract_value: isAdmin ? project.contract_value : null })) }) });
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, async (route) => {
+    if (route.request().method() === "GET") await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ projects: projectRows.map((project) => ({ ...project, contract_value: isAdmin ? project.contract_value : null })), nextCursor: null }) });
     else await route.continue();
   });
   await page.route("**/api/v1/dashboard", async (route) => {

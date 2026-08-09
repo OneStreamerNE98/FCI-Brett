@@ -122,8 +122,8 @@ async function mockStableDirectory(page: Page) {
   let dashboardReads = 0;
   await mockCurrentUser(page);
   await page.route("**/api/v1/leads", (route) => fulfillJson(route, { leads: [freshLead] }));
-  await page.route("**/api/v1/clients", (route) => fulfillJson(route, { clients: [client] }));
-  await page.route("**/api/v1/projects", (route) => fulfillJson(route, { projects: [project] }));
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, (route) => fulfillJson(route, { clients: [client] }));
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, (route) => fulfillJson(route, { projects: [project] }));
   await page.route("**/api/v1/dashboard", (route) => {
     dashboardReads += 1;
     return fulfillJson(route, dashboard());
@@ -274,8 +274,8 @@ async function installDirectoryRace(page: Page, staleOutcome: "success" | "error
     }
     await routeDirectoryRead(route, "/api/v1/leads", { leads: [freshLead] }, { leads: [staleLead] });
   });
-  await page.route("**/api/v1/clients", (route) => routeDirectoryRead(route, "/api/v1/clients", { clients: [client] }, { clients: [] }));
-  await page.route("**/api/v1/projects", (route) => routeDirectoryRead(route, "/api/v1/projects", { projects: [project] }, { projects: [] }));
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, (route) => routeDirectoryRead(route, "/api/v1/clients", { clients: [client] }, { clients: [] }));
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, (route) => routeDirectoryRead(route, "/api/v1/projects", { projects: [project] }, { projects: [] }));
   await page.route("**/api/v1/dashboard", (route) => routeDirectoryRead(route, "/api/v1/dashboard", dashboard(), {
     ...dashboard(),
     generatedAt: 1,
@@ -400,8 +400,8 @@ test("N7-7 ignores old optional rule and mirror responses after a newer refresh"
     coreReads += 1;
     await fulfillJson(route, { leads: [freshLead] });
   });
-  await page.route("**/api/v1/clients", (route) => fulfillJson(route, { clients: [client] }));
-  await page.route("**/api/v1/projects", (route) => fulfillJson(route, { projects: [project] }));
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, (route) => fulfillJson(route, { clients: [client] }));
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, (route) => fulfillJson(route, { projects: [project] }));
   await page.route("**/api/v1/dashboard", (route) => fulfillJson(route, dashboard()));
   await page.route("**/api/v1/filing-rules", async (route) => {
     rulesReads += 1;

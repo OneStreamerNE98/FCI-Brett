@@ -126,8 +126,8 @@ async function mockInbox(
   await page.route("**/api/v1/integrations/google/connection", (route) =>
     fulfillJson(route, connectedMailboxPayload()));
   await page.route("**/api/v1/leads", (route) => fulfillJson(route, { leads: [] }));
-  await page.route("**/api/v1/clients", (route) => fulfillJson(route, { clients: [] }));
-  await page.route("**/api/v1/projects", (route) => fulfillJson(route, { projects: [] }));
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, (route) => fulfillJson(route, { clients: [] }));
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, (route) => fulfillJson(route, { projects: [] }));
   await page.route("**/api/v1/dashboard", (route) => fulfillJson(route, {
     generatedAt: Date.UTC(2026, 6, 28, 12),
     metrics: {
