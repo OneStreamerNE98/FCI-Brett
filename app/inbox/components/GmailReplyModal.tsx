@@ -14,7 +14,7 @@ type AssistantReplyConfiguration = {
 
 const ASSISTANT_CONFIG_URL = "/api/v1/assistant/config";
 
-export function GmailReplyModal({ message, body, saving, onBody, onSave, onClose }: { message: WorkspaceMessage; body: string; saving: boolean; onBody: (value: string) => void; onSave: () => void; onClose: () => void }) {
+export function GmailReplyModal({ mailboxEmail, message, body, saving, onBody, onSave, onClose }: { mailboxEmail?: string | null; message: WorkspaceMessage; body: string; saving: boolean; onBody: (value: string) => void; onSave: () => void; onClose: () => void }) {
   const [configuration, setConfiguration] = useState<AssistantReplyConfiguration | null>(null);
   const [configurationLoaded, setConfigurationLoaded] = useState(false);
   const [drafting, setDrafting] = useState(false);
@@ -129,7 +129,10 @@ export function GmailReplyModal({ message, body, saving, onBody, onSave, onClose
     const controller = new AbortController();
     draftAbortRef.current = controller;
     try {
-      const response = await fetch("/api/v1/assistant/reply-draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messageId: requestMessageId }), signal: controller.signal });
+      const mailboxQuery = mailboxEmail
+        ? `?mailbox=${encodeURIComponent(mailboxEmail)}`
+        : "";
+      const response = await fetch(`/api/v1/assistant/reply-draft${mailboxQuery}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messageId: requestMessageId }), signal: controller.signal });
       const data = await response.json().catch(() => ({})) as { draft?: string; error?: string };
       // A superseded request, or one whose message is no longer the composed
       // message, is discarded silently — it must never reach another recipient.

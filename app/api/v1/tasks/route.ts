@@ -9,8 +9,9 @@ import { MAX_TASK_BODY_BYTES } from "../../../domain/task";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
-import { getConnectionScope } from "../../../lib/google-oauth-sites";
-import { noStoreJson as json } from "../../../lib/no-store-json";
+import { googleIntegrationErrorResponse } from "../../../lib/google-integration-error";
+import { getGoogleMailboxRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { noStoreJson as json, noStoreResponse } from "../../../lib/no-store-json";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 
@@ -19,18 +20,23 @@ const INBOX_TASK_REVIEW_INTENTS = new Set(["schedule", "warranty"]);
 function taskRequestBody(body: Record<string, unknown>) {
   const hasReviewId = Object.hasOwn(body, "inboxReviewId");
   const hasReviewIntent = Object.hasOwn(body, "inboxReviewIntent");
-  if (!hasReviewId && !hasReviewIntent) {
+  const hasReviewMailbox = Object.hasOwn(body, "inboxReviewMailbox");
+  if (!hasReviewId && !hasReviewIntent && !hasReviewMailbox) {
     return { ok: true as const, body, inboxReview: undefined };
   }
   if (
     !hasReviewId
     || !hasReviewIntent
+    || !hasReviewMailbox
     || typeof body.inboxReviewId !== "string"
     || !body.inboxReviewId.trim()
     || body.inboxReviewId.length > 512
     || /[\u0000-\u001f\u007f]/.test(body.inboxReviewId)
     || typeof body.inboxReviewIntent !== "string"
     || !INBOX_TASK_REVIEW_INTENTS.has(body.inboxReviewIntent)
+    || typeof body.inboxReviewMailbox !== "string"
+    || body.inboxReviewMailbox.length > 254
+    || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.inboxReviewMailbox.trim())
   ) {
     return {
       ok: false as const,
@@ -40,12 +46,14 @@ function taskRequestBody(body: Record<string, unknown>) {
   const taskBody = { ...body };
   delete taskBody.inboxReviewId;
   delete taskBody.inboxReviewIntent;
+  delete taskBody.inboxReviewMailbox;
   return {
     ok: true as const,
     body: taskBody,
     inboxReview: {
       id: body.inboxReviewId,
       intent: body.inboxReviewIntent as "schedule" | "warranty",
+      mailbox: body.inboxReviewMailbox.trim().toLowerCase(),
     },
   };
 }
@@ -87,6 +95,19 @@ export async function POST(request: NextRequest) {
     if ("response" in admin) return admin.response;
   }
   await ensureWorkspaceSchema();
+  let inboxReviewConnectionKey: string | undefined;
+  if (taskRequest.inboxReview) {
+    try {
+      inboxReviewConnectionKey = (
+        await getGoogleMailboxRuntimeConfig(taskRequest.inboxReview.mailbox)
+      ).connectionKey;
+    } catch (error) {
+      return noStoreResponse(googleIntegrationErrorResponse(
+        error,
+        "The selected Google mailbox could not be loaded. Try again.",
+      ));
+    }
+  }
   const result = await createTask(
     taskRequest.body,
     creationAuthorizationFor({
@@ -100,8 +121,9 @@ export async function POST(request: NextRequest) {
       ...(taskRequest.inboxReview
         ? {
             inboxReview: {
-              ...taskRequest.inboxReview,
-              connectionKey: getConnectionScope().connectionKey,
+              id: taskRequest.inboxReview.id,
+              intent: taskRequest.inboxReview.intent,
+              connectionKey: inboxReviewConnectionKey!,
             },
           }
         : {}),

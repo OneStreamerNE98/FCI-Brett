@@ -17,6 +17,7 @@ const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const GOOGLE_GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 const GOOGLE_CALENDAR_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+const GOOGLE_DISCONNECT_LEASE_MS = 5 * 60 * 1000;
 
 export type EnvironmentValues = Readonly<Record<string, string | undefined>>;
 
@@ -48,10 +49,20 @@ export type StoredGoogleOauthAttempt = Readonly<{
 
 export type StoredGoogleConnection = Readonly<{
   id: string;
+  connectionKey: string;
   googleSubject: string;
   googleEmail: string;
   refreshTokenCiphertext: string;
   keyVersion: string;
+  scopesJson?: string;
+  status: string;
+}>;
+
+export type StoredGoogleConnectionMetadata = Readonly<{
+  id: string;
+  connectionKey: string;
+  googleSubject: string;
+  googleEmail: string;
   scopesJson?: string;
   status: string;
 }>;
@@ -72,9 +83,19 @@ export interface GoogleOauthPersistence {
   findOauthAttemptByStateHash(stateHash: string): Promise<StoredGoogleOauthAttempt | null>;
   consumeOauthAttempt(id: string, consumedAt: number): Promise<boolean>;
   findConnection(connectionKey: string): Promise<StoredGoogleConnection | null>;
+  findConnectionByGoogleSubject(googleSubject: string): Promise<StoredGoogleConnection | null>;
+  findConnectionByGoogleEmail(googleEmail: string): Promise<StoredGoogleConnection | null>;
+  listConnectionKeys(): Promise<readonly string[]>;
+  listConnectionMetadata(): Promise<readonly StoredGoogleConnectionMetadata[]>;
   hasTenantScopedData(connectionKey: string): Promise<boolean>;
   revokeConnection(input: Readonly<{
+    connectionId: string;
     connectionKey: string;
+    workspaceConnectionKey: string;
+    refreshTokenCiphertext: string;
+    operationId: string;
+    operationKey: string;
+    leaseExpiresAt: number;
     revokedAt: number;
     event: Readonly<{
       id: string;
@@ -84,23 +105,65 @@ export interface GoogleOauthPersistence {
       entityId: string;
       detail: string;
     }>;
+  }>): Promise<"revoked" | "stale" | "busy">;
+  finishRevocationOperation(input: Readonly<{
+    operationId: string;
+    operationKey: string;
+    leaseExpiresAt: number;
+    status: "completed" | "failed";
+    errorCode: string | null;
+    now: number;
+  }>): Promise<boolean>;
+  writeRevocationOutcomeEvent(input: Readonly<{
+    connectionId: string;
+    connectionKey: string;
+    revokedAt: number;
+    event: Readonly<{
+      id: string;
+      eventType: string;
+      actor: string;
+      entityType: string;
+      entityId: string;
+      detail: string;
+      createdAt: number;
+    }>;
   }>): Promise<boolean>;
   saveConnection(input: Readonly<{
     id: string;
     connectionKey: string;
+    workspaceConnectionKey: string;
     googleSubject: string;
     googleEmail: string;
     scopesJson: string;
     refreshTokenCiphertext: string;
     keyVersion: string;
     credentialSource: "fresh" | "reused";
+    /**
+     * The consumed consent attempt that authorized this write. The D1 adapter
+     * checks it in the same statement that persists the credential so a tenant
+     * reset cannot be undone by an already-running OAuth callback.
+     */
+    oauthAttemptId?: string;
     actor: string;
     now: number;
+    event: Readonly<{
+      id: string;
+      eventType: "oauth.connected";
+      actor: string;
+      entityType: "connection";
+      entityId: string;
+      detail: string;
+      createdAt: number;
+    }>;
   }>): Promise<"saved" | "stale">;
-  markConnectionAccountRejected(id: string, now: number): Promise<void>;
-  markConnectionRefreshSucceeded(id: string, now: number): Promise<void>;
+  markConnectionRefreshSucceeded(input: Readonly<{
+    id: string;
+    refreshTokenCiphertext: string;
+    now: number;
+  }>): Promise<void>;
   markConnectionRefreshFailed(input: Readonly<{
     id: string;
+    refreshTokenCiphertext: string;
     errorCode: string;
     requiresReauthorization: boolean;
     now: number;
@@ -115,6 +178,20 @@ export interface GoogleOauthPersistence {
     detail: string | null;
     createdAt: number;
   }>): Promise<void>;
+  writeOauthAttemptEvent(input: Readonly<{
+    attemptId: string;
+    connectionKey: string;
+    phase: "pending" | "consumed";
+    event: Readonly<{
+      id: string;
+      eventType: string;
+      actor: string;
+      entityType: string | null;
+      entityId: string | null;
+      detail: string | null;
+      createdAt: number;
+    }>;
+  }>): Promise<boolean>;
 }
 
 export type GoogleOauthDependencies = Readonly<{
@@ -150,6 +227,13 @@ export type GoogleRuntimeConfig = {
   simulation: boolean;
   modeIsValid: boolean;
   connectionKey: string;
+  authConnectionKey: string;
+  authConnectionId?: string;
+  authConnectionEmail?: string;
+  /** Server-only reconnect generation. Never expose this credential ciphertext. */
+  authConnectionRefreshTokenCiphertext?: string;
+  workspaceConnectionKey: string;
+  selectedMailboxEmail?: string;
   clientId?: string;
   clientSecret?: string;
   redirectUri?: string;
@@ -251,6 +335,11 @@ async function sha256(value: string) {
 async function sha256Bytes(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return new Uint8Array(digest);
+}
+
+async function sha256Hex(value: string) {
+  const digest = await sha256Bytes(value);
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function isValidEncryptionKey(value: string | undefined) {
@@ -387,7 +476,7 @@ export async function decryptGoogleSecretWithStore(
   return decryptGoogleSecret(ciphertext, keyMaterial, context);
 }
 
-export function getGoogleRuntimeConfig(input: EnvironmentValues = {}) {
+export function getGoogleRuntimeConfig(input: EnvironmentValues = {}): GoogleRuntimeConfig {
   const requested = input.GOOGLE_INTEGRATION_MODE?.trim().toLowerCase() ?? (input.NODE_ENV === "production" ? "workspace" : "simulation");
   const modeIsValid = requested === "simulation" || requested === "workspace";
   const environment: GoogleWorkspaceMode = requested === "workspace" ? "workspace" : "simulation";
@@ -451,11 +540,15 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = {}) {
   ];
   const missingDetails = simulation ? [] : liveMissingDetails;
   const missing = missingDetails.map((detail) => detail.label);
+  const workspaceConnectionKey = simulation ? "workspace-simulation" : "google-workspace";
   return {
     environment,
     simulation,
     modeIsValid,
     connectionKey: simulation ? "workspace-simulation" : "google-workspace",
+    authConnectionKey: workspaceConnectionKey,
+    workspaceConnectionKey,
+    selectedMailboxEmail: simulation ? "workspace-simulation@fci.example" : intakeMailbox,
     clientId,
     clientSecret,
     redirectUri,
@@ -514,7 +607,7 @@ export function buildGoogleAuthorizationUrl(config: GoogleRuntimeConfig, state: 
     scope: config.scopes.join(" "),
     access_type: "offline",
     include_granted_scopes: "true",
-    prompt: "consent",
+    prompt: "consent select_account",
     state,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
@@ -549,7 +642,7 @@ export async function createGoogleOauthAttempt(
     expiresAt: now + 10 * 60 * 1000,
     createdAt: now,
   });
-  return { state, codeChallenge: challenge };
+  return { attemptId: id, state, codeChallenge: challenge };
 }
 
 export async function consumeGoogleOauthAttempt(
@@ -572,11 +665,12 @@ export async function consumeGoogleOauthAttempt(
     throw new GoogleIntegrationError("oauth_state_reused", "Google authorization has already been used. Start again.", 400);
   }
   const current = await dependencies.secrets.current();
-  return decryptGoogleSecret(
+  const verifier = await decryptGoogleSecret(
     attempt.pkceVerifierCiphertext,
     current.keyMaterial,
     `google-oauth-attempt:${attempt.id}`,
   );
+  return Object.freeze({ attemptId: attempt.id, verifier });
 }
 
 type GoogleTokenRequestPurpose = "authorization-code" | "refresh-token";
@@ -701,6 +795,59 @@ function googleAccountIsAllowed(config: GoogleRuntimeConfig, value: string) {
   return config.expectedGoogleEmails.length > 0 && config.expectedGoogleEmails.includes(email);
 }
 
+function selectedMailboxMatches(config: GoogleRuntimeConfig, value: string | null | undefined) {
+  if (!config.selectedMailboxEmail) return true;
+  return value?.trim().toLowerCase() === config.selectedMailboxEmail.trim().toLowerCase();
+}
+
+/**
+ * Resolves a verified Google subject to its durable credential key. Existing
+ * subjects retain their original key so AES-GCM additional authenticated data
+ * remains readable; first-time subjects receive a non-PII PostgreSQL-safe key.
+ */
+export async function resolveGoogleMailboxConnectionConfig<TConfig extends GoogleRuntimeConfig>(
+  config: TConfig,
+  profile: GoogleUserProfile,
+  dependencies: Pick<GoogleOauthDependencies, "persistence">,
+) {
+  const normalizedProfileEmail = profile.email.trim().toLowerCase();
+  const subjectConnection = await dependencies.persistence.findConnectionByGoogleSubject(profile.subject);
+  const emailConnection = subjectConnection
+    ? null
+    : await dependencies.persistence.findConnectionByGoogleEmail(normalizedProfileEmail);
+  const existing = subjectConnection ?? emailConnection;
+  if (!existing) {
+    const profileDomain = normalizedProfileEmail.split("@")[1] ?? "";
+    const existingConnections = await dependencies.persistence.listConnectionMetadata();
+    const otherTenantConnection = existingConnections.find((connection) => {
+      const connectionDomain = connection.googleEmail.trim().toLowerCase().split("@")[1] ?? "";
+      return connectionDomain !== profileDomain;
+    });
+    // Same-domain role mailboxes are the normal WS-20 attach path and must never
+    // trip the tenant-data probe. A different domain, however, is a tenant
+    // cutover and retains WS-19's explicit reset requirement.
+    if (otherTenantConnection) {
+      throw new GoogleIntegrationError(
+        "google_tenant_reset_required",
+        `The saved Google Workspace account (${otherTenantConnection.googleEmail}) belongs to a different tenant. Disconnect it, then use Start fresh on a new tenant before connecting this account.`,
+        409,
+      );
+    }
+  }
+  const authConnectionKey = existing?.connectionKey ?? `gmail_${await sha256Hex(profile.subject)}`;
+  return Object.freeze({
+    ...config,
+    authConnectionKey,
+    ...(existing ? { authConnectionId: existing.id } : {}),
+    authConnectionEmail: normalizedProfileEmail,
+    ...(existing ? {
+      authConnectionRefreshTokenCiphertext: existing.refreshTokenCiphertext,
+    } : {}),
+    workspaceConnectionKey: config.workspaceConnectionKey,
+    selectedMailboxEmail: normalizedProfileEmail,
+  });
+}
+
 function storedScopes(value: string | undefined) {
   try {
     const parsed = JSON.parse(value ?? "[]");
@@ -720,9 +867,9 @@ function grantedGoogleServices(config: GoogleRuntimeConfig, scopes: string[]) {
   ) as Record<GoogleService, boolean>;
 }
 
-export async function getGoogleConnectionStatus(
+export function describeGoogleConnectionStatus(
   config: GoogleRuntimeConfig,
-  dependencies: Pick<GoogleOauthDependencies, "persistence">,
+  connection: StoredGoogleConnectionMetadata | null,
 ) {
   if (config.simulation) {
     return {
@@ -734,12 +881,11 @@ export async function getGoogleConnectionStatus(
       requiresReauthorization: false,
     };
   }
-  const connection = await dependencies.persistence.findConnection(config.connectionKey);
   const email = connection?.googleEmail ?? null;
   const scopes = storedScopes(connection?.scopesJson);
   const grantedServices = grantedGoogleServices(config, scopes);
-  const accountAllowed = Boolean(email && googleAccountIsAllowed(config, email));
-  const hasUsableConnection = connection?.status === "connected" && accountAllowed;
+  const accountMatchesSelection = Boolean(email && selectedMailboxMatches(config, email));
+  const hasUsableConnection = connection?.status === "connected" && accountMatchesSelection;
   const services = {
     drive: Boolean(hasUsableConnection && grantedServices.drive),
     gmail: Boolean(hasUsableConnection && config.gmailEnabled && grantedServices.gmail),
@@ -748,7 +894,7 @@ export async function getGoogleConnectionStatus(
   };
   const requiresReauthorization = Boolean(connection && (
     connection.status === "reauthorization-required"
-    || !accountAllowed
+    || !accountMatchesSelection
     || (hasUsableConnection && config.enabledServices.some((service) => !grantedServices[service]))
   ));
   // A severed connection keeps its row as audit history, but nothing about it may
@@ -777,12 +923,21 @@ export async function getGoogleConnectionStatus(
   };
 }
 
+export async function getGoogleConnectionStatus(
+  config: GoogleRuntimeConfig,
+  dependencies: Pick<GoogleOauthDependencies, "persistence">,
+) {
+  if (config.simulation) return describeGoogleConnectionStatus(config, null);
+  const connection = await dependencies.persistence.findConnection(config.authConnectionKey);
+  return describeGoogleConnectionStatus(config, connection);
+}
+
 export async function disconnectGoogleConnection(
   config: GoogleRuntimeConfig,
   actor: string,
   dependencies: GoogleOauthDependencies,
 ) {
-  const connection = await dependencies.persistence.findConnection(config.connectionKey);
+  const connection = await dependencies.persistence.findConnection(config.authConnectionKey);
   let providerRevocation: "succeeded" | "failed" | "not_attempted" | "skipped_simulation" =
     config.simulation ? "skipped_simulation" : "not_attempted";
   let refreshToken: string | null = null;
@@ -792,7 +947,7 @@ export async function disconnectGoogleConnection(
         connection.refreshTokenCiphertext,
         connection.keyVersion,
         dependencies.secrets,
-        `google-connection:${config.connectionKey}:refresh`,
+        `google-connection:${config.authConnectionKey}:refresh`,
       );
     } catch {
       // Credential decryption failure cannot block local severance.
@@ -800,28 +955,46 @@ export async function disconnectGoogleConnection(
     }
   }
   const revokedAt = dependencies.now();
+  const revocationEventId = dependencies.randomUUID();
+  const revocationOperationId = `oauth-disconnect:${revocationEventId}`;
+  const revocationOperationKey = `${config.authConnectionKey}:oauth:disconnect`;
+  const revocationLeaseExpiresAt = revokedAt + GOOGLE_DISCONNECT_LEASE_MS;
   const providerStateAtSeverance = refreshToken ? "pending" : providerRevocation;
   const event = {
-    id: dependencies.randomUUID(),
+    id: revocationEventId,
     eventType: "oauth.disconnected",
     actor,
     entityType: "connection",
-    entityId: config.connectionKey,
+    entityId: config.authConnectionKey,
     detail: `mode=${config.environment};google_revocation=${providerStateAtSeverance};local_connection=${connection ? "revoked" : "not-found"}`,
   };
-  const connectionRevoked = await dependencies.persistence.revokeConnection({
-    connectionKey: config.connectionKey,
+  const revokeOutcome = connection ? await dependencies.persistence.revokeConnection({
+    connectionId: connection.id,
+    connectionKey: config.authConnectionKey,
+    workspaceConnectionKey: config.workspaceConnectionKey,
+    refreshTokenCiphertext: connection.refreshTokenCiphertext,
+    operationId: revocationOperationId,
+    operationKey: revocationOperationKey,
+    leaseExpiresAt: revocationLeaseExpiresAt,
     revokedAt,
     event,
-  });
-  if (!connectionRevoked) {
+  }) : "stale";
+  if (revokeOutcome === "busy") {
+    throw new GoogleIntegrationError(
+      "google_operation_in_progress",
+      "Google Workspace work is still in progress. Try disconnecting again shortly.",
+      409,
+    );
+  }
+  const connectionRevoked = revokeOutcome === "revoked";
+  if (!connectionRevoked && config.simulation) {
     await dependencies.persistence.writeIntegrationEvent({
       ...event,
-      connectionKey: config.connectionKey,
+      connectionKey: config.authConnectionKey,
       createdAt: revokedAt,
     });
   }
-  if (refreshToken) {
+  if (refreshToken && connectionRevoked) {
     try {
       // Idempotent by nature — replaying a revoke cannot duplicate a mutation —
       // and this call is unrepeatable by construction: local severance has
@@ -838,16 +1011,49 @@ export async function disconnectGoogleConnection(
     } catch {
       providerRevocation = "failed";
     }
-    await dependencies.persistence.writeIntegrationEvent({
+    const outcomeRecordedAt = dependencies.now();
+    const outcomeEvent = {
       id: dependencies.randomUUID(),
-      connectionKey: config.connectionKey,
+      connectionKey: config.authConnectionKey,
       eventType: "oauth.provider_revocation_recorded",
       actor,
       entityType: "connection",
-      entityId: config.connectionKey,
-      detail: `mode=${config.environment};google_revocation=${providerRevocation};local_connection=${connectionRevoked ? "revoked" : "not-found"}`,
-      createdAt: dependencies.now(),
+      entityId: config.authConnectionKey,
+      detail: `mode=${config.environment};google_revocation=${providerRevocation};local_connection=revoked`,
+      createdAt: outcomeRecordedAt,
+    };
+    try {
+      await dependencies.persistence.writeRevocationOutcomeEvent({
+        connectionId: connection!.id,
+        connectionKey: config.authConnectionKey,
+        revokedAt,
+        event: outcomeEvent,
+      });
+    } finally {
+      const finished = await dependencies.persistence.finishRevocationOperation({
+        operationId: revocationOperationId,
+        operationKey: revocationOperationKey,
+        leaseExpiresAt: revocationLeaseExpiresAt,
+        status: providerRevocation === "failed" ? "failed" : "completed",
+        errorCode: providerRevocation === "failed" ? "google_provider_revocation_failed" : null,
+        now: outcomeRecordedAt,
+      });
+      if (!finished) {
+        throw new TypeError("Google connection revocation operation lost its lease before completion.");
+      }
+    }
+  } else if (connectionRevoked) {
+    const finished = await dependencies.persistence.finishRevocationOperation({
+      operationId: revocationOperationId,
+      operationKey: revocationOperationKey,
+      leaseExpiresAt: revocationLeaseExpiresAt,
+      status: providerRevocation === "failed" ? "failed" : "completed",
+      errorCode: providerRevocation === "failed" ? "google_provider_revocation_failed" : null,
+      now: dependencies.now(),
     });
+    if (!finished) {
+      throw new TypeError("Google connection revocation operation lost its lease before completion.");
+    }
   }
   return {
     connectionRevoked,
@@ -863,13 +1069,15 @@ export async function saveGoogleConnection(
   profile: GoogleUserProfile,
   actor: string,
   dependencies: GoogleOauthDependencies,
+  oauthAttemptId?: string,
 ) {
   const now = dependencies.now();
-  const existing = await dependencies.persistence.findConnection(config.connectionKey);
+  const existing = await dependencies.persistence.findConnection(config.authConnectionKey);
   if (
     existing
     && existing.googleSubject !== profile.subject
-    && await dependencies.persistence.hasTenantScopedData(config.connectionKey)
+    && existing.googleEmail.trim().toLowerCase() !== profile.email.trim().toLowerCase()
+    && await dependencies.persistence.hasTenantScopedData(config.workspaceConnectionKey)
   ) {
     throw new GoogleIntegrationError(
       "google_tenant_reset_required",
@@ -881,12 +1089,16 @@ export async function saveGoogleConnection(
     ? await encryptGoogleSecretWithStore(
       tokens.refreshToken,
       dependencies.secrets,
-      `google-connection:${config.connectionKey}:refresh`,
+      `google-connection:${config.authConnectionKey}:refresh`,
     )
     : null;
   // A revoked connection is a tombstone, never reusable OAuth material. Reconnection
   // must provide a newly issued refresh token from a fresh consent callback.
-  const reusableExisting = existing && existing.status !== "revoked" ? existing : null;
+  const reusableExisting = existing
+    && existing.status !== "revoked"
+    && existing.googleSubject === profile.subject
+    ? existing
+    : null;
   const refreshTokenCiphertext = encrypted?.ciphertext ?? reusableExisting?.refreshTokenCiphertext;
   const keyVersion = encrypted?.keyVersion ?? reusableExisting?.keyVersion;
   if (!refreshTokenCiphertext) {
@@ -894,17 +1106,41 @@ export async function saveGoogleConnection(
   }
   const saveOutcome = await dependencies.persistence.saveConnection({
     id: existing?.id ?? dependencies.randomUUID(),
-    connectionKey: config.connectionKey,
+    connectionKey: config.authConnectionKey,
+    workspaceConnectionKey: config.workspaceConnectionKey,
     googleSubject: profile.subject,
     googleEmail: profile.email,
     scopesJson: JSON.stringify(tokens.scope),
     refreshTokenCiphertext,
     keyVersion: keyVersion!,
     credentialSource: encrypted ? "fresh" : "reused",
+    ...(oauthAttemptId ? { oauthAttemptId } : {}),
     actor,
     now,
+    event: {
+      id: dependencies.randomUUID(),
+      eventType: "oauth.connected",
+      actor,
+      entityType: "connection",
+      entityId: config.authConnectionKey,
+      detail: `mode=${config.environment}`,
+      createdAt: now,
+    },
   });
   if (saveOutcome === "stale") {
+    const profileDomain = profile.email.trim().toLowerCase().split("@")[1] ?? "";
+    const currentConnections = await dependencies.persistence.listConnectionMetadata();
+    const otherTenantConnection = currentConnections.find((connection) => {
+      const connectionDomain = connection.googleEmail.trim().toLowerCase().split("@")[1] ?? "";
+      return connectionDomain !== profileDomain;
+    });
+    if (otherTenantConnection) {
+      throw new GoogleIntegrationError(
+        "google_tenant_reset_required",
+        `The saved Google Workspace account (${otherTenantConnection.googleEmail}) belongs to a different tenant. Disconnect it, then use Start fresh on a new tenant before connecting this account.`,
+        409,
+      );
+    }
     throw new GoogleIntegrationError(
       "stale_google_connection",
       "Google authorization changed while consent completed. Start the connection again.",
@@ -921,13 +1157,12 @@ export async function getGoogleAccessToken(
   if (config.simulation) {
     throw new GoogleIntegrationError("simulation_has_no_google_token", "Local Workspace simulation never creates or uses Google access tokens.", 409);
   }
-  const connection = await dependencies.persistence.findConnection(config.connectionKey);
+  const connection = await dependencies.persistence.findConnection(config.authConnectionKey);
   if (!connection || connection.status !== "connected") {
     throw new GoogleIntegrationError("google_not_connected", "Connect the approved Google Workspace account before using this service.", 409);
   }
-  if (!googleAccountIsAllowed(config, connection.googleEmail)) {
-    await dependencies.persistence.markConnectionAccountRejected(connection.id, dependencies.now());
-    throw new GoogleIntegrationError("unauthorized_google_account", "The stored Google account is no longer approved for this Workspace configuration. Reconnect the approved mailbox.", 409);
+  if (!selectedMailboxMatches(config, connection.googleEmail)) {
+    throw new GoogleIntegrationError("google_mailbox_mismatch", "The selected mailbox does not match the stored Google connection.", 409);
   }
   if (requiredService && !serviceIsGranted(config, storedScopes(connection.scopesJson), requiredService)) {
     throw new GoogleIntegrationError("google_scope_reauthorization_required", `Reconnect Google and approve the ${requiredService} permission before continuing.`, 409);
@@ -936,7 +1171,7 @@ export async function getGoogleAccessToken(
     connection.refreshTokenCiphertext,
     connection.keyVersion,
     dependencies.secrets,
-    `google-connection:${config.connectionKey}:refresh`,
+    `google-connection:${config.authConnectionKey}:refresh`,
   );
   try {
     const data = await tokenRequest(new URLSearchParams({
@@ -945,13 +1180,18 @@ export async function getGoogleAccessToken(
       refresh_token: refreshToken,
       grant_type: "refresh_token",
     }), "refresh-token", dependencies.fetch, dependencies.resilience);
-    await dependencies.persistence.markConnectionRefreshSucceeded(connection.id, dependencies.now());
+    await dependencies.persistence.markConnectionRefreshSucceeded({
+      id: connection.id,
+      refreshTokenCiphertext: connection.refreshTokenCiphertext,
+      now: dependencies.now(),
+    });
     return String(data.access_token);
   } catch (error) {
     const errorCode = error instanceof GoogleIntegrationError ? error.code : "refresh_failed";
     if (error instanceof GoogleTokenRequestError && error.requiresReauthorization) {
       await dependencies.persistence.markConnectionRefreshFailed({
         id: connection.id,
+        refreshTokenCiphertext: connection.refreshTokenCiphertext,
         errorCode,
         requiresReauthorization: true,
         now: dependencies.now(),
@@ -959,6 +1199,7 @@ export async function getGoogleAccessToken(
     } else {
       await dependencies.persistence.markConnectionRefreshFailed({
         id: connection.id,
+        refreshTokenCiphertext: connection.refreshTokenCiphertext,
         errorCode,
         requiresReauthorization: false,
         now: dependencies.now(),
@@ -990,6 +1231,34 @@ export async function writeGoogleIntegrationEvent(
   });
 }
 
+export async function writeGoogleOauthAttemptEvent(
+  config: GoogleRuntimeConfig,
+  attemptId: string,
+  phase: "pending" | "consumed",
+  eventType: string,
+  actor: string,
+  entityType: string | undefined,
+  entityId: string | undefined,
+  detail: string | undefined,
+  dependencies: Pick<GoogleOauthDependencies, "persistence" | "randomUUID" | "now">,
+) {
+  const createdAt = dependencies.now();
+  return dependencies.persistence.writeOauthAttemptEvent({
+    attemptId,
+    connectionKey: config.connectionKey,
+    phase,
+    event: {
+      id: dependencies.randomUUID(),
+      eventType,
+      actor,
+      entityType: entityType ?? null,
+      entityId: entityId ?? null,
+      detail: detail ?? null,
+      createdAt,
+    },
+  });
+}
+
 /** Binds all provider and persistence dependencies for one request/runtime composition. */
 export function createGoogleOauthOperations(
   config: GoogleRuntimeConfig,
@@ -1006,8 +1275,19 @@ export function createGoogleOauthOperations(
       fetchGoogleUserProfile(accessToken, dependencies.fetch, dependencies.resilience),
     connectionStatus: () => getGoogleConnectionStatus(config, dependencies),
     disconnect: (actor: string) => disconnectGoogleConnection(config, actor, dependencies),
-    saveConnection: (tokens: GoogleTokenSet, profile: GoogleUserProfile, actor: string) =>
-      saveGoogleConnection(config, tokens, profile, actor, dependencies),
+    saveConnection: (
+      tokens: GoogleTokenSet,
+      profile: GoogleUserProfile,
+      actor: string,
+      oauthAttemptId?: string,
+    ) => saveGoogleConnection(
+      config,
+      tokens,
+      profile,
+      actor,
+      dependencies,
+      oauthAttemptId,
+    ),
     accessToken: (requiredService?: GoogleService) =>
       getGoogleAccessToken(config, requiredService, dependencies),
     writeEvent: (
@@ -1018,6 +1298,25 @@ export function createGoogleOauthOperations(
       detail?: string,
     ) => writeGoogleIntegrationEvent(
       config,
+      eventType,
+      actor,
+      entityType,
+      entityId,
+      detail,
+      dependencies,
+    ),
+    writeAttemptEvent: (
+      attemptId: string,
+      phase: "pending" | "consumed",
+      eventType: string,
+      actor: string,
+      entityType?: string,
+      entityId?: string,
+      detail?: string,
+    ) => writeGoogleOauthAttemptEvent(
+      config,
+      attemptId,
+      phase,
       eventType,
       actor,
       entityType,

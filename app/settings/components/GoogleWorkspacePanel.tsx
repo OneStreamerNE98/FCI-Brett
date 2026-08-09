@@ -96,7 +96,17 @@ type ConnectionHealthPayload = {
     grantedServices: Record<GoogleServiceKey, boolean> | null;
     requiresReauthorization: boolean;
   };
+  mailboxes?: readonly WorkspaceMailboxConnection[];
 };
+type WorkspaceMailboxConnection = Readonly<{
+  email: string;
+  status: string;
+  connected: boolean;
+  services: Readonly<Record<GoogleServiceKey, boolean>>;
+  grantedServices: Readonly<Record<GoogleServiceKey, boolean>> | null;
+  requiresReauthorization: boolean;
+  gmailReady?: boolean;
+}>;
 type TenantResetPreview = {
   available: boolean;
   connectionStatus: string;
@@ -165,6 +175,52 @@ const CONNECTION_SERVICES: readonly { key: GoogleServiceKey; label: string }[] =
   { key: "calendar", label: "Calendar" },
   { key: "sheets", label: "Sheets" },
 ];
+
+const GOOGLE_CONNECTION_URL = "/api/v1/integrations/google/connection";
+
+function mailboxScopedUrl(path: string, mailbox: string) {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}mailbox=${encodeURIComponent(mailbox)}`;
+}
+
+function safeMailboxConnections(payload: ConnectionHealthPayload) {
+  if (payload.mailboxes === undefined) {
+    const legacyEmail = payload.simulation
+      ? "workspace-simulation@fci.example"
+      : payload.connection.account?.trim() ?? "";
+    if (!legacyEmail.includes("@")) return [];
+    const connected = payload.connection.status === "connected";
+    const services = Object.fromEntries(CONNECTION_SERVICES.map(({ key }) => [
+      key,
+      connected
+        && payload.enabledServices.includes(key)
+        && (payload.simulation || payload.connection.grantedServices?.[key] === true),
+    ])) as Record<GoogleServiceKey, boolean>;
+    return [Object.freeze({
+      email: legacyEmail,
+      status: payload.connection.status,
+      connected,
+      services,
+      grantedServices: payload.connection.grantedServices,
+      requiresReauthorization: payload.connection.requiresReauthorization,
+    })];
+  }
+  return payload.mailboxes.filter((mailbox) => (
+    typeof mailbox.email === "string"
+    && mailbox.email.includes("@")
+    && typeof mailbox.status === "string"
+    && typeof mailbox.connected === "boolean"
+    && typeof mailbox.services === "object"
+    && mailbox.services !== null
+    && typeof mailbox.requiresReauthorization === "boolean"
+  ));
+}
+
+function mailboxGmailReady(mailbox: WorkspaceMailboxConnection | null | undefined) {
+  if (!mailbox || !mailbox.connected || mailbox.status !== "connected") return false;
+  if (typeof mailbox.gmailReady === "boolean") return mailbox.gmailReady;
+  return mailbox.services.gmail === true;
+}
 
 const WORKSPACE_STAGE_NAMES = [
   "Prepare the tenant",
@@ -419,9 +475,10 @@ function sheetMirrorFullySynced(mirror: SheetMirrorStatus | null | undefined) {
   return mirror?.clients.status === "synced" && mirror.projects.status === "synced";
 }
 
-async function readStageFourVerification<T>(url: string, force = false) {
+async function readStageFourVerification<T>(url: string, force = false, mailbox?: string) {
   try {
-    return { ok: true as const, data: await cachedGetJson<T>(url, { force }) };
+    const requestUrl = mailbox ? mailboxScopedUrl(url, mailbox) : url;
+    return { ok: true as const, data: await cachedGetJson<T>(requestUrl, { force }) };
   } catch {
     return { ok: false as const, data: null };
   }
@@ -468,6 +525,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [sheetMirror, setSheetMirror] = useState<SheetMirrorStatus | null>(null);
   const [sheetsStatusError, setSheetsStatusError] = useState<string | null>(null);
   const [connectionHealth, setConnectionHealth] = useState<ConnectionHealthPayload | null>(null);
+  const [selectedGmailMailbox, setSelectedGmailMailbox] = useState("");
   const [connectionHealthState, setConnectionHealthState] = useState<ConnectionHealthState>("idle");
   const [connectionHealthError, setConnectionHealthError] = useState<string | null>(null);
   const [tenantResetPreview, setTenantResetPreview] = useState<TenantResetPreview | null>(null);
@@ -526,6 +584,33 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const workspaceResourcesVisibleLoadsInFlightRef = useRef(0);
   const workspaceResourcesForcedLoadsInFlightRef = useRef(0);
   const workspaceResourcesFailureRef = useRef(false);
+  const selectedGmailMailboxRef = useRef("");
+  const gmailMailboxGenerationRef = useRef(0);
+
+  const selectGmailMailbox = useCallback((email: string) => {
+    if (selectedGmailMailboxRef.current === email) return;
+    selectedGmailMailboxRef.current = email;
+    gmailMailboxGenerationRef.current += 1;
+    setSelectedGmailMailbox(email);
+    setGmailMessages([]);
+    setGmailWorking(false);
+    setGmailLabelsReady(false);
+    setGmailTestEmailPassed(false);
+    setGmailVerificationState("idle");
+    setFilingMessage(null);
+    setFilingProjectId("");
+    setFilingPreview(null);
+    setFilingLoading(false);
+    setFilingSubmitting(false);
+  }, []);
+
+  function runRetryForGmailMailbox(mailbox: string, action: () => void) {
+    if (selectedGmailMailboxRef.current !== mailbox) {
+      notify(`Switch back to ${mailbox} before retrying that mailbox action.`, "warning");
+      return;
+    }
+    action();
+  }
 
   const updateStageThreeCreationStatus = useCallback((next: StageThreeSubsectionStatus) => {
     setStageThreeCreationStatus((current) => (
@@ -599,7 +684,14 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         sheetsRequest,
       ]);
       const nextWorkspace = data.workspace ?? null;
-      const gmailVerificationEligible = isAdmin && stageFourServiceEligible(nextWorkspace, "gmail");
+      const gmailVerificationMailbox = selectedGmailMailboxRef.current;
+      const gmailVerificationGeneration = gmailMailboxGenerationRef.current;
+      const gmailVerificationEligible = Boolean(
+        !silent
+        && gmailVerificationMailbox
+        && isAdmin
+        && stageFourServiceEligible(nextWorkspace, "gmail"),
+      );
       const calendarVerificationEligible = isAdmin && stageFourServiceEligible(nextWorkspace, "calendar");
       setMissingDetails(data.missingDetails ?? []);
       setWorkspace(nextWorkspace);
@@ -620,12 +712,14 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       } else {
         setSheetsStatusError("Mirror status could not be loaded. Try again from this error state.");
       }
-      if (gmailVerificationEligible) {
-        setGmailVerificationState("loading");
-      } else {
-        setGmailLabelsReady(false);
-        setGmailTestEmailPassed(false);
-        setGmailVerificationState("idle");
+      if (!silent) {
+        if (gmailVerificationEligible) {
+          setGmailVerificationState("loading");
+        } else {
+          setGmailLabelsReady(false);
+          setGmailTestEmailPassed(false);
+          setGmailVerificationState("idle");
+        }
       }
       if (calendarVerificationEligible) {
         setCalendarVerificationState("loading");
@@ -638,6 +732,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
           ? readStageFourVerification<{ labelReady?: boolean; testEmailPassed?: boolean }>(
               "/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status",
               force,
+              gmailVerificationMailbox,
             )
           : Promise.resolve(null),
         calendarVerificationEligible
@@ -647,11 +742,13 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
             )
           : Promise.resolve(null),
       ]);
-      if (gmailVerification?.ok) {
+      const gmailVerificationIsCurrent = gmailVerificationGeneration === gmailMailboxGenerationRef.current
+        && gmailVerificationMailbox === selectedGmailMailboxRef.current;
+      if (gmailVerification?.ok && gmailVerificationIsCurrent) {
         setGmailLabelsReady(Boolean(gmailVerification.data.labelReady));
         setGmailTestEmailPassed(Boolean(gmailVerification.data.testEmailPassed));
         setGmailVerificationState("ready");
-      } else if (gmailVerificationEligible) {
+      } else if (gmailVerificationEligible && gmailVerificationIsCurrent) {
         setGmailLabelsReady(false);
         setGmailTestEmailPassed(false);
         setGmailVerificationState("error");
@@ -704,10 +801,23 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setConnectionHealthError(null);
     }
     try {
-      const data = await cachedGetJson<ConnectionHealthPayload>("/api/v1/integrations/google/connection", { force });
-      setConnectionHealth(data);
+      const data = await cachedGetJson<ConnectionHealthPayload>(GOOGLE_CONNECTION_URL, { force });
+      const mailboxes = safeMailboxConnections(data);
+      setConnectionHealth({ ...data, mailboxes });
       setConnectionHealthState("ready");
-      if (!data.simulation && data.connection.status === "revoked") {
+      const currentEmail = selectedGmailMailboxRef.current;
+      if (!currentEmail || !mailboxes.some((mailbox) => mailbox.email === currentEmail)) {
+        selectGmailMailbox(
+          mailboxes.find((mailbox) => mailbox.connected)?.email
+            ?? mailboxes[0]?.email
+            ?? "",
+        );
+      }
+      if (
+        !data.simulation
+        && data.connection.status === "revoked"
+        && !mailboxes.some((mailbox) => mailbox.connected)
+      ) {
         try {
           const preview = await cachedGetJson<TenantResetPreview>(
             "/api/v1/integrations/google/tenant/reset",
@@ -727,12 +837,15 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       }
     } catch (error) {
       if (!silent || isTerminalCachedGetError(error)) {
-        if (isTerminalCachedGetError(error)) setConnectionHealth(null);
+        if (isTerminalCachedGetError(error)) {
+          setConnectionHealth(null);
+          selectGmailMailbox("");
+        }
         setConnectionHealthError("Connection details could not be loaded. Retry before changing the saved connection.");
         setConnectionHealthState("error");
       }
     }
-  }, [isAdmin]);
+  }, [isAdmin, selectGmailMailbox]);
 
   /** Fills the mailbox selector. Owns its own error state: this read must never be able to
    *  settle the Stage 3 surface, which belongs to the resources endpoint alone. */
@@ -955,23 +1068,22 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     }
   }
 
-  async function disconnectGoogleDrive() {
+  async function disconnectGoogleDrive(mailbox: string) {
+    if (!mailbox) return;
     setWorking(true);
     try {
-      const response = await fetch("/api/v1/integrations/google/connection", { method: "DELETE" });
+      const response = await fetch(GOOGLE_CONNECTION_URL, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mailbox }),
+      });
       const data = await response.json() as {
         disconnected?: boolean;
         providerRevocation?: "succeeded" | "failed" | "not_attempted" | "skipped_simulation";
         error?: string;
       };
       if (!response.ok || !data.disconnected) throw new Error(data.error ?? "The Google connection could not be removed.");
-      setDriveVerified(false);
-      setGmailLabelsReady(false);
-      setGmailTestEmailPassed(false);
-      setCalendarChecked(false);
-      setSheetsVerificationPassed(false);
-      setGmailMessages([]);
-      setCalendarEvents([]);
+      if (selectedGmailMailboxRef.current === mailbox) selectGmailMailbox("");
       // `disconnected: true` only means LOCAL severance committed. When the
       // provider revocation failed, Google still lists FCI Operations as
       // authorized and this app can no longer revoke it — the token it needed is
@@ -983,7 +1095,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
           "warning",
         );
       } else {
-        notify("The active Google connection was removed from FCI Operations.", "success");
+        notify(`${mailbox} was disconnected. Other attached mailboxes remain available.`, "success");
       }
       invalidateCachedGet("/api/v1/google-workspace");
       invalidateCachedGet("/api/v1/integrations/google/connection");
@@ -1023,59 +1135,94 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   }
 
   async function prepareTestGmailLabels() {
+    if (!selectedGmailMailbox) return;
+    const mailbox = selectedGmailMailbox;
+    const generation = gmailMailboxGenerationRef.current;
     setGmailWorking(true);
     try {
-      await runWorkspaceMutation<{ prepared: boolean }>("/api/v1/integrations/google/gmail/labels/prepare", { method: "POST" });
-      invalidateCachedGet("/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status", { notify: false });
+      await runWorkspaceMutation<{ prepared: boolean }>(
+        mailboxScopedUrl("/api/v1/integrations/google/gmail/labels/prepare", mailbox),
+        { method: "POST" },
+      );
+      if (generation !== gmailMailboxGenerationRef.current) return;
+      invalidateCachedGet(
+        mailboxScopedUrl("/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status", mailbox),
+        { notify: false },
+      );
       setGmailLabelsReady(true);
       notify("FCI Gmail labels are ready. No messages were moved or archived.", "success");
     } catch (error) {
+      if (generation !== gmailMailboxGenerationRef.current) return;
       notifyError(notify, {
         message: "FCI Gmail labels could not be prepared.",
         cause: error,
-        action: { label: "Try again", run: () => { void prepareTestGmailLabels(); } },
+        action: {
+          label: "Try again",
+          run: () => runRetryForGmailMailbox(mailbox, () => { void prepareTestGmailLabels(); }),
+        },
       });
     } finally {
-      setGmailWorking(false);
+      if (generation === gmailMailboxGenerationRef.current) setGmailWorking(false);
     }
   }
 
   async function refreshTestGmail() {
+    if (!selectedGmailMailbox) return;
+    const mailbox = selectedGmailMailbox;
+    const generation = gmailMailboxGenerationRef.current;
     setGmailWorking(true);
     try {
-      const data = await readActionGatedGmail<{ messages?: WorkspaceMessage[] }>("/api/v1/integrations/google/gmail/messages?label=inbox");
+      const data = await readActionGatedGmail<{ messages?: WorkspaceMessage[] }>(
+        mailboxScopedUrl("/api/v1/integrations/google/gmail/messages?label=inbox", mailbox),
+      );
+      if (generation !== gmailMailboxGenerationRef.current) return;
       setGmailMessages(data.messages ?? []);
       notify(`Loaded ${data.messages?.length ?? 0} Workspace inbox message(s).`, "info");
     } catch (error) {
+      if (generation !== gmailMailboxGenerationRef.current) return;
       notifyError(notify, {
         message: "The test inbox could not be loaded.",
         cause: error,
-        action: { label: "Try again", run: () => { void refreshTestGmail(); } },
+        action: {
+          label: "Try again",
+          run: () => runRetryForGmailMailbox(mailbox, () => { void refreshTestGmail(); }),
+        },
       });
     } finally {
-      setGmailWorking(false);
+      if (generation === gmailMailboxGenerationRef.current) setGmailWorking(false);
     }
   }
 
   async function sendSelfTestEmail() {
+    if (!selectedGmailMailbox) return;
+    const mailbox = selectedGmailMailbox;
+    const generation = gmailMailboxGenerationRef.current;
     setGmailWorking(true);
     try {
-      await runWorkspaceMutation<{ sent: boolean }>("/api/v1/integrations/google/gmail/send-test", {
+      await runWorkspaceMutation<{ sent: boolean }>(mailboxScopedUrl("/api/v1/integrations/google/gmail/send-test", mailbox), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      invalidateCachedGet("/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status", { notify: false });
+      if (generation !== gmailMailboxGenerationRef.current) return;
+      invalidateCachedGet(
+        mailboxScopedUrl("/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status", mailbox),
+        { notify: false },
+      );
       setGmailTestEmailPassed(true);
       notify(workspace?.simulation ? "A sample email was added to the simulated Workspace inbox." : "A test email was sent only to the configured Workspace mailbox.", "success");
     } catch (error) {
+      if (generation !== gmailMailboxGenerationRef.current) return;
       notifyError(notify, {
         message: "The self-test email result could not be confirmed. Check the inbox before trying again.",
         cause: error,
-        action: { label: "Check inbox", run: () => { void refreshTestGmail(); } },
+        action: {
+          label: "Check inbox",
+          run: () => runRetryForGmailMailbox(mailbox, () => { void refreshTestGmail(); }),
+        },
       });
     } finally {
-      setGmailWorking(false);
+      if (generation === gmailMailboxGenerationRef.current) setGmailWorking(false);
     }
   }
 
@@ -1093,36 +1240,50 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   }
 
   async function previewGmailFiling() {
-    if (!filingMessage || !filingProjectId) {
+    if (!filingMessage || !filingProjectId || !selectedGmailMailbox) {
       notify("Choose the exact independent project before reviewing this email filing.", "warning");
       return;
     }
+    const mailbox = selectedGmailMailbox;
+    const generation = gmailMailboxGenerationRef.current;
     setFilingLoading(true);
     try {
-      const data = await readActionGatedGmail<GmailFilingPreview>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?projectId=${encodeURIComponent(filingProjectId)}`);
+      const parameters = new URLSearchParams({
+        projectId: filingProjectId,
+        mailbox,
+      });
+      const data = await readActionGatedGmail<GmailFilingPreview>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?${parameters.toString()}`);
+      if (generation !== gmailMailboxGenerationRef.current) return;
       setFilingPreview(data);
       notify(`Ready to review the Drive filing for ${data.project.number}. Nothing has been copied yet.`, "info");
     } catch (error) {
+      if (generation !== gmailMailboxGenerationRef.current) return;
       setFilingPreview(null);
       notifyError(notify, {
         message: "The Gmail filing preview could not be loaded.",
         cause: error,
-        action: { label: "Try again", run: () => { void previewGmailFiling(); } },
+        action: {
+          label: "Try again",
+          run: () => runRetryForGmailMailbox(mailbox, () => { void previewGmailFiling(); }),
+        },
       });
     } finally {
-      setFilingLoading(false);
+      if (generation === gmailMailboxGenerationRef.current) setFilingLoading(false);
     }
   }
 
   async function confirmGmailFiling() {
-    if (!filingMessage || !filingProjectId || !filingPreview) return;
+    const mailbox = selectedGmailMailbox;
+    if (!filingMessage || !filingProjectId || !filingPreview || !mailbox) return;
+    const generation = gmailMailboxGenerationRef.current;
     setFilingSubmitting(true);
     try {
-      const data = await runWorkspaceMutation<{ filed: boolean; alreadyFiled?: boolean; archive?: { attachmentCount?: number } }>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file`, {
+      const data = await runWorkspaceMutation<{ filed: boolean; alreadyFiled?: boolean; archive?: { attachmentCount?: number } }>(mailboxScopedUrl(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file`, mailbox), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId: filingProjectId }),
       });
+      if (generation !== gmailMailboxGenerationRef.current) return;
       notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? filingPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`, data.alreadyFiled ? "info" : "success");
       setFilingMessage(null);
       setFilingProjectId("");
@@ -1130,13 +1291,17 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       invalidateGmailFilingReadCaches({ includeOperations: false });
       await refreshTestGmail();
     } catch (error) {
+      if (generation !== gmailMailboxGenerationRef.current) return;
       notifyError(notify, {
         message: "The Gmail filing result could not be confirmed. Check the inbox before filing again.",
         cause: error,
-        action: { label: "Check inbox", run: () => { void refreshTestGmail(); } },
+        action: {
+          label: "Check inbox",
+          run: () => runRetryForGmailMailbox(mailbox, () => { void refreshTestGmail(); }),
+        },
       });
     } finally {
-      setFilingSubmitting(false);
+      if (generation === gmailMailboxGenerationRef.current) setFilingSubmitting(false);
     }
   }
 
@@ -1396,6 +1561,10 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   }
 
   const simulation = workspace?.simulation === true;
+  const attachedMailboxes = connectionHealth?.mailboxes ?? [];
+  const selectedMailboxConnection = attachedMailboxes.find((mailbox) => (
+    mailbox.email === selectedGmailMailbox
+  )) ?? null;
   const resourceRows = workspaceResources?.resources ?? [];
   const workspaceResourcesKnown = workspaceResources !== null && workspaceResourcesState !== "error";
   const workspaceCreationProgress = deriveWorkspaceCreationProgress(
@@ -1413,7 +1582,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     && resource.externalId
   )));
   const driveReady = connectComplete && workspace?.driveConnected === true && (workspace?.storageConfigured === true || effectiveSharedDriveConfigured);
-  const gmailReady = connected && workspace?.gmailEnabled === true && workspace?.gmailConnected === true;
+  const gmailReady = Boolean(
+    selectedGmailMailbox
+    && mailboxGmailReady(selectedMailboxConnection)
+    && workspace?.gmailEnabled === true,
+  );
   const calendarReady = connected && workspace?.calendarEnabled === true && workspace?.calendarConnected === true;
   const sheetsReady = connected && workspace?.sheetsEnabled === true && workspace?.sheetsConnected === true && workspace?.clientDirectorySheetConfigured === true;
   const gmailVerificationPassed = gmailLabelsReady && gmailTestEmailPassed;
@@ -1425,17 +1598,6 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   });
   const gmailStepStatus = stepStatus({ simulation, previousComplete: driveStepStatus === "Complete", prerequisitesReady: gmailReady, complete: gmailLabelsReady });
   const calendarStepStatus = stepStatus({ simulation, previousComplete: gmailStepStatus === "Complete", prerequisitesReady: calendarReady, complete: calendarChecked });
-  // 'revoked' is a real status kept for audit and health reporting, but there is
-  // nothing left to disconnect: the row survives only as history and its token is
-  // destroyed. Without excluding it here the Disconnect button lingers after a
-  // successful severance, and pressing it re-tombstones the row, writes a second
-  // disconnect audit event, and reports not_attempted — firing the
-  // manual-revocation warning for a connection that was already revoked.
-  const hasStoredConnection = !simulation && Boolean(
-    workspace?.connectionStatus
-    && workspace.connectionStatus !== "not-connected"
-    && workspace.connectionStatus !== "revoked",
-  );
   const sharedDriveDomainUsersOnly = resourceRows.find((resource) => resource.key === "primary")?.restrictions?.domainUsersOnly ?? null;
   const gmailActionsEnabled = simulation || (driveStepStatus === "Complete" && gmailReady);
   const calendarActionsEnabled = simulation || (gmailStepStatus === "Complete" && calendarReady);
@@ -1739,7 +1901,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       <SetupStage
         number={2}
         title="Connect"
-        description="Authorize the one company Google account"
+        description="Attach each approved company mailbox separately"
         status={stageTwoStatus}
         tone={neutralStageStatus ? "neutral" : stageTwoComplete ? "done" : stageOneComplete ? "current" : "waiting"}
         complete={stageTwoComplete}
@@ -1751,21 +1913,40 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
           <header className={panelStyles.connectionActionsHeader}>
             <span className="integration-logo google" aria-hidden="true"><Mail size={20} /></span>
             <div>
-              <h3 id="workspace-connection-actions-heading">Company account authorization</h3>
+              <h3 id="workspace-connection-actions-heading">Company mailbox authorization</h3>
               <p>{simulation
                 ? "Simulation runs locally, and nothing is sent to Google. Reset restores the isolated sample Gmail, Calendar, Drive, and Sheets state."
-                : "Authorize the one approved company account. Reconnect to confirm enabled services again, or disconnect the saved account from FCI Operations."}</p>
+                : "Attach each approved role mailbox with its own Google sign-in and consent. Disconnecting one mailbox leaves every other attachment working."}</p>
             </div>
           </header>
           <div className={`workspace-actions ${panelStyles.connectionActionButtons}`}>
             {simulation
               ? <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void resetSimulation()} disabled={working}>{working ? "Resetting…" : "Reset simulation data"}</AdministratorActionButton>
               : <>
-                {!connected && <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void connectGoogleDrive()} disabled={!configured || working}>{working ? "Preparing…" : reconnectRequired ? "Reconnect Google Workspace" : "Connect Google Workspace"}</AdministratorActionButton>}
-                {hasStoredConnection && <AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void disconnectGoogleDrive()} disabled={working}>{working ? "Disconnecting…" : "Disconnect Workspace"}</AdministratorActionButton>}
+                <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void connectGoogleDrive()} disabled={!configured || working}>{working ? "Preparing…" : attachedMailboxes.length === 0 && reconnectRequired ? "Reconnect mailbox" : "Attach mailbox"}</AdministratorActionButton>
                 {tenantResetPreview?.available && tenantResetPreview.discardedTenant && <AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => { setTenantResetConfirmation(""); setTenantResetOpen(true); }} disabled={working || tenantResetWorking}>Start fresh on a new tenant</AdministratorActionButton>}
               </>}
           </div>
+          {!simulation && <div className={panelStyles.mailboxConnections} aria-label="Attached Google mailboxes">
+            {attachedMailboxes.length === 0
+              ? <p className={panelStyles.mailboxConnectionsEmpty}>No Google mailbox is attached yet.</p>
+              : attachedMailboxes.map((mailbox) => <article className={panelStyles.mailboxConnectionRow} key={mailbox.email}>
+                  <div>
+                    <strong>{mailbox.email}</strong>
+                    <span>{mailbox.connected ? "Connected" : mailbox.status === "revoked" ? "Disconnected" : "Needs attention"}</span>
+                    <span>{mailboxGmailReady(mailbox) ? "Gmail ready" : mailbox.requiresReauthorization ? "Reconnect to approve Gmail" : "Gmail unavailable"}</span>
+                  </div>
+                  {mailbox.status !== "revoked" && <AdministratorActionButton
+                    className="soft-button"
+                    isAdmin={isAdmin}
+                    aria-label={`Disconnect ${mailbox.email}`}
+                    onClick={() => void disconnectGoogleDrive(mailbox.email)}
+                    disabled={working}
+                  >
+                    {working ? "Working…" : "Disconnect"}
+                  </AdministratorActionButton>}
+                </article>)}
+          </div>}
           {tenantResetPreviewError && <p className="workspace-missing" role="alert">{tenantResetPreviewError}</p>}
         </section>
         {isAdmin && <details className={`workspace-connection-health ${panelStyles.connectionHealthExpander}`}>
@@ -1773,7 +1954,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
             <span className={panelStyles.connectionHealthToggleCopy}>
               <span className="eyebrow">Administrator details</span>
               <strong id="workspace-connection-health-heading">Connection health</strong>
-              <span>Account and recorded service permissions</span>
+              <span>Attached mailboxes and recorded service permissions</span>
             </span>
             <ChevronDown className={panelStyles.connectionHealthChevron} size={18} aria-hidden="true" />
           </summary>
@@ -1781,22 +1962,28 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
             {connectionHealthState === "loading" && !connectionHealth && <p className="workspace-connection-health-message" role="status">Loading the saved connection details…</p>}
             {connectionHealthError && <ClientDataNotice state="error" error={connectionHealthError} errorTitle="Connection details are unavailable" retryLabel="Retry details" onRetry={() => void loadConnectionHealth(true)} />}
             {connectionHealth && <>
-              <dl className={panelStyles.connectionHealthAccount}>
-                <div><dt>Account</dt><dd>{maskWorkspaceAccountForDisplay(connectionHealth.connection.account)}</dd></div>
-              </dl>
-              {connectionHealth.connection.requiresReauthorization && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Reauthorization required:</strong> Disconnect this saved connection, then reconnect the exact approved account and approve every enabled service.</span></p>}
-              <OperationsDataTable className="workspace-connection-service-table" columns={CONNECTION_SERVICE_COLUMNS} labelledBy="workspace-connection-health-heading">
-                {CONNECTION_SERVICES.map((service) => {
-                  const enabled = connectionHealth.enabledServices.includes(service.key);
-                  const granted = connectionHealth.connection.grantedServices?.[service.key];
-                  const grantLabel = connectionHealth.simulation ? "Not applicable — simulated" : granted ? "Granted" : "Not granted";
-                  return <tr key={service.key}>
-                    <OperationsDataTableCell label="Service"><strong>{service.label}</strong></OperationsDataTableCell>
-                    <OperationsDataTableCell label="FCI configuration"><span className={`workspace-service-state ${enabled ? "ready" : "inactive"}`}>{enabled ? "Enabled" : "Not enabled"}</span></OperationsDataTableCell>
-                    <OperationsDataTableCell label="Recorded OAuth permission"><span className={`workspace-service-state ${granted ? "ready" : "inactive"}`}>{grantLabel}</span></OperationsDataTableCell>
-                  </tr>;
-                })}
-              </OperationsDataTable>
+              {attachedMailboxes.length === 0
+                ? <p className="workspace-connection-health-message">No saved mailbox connection was found.</p>
+                : attachedMailboxes.map((mailbox) => <section className={panelStyles.mailboxHealth} aria-labelledby={`workspace-mailbox-health-${mailbox.email.replace(/[^a-z0-9]+/gi, "-")}`} key={mailbox.email}>
+                    <header>
+                      <strong id={`workspace-mailbox-health-${mailbox.email.replace(/[^a-z0-9]+/gi, "-")}`}>{mailbox.email}</strong>
+                      <span>{mailbox.connected ? "Connected" : "Not connected"}</span>
+                    </header>
+                    {mailbox.requiresReauthorization && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Reauthorization required:</strong> Use Attach mailbox and sign in to this exact account again, approving every enabled service.</span></p>}
+                    <OperationsDataTable className="workspace-connection-service-table" columns={CONNECTION_SERVICE_COLUMNS} labelledBy={`workspace-mailbox-health-${mailbox.email.replace(/[^a-z0-9]+/gi, "-")}`}>
+                      {CONNECTION_SERVICES.map((service) => {
+                        const enabled = connectionHealth.enabledServices.includes(service.key);
+                        const granted = mailbox.grantedServices?.[service.key];
+                        const ready = mailbox.services[service.key] === true;
+                        const grantLabel = connectionHealth.simulation ? "Not applicable — simulated" : granted ? "Granted" : "Not granted";
+                        return <tr key={service.key}>
+                          <OperationsDataTableCell label="Service"><strong>{service.label}</strong></OperationsDataTableCell>
+                          <OperationsDataTableCell label="FCI configuration"><span className={`workspace-service-state ${enabled && ready ? "ready" : "inactive"}`}>{enabled ? ready ? "Ready" : "Unavailable" : "Not enabled"}</span></OperationsDataTableCell>
+                          <OperationsDataTableCell label="Recorded OAuth permission"><span className={`workspace-service-state ${granted ? "ready" : "inactive"}`}>{grantLabel}</span></OperationsDataTableCell>
+                        </tr>;
+                      })}
+                    </OperationsDataTable>
+                  </section>)}
               <p className="workspace-connection-health-note">Recorded permission reflects the saved Google consent only. It is not a live provider-health or freshness check.</p>
             </>}
           </div>
@@ -1907,7 +2094,18 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
                       <span id={dependencyDescriptionId}>{gmailActionsEnabled ? "Ready for explicit actions" : "Blocked until the prior step is complete"}</span>
                     </div>
                   </div>
-                  <p>View up to 20 messages, add a sample email in simulation, and review-copy one message into the exact project. Inbox stays intact.</p>
+                  <p>Choose an attached mailbox, view up to 20 messages, and review-copy one message into the exact project. Inbox stays intact.</p>
+                  {isAdmin && attachedMailboxes.length > 0 && <label className={panelStyles.gmailMailboxSelector}>
+                    Mailbox for Gmail verification
+                    <select
+                      value={selectedGmailMailbox}
+                      onChange={(event) => selectGmailMailbox(event.target.value)}
+                      disabled={gmailWorking || filingLoading || filingSubmitting}
+                    >
+                      {attachedMailboxes.map((mailbox) => <option value={mailbox.email} key={mailbox.email}>{mailbox.email}</option>)}
+                    </select>
+                    <small>FCI labels and test actions apply only to this mailbox.</small>
+                  </label>}
                   <div className="workspace-actions">
                     <AdministratorActionButton className="soft-button" isAdmin={isAdmin} aria-describedby={dependencyDescriptionId} onClick={() => void prepareTestGmailLabels()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Working…" : "Prepare FCI labels"}</AdministratorActionButton>
                     <AdministratorActionButton className="soft-button" isAdmin={isAdmin} aria-describedby={dependencyDescriptionId} onClick={() => void refreshTestGmail()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Loading…" : "View inbox"}</AdministratorActionButton>

@@ -121,7 +121,9 @@ export async function GET(request: NextRequest) {
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
 
-  const setup = await getEffectiveGoogleRuntimeSetup();
+  const setup = await getEffectiveGoogleRuntimeSetup(undefined, {
+    includeCredentialGeneration: false,
+  });
   const { config, connectionIdentity: connection, resources: savedRows, blueprint } = setup;
   const savedByIdentity = new Map(savedRows.map((row) => [`${row.resourceType}:${row.resourceKey}`, row]));
   const resources = resourcePresentation(blueprint).map((presentation) => {

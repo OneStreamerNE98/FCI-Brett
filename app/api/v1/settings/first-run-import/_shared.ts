@@ -9,6 +9,8 @@ import {
 import {
   acquireWorkspaceSetupLease,
   failWorkspaceSetupLease,
+  googleConnectionLeaseFence,
+  type WorkspaceSetupConnectionFence,
   type WorkspaceSetupLease,
 } from "../../../../adapters/d1/workspace-setup-leases";
 import {
@@ -29,6 +31,7 @@ import { firstRunImportSimulationRows } from "../../../../lib/first-run-import-s
 import { googleIntegrationErrorResponse } from "../../../../lib/google-integration-error";
 import {
   getEffectiveGoogleRuntimeSetup,
+  getConnectionScope,
   getGoogleAccessToken,
 } from "../../../../lib/google-oauth-sites";
 import {
@@ -81,6 +84,8 @@ type ConfirmRequest = Readonly<{
 
 type LoadedSource = Readonly<{
   kind: "spreadsheet" | "csv";
+  connectionKey: string;
+  connectionFence?: WorkspaceSetupConnectionFence;
   publicSource:
     | Readonly<{ kind: "spreadsheet"; spreadsheetKey: string }>
     | Readonly<{ kind: "csv"; fileName: string }>;
@@ -268,6 +273,7 @@ async function loadSource(
   if (source.kind === "csv") {
     return Object.freeze({
       kind: "csv",
+      connectionKey: getConnectionScope().connectionKey,
       publicSource: Object.freeze({ kind: "csv", fileName: source.fileName }),
       values: parseFirstRunImportCsv(source.content),
     });
@@ -300,6 +306,8 @@ async function loadSource(
   if (setup.config.simulation) {
     return Object.freeze({
       kind: "spreadsheet",
+      connectionKey: setup.config.connectionKey,
+      connectionFence: googleConnectionLeaseFence(setup.config),
       publicSource,
       values: firstRunImportSimulationRows(entity),
     });
@@ -311,6 +319,8 @@ async function loadSource(
   const response = await sheets.values(importRange(metadata, entity));
   return Object.freeze({
     kind: "spreadsheet",
+    connectionKey: setup.config.connectionKey,
+    connectionFence: googleConnectionLeaseFence(setup.config),
     publicSource,
     values: Object.freeze((response.values ?? []).map((row) => Object.freeze([...row]))),
   });
@@ -503,14 +513,14 @@ export async function handleFirstRunImportConfirm(
     // Reading Sheets can be the slow part. Finish that bounded provider read
     // before taking the global snapshot-to-write lease.
     const loaded = await loadSource(body.entity, body.source);
-    const setup = await getEffectiveGoogleRuntimeSetup();
     lease = await acquireWorkspaceSetupLease(database, {
       id: crypto.randomUUID(),
-      connectionKey: setup.config.connectionKey,
+      connectionKey: loaded.connectionKey,
       action: "first-run-import-confirm",
       scopeKey: "records",
       actor,
       now: Date.now(),
+      connectionFence: loaded.connectionFence,
     });
     if (!lease) {
       return noStoreJson({
