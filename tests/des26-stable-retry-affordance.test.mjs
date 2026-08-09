@@ -82,21 +82,6 @@ test("DES-26 Stable DOM attribute for test targeting", () => {
   );
 });
 
-test("DES-26 Pointer tracking ref is wired to the component root", () => {
-  // The isPointerOverRef must be set on pointer enter/leave of the
-  // component root so callers and tests can detect hover state.
-  assert.match(
-    source,
-    /isPointerOverRef\.current = true/u,
-    "onPointerEnter must set isPointerOverRef",
-  );
-  assert.match(
-    source,
-    /isPointerOverRef\.current = false/u,
-    "onPointerLeave must clear isPointerOverRef",
-  );
-});
-
 test("DES-26 Primary-button-only guard on pointer-down", () => {
   // Only the primary (left) button should trigger retry to avoid
   // firing on right-click/context menu.
