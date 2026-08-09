@@ -147,7 +147,7 @@ async function mockShell(page: Page) {
   await page.route("**/api/v1/integrations/google/calendar/events?verification=status", (route) =>
     fulfillJson(route, { events: [], verificationPassed: true }));
   await page.route("**/api/v1/leads", (route) => fulfillJson(route, { leads: [] }));
-  await page.route("**/api/v1/clients", (route) => fulfillJson(route, {
+  await page.route(/\/api\/v1\/clients(\?.*)?$/, (route) => fulfillJson(route, {
     clients: [{
       id: project.client_id,
       client_code: "WS20",
@@ -157,8 +157,9 @@ async function mockShell(page: Page) {
       primary_contact_name: "FCI TEST Contact",
       primary_contact_email: "contact@example.test",
     }],
+    nextCursor: null,
   }));
-  await page.route("**/api/v1/projects", (route) => fulfillJson(route, { projects: [project] }));
+  await page.route(/\/api\/v1\/projects(\?.*)?$/, (route) => fulfillJson(route, { projects: [project], nextCursor: null }));
   await page.route("**/api/v1/dashboard", (route) => fulfillJson(route, {
     generatedAt: Date.UTC(2026, 7, 8, 12),
     metrics: {
