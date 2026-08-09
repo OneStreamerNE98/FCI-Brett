@@ -39,16 +39,16 @@ const settingsMutationRoutes = [
 ];
 
 test("exposes the authenticated user's Administrator flag through the shared account request", async () => {
-  const [accountRoute, app, myAccount, cache] = await Promise.all([
+  const [accountRoute, currentUserSettings, myAccount, cache] = await Promise.all([
     read("app/api/v1/settings/me/route.ts"),
-    read("app/FloorOpsApp.tsx"),
+    read("app/application/use-current-user-settings.ts"),
     read("app/settings/components/MySettingsPanel.tsx"),
     read("app/lib/client-get-cache.ts"),
   ]);
 
   assert.match(accountRoute, /isAdmin: auth\.user\.isAdmin/);
-  assert.match(app, /cachedGetJson<[^;]+>\("\/api\/v1\/settings\/me"\)/);
-  assert.match(app, /pageLayouts\?: unknown/);
+  assert.match(currentUserSettings, /cachedGetJson<[^;]+>\("\/api\/v1\/settings\/me"\)/);
+  assert.match(currentUserSettings, /pageLayouts\?: unknown/);
   assert.match(myAccount, /cachedGetJson[^\n]+\("\/api\/v1\/settings\/me"/);
   assert.match(myAccount, /fetch\("\/api\/v1\/settings\/me", \{[\s\S]+method: "PATCH"/);
   // SET-42 serves a mounted stale value immediately while sharing the same
@@ -57,20 +57,23 @@ test("exposes the authenticated user's Administrator flag through the shared acc
 });
 
 test("uses one reconciled Administrator flag for shell and Settings content gates", async () => {
-  const app = await read("app/FloorOpsApp.tsx");
+  const [app, currentUserSettings] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
+    read("app/application/use-current-user-settings.ts"),
+  ]);
   const workspaceNavigationItems = sourceSection(app, "const workspaceNavItems", "const managementNavItems", "Workspace navigation item catalog");
-  const managementNavigationItems = sourceSection(app, "const managementNavItems", "function optionalRecordNumber", "Management navigation item catalog");
+  const managementNavigationItems = sourceSection(app, "const managementNavItems", "const loadAssistantView", "Management navigation item catalog");
   const shell = sourceSection(app, "export function FloorOpsApp", "function Overview", "FloorOpsApp shell");
   const settingsView = app.slice(app.indexOf("function SettingsView"));
   assert.ok(settingsView.startsWith("function SettingsView"), "SettingsView start anchor");
 
-  assert.match(shell, /const \[isAdmin, setIsAdmin\] = useState\(accessLabel === "Admin"\)/);
+  assert.match(shell, /useCurrentUserSettings\(accessLabel === "Admin"\)/);
   assert.equal([...shell.matchAll(/accessLabel === "Admin"/g)].length, 1);
-  assert.match(shell, /useState<PageLayouts>\(\(\) => defaultPageLayouts\(isAdmin\)\)/);
-  assert.match(shell, /const nextIsAdmin = data\?\.isAdmin === true/);
-  assert.match(shell, /const failClosedCurrentUserSettings = useCallback\(\(\) => \{[\s\S]+setIsAdmin\(false\)/);
-  assert.equal([...shell.matchAll(/failClosedCurrentUserSettings\(\);/g)].length, 3);
-  assert.match(shell, /isTerminalCachedGetError\(error\)[\s\S]{0,120}failClosedCurrentUserSettings\(\)/);
+  assert.match(currentUserSettings, /useState<PageLayouts>\(\(\) => defaultPageLayouts\(initialIsAdmin\)\)/);
+  assert.match(currentUserSettings, /const nextIsAdmin = data\?\.isAdmin === true/);
+  assert.match(currentUserSettings, /const failClosedCurrentUserSettings = useCallback\(\(\) => \{[\s\S]+setIsAdmin\(false\)/);
+  assert.equal([...currentUserSettings.matchAll(/failClosedCurrentUserSettings\(\);/g)].length, 3);
+  assert.match(currentUserSettings, /isTerminalCachedGetError\(error\)[\s\S]{0,120}failClosedCurrentUserSettings\(\)/);
   assert.match(shell, /onCurrentUserSettingsLoaded=\{reconcileCurrentUserSettings\}/);
   assert.deepEqual(
     [...workspaceNavigationItems.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]),

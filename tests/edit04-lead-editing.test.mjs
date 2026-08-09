@@ -14,8 +14,9 @@ function sourceSection(source, start, end, label) {
 }
 
 test("lead editor retains all 13 canonical fields, version, and changed-key conflict behavior", async () => {
-  const [app, leadModalSource, recordTypes] = await Promise.all([
+  const [app, directoryData, leadModalSource, recordTypes] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
+    read("app/application/use-directory-data.ts"),
     read("app/leads/components/LeadModal.tsx"),
     read("app/lib/record-types.ts"),
   ]);
@@ -44,7 +45,7 @@ test("lead editor retains all 13 canonical fields, version, and changed-key conf
   }
   assert.match(leadType, /version\?: string/u);
   assert.match(leadModalSource, /mode: "edit";[\s\S]*initialValues: Lead;/u);
-  assert.match(app, /version: normalizeRecordVersion\(record\.version\) \?\? undefined/u);
+  assert.match(directoryData, /version: normalizeRecordVersion\(record\.version\) \?\? undefined/u);
   assert.match(saveLead, /body: JSON\.stringify\(\{ \.\.\.patch, version \}\)/u);
   assert.match(saveLead, /throw new LeadEditConflictError/u);
   assert.match(leadModal, /conflictVersion \?\? props\.initialValues\.version/u);

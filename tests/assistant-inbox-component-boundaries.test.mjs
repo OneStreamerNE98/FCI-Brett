@@ -42,8 +42,8 @@ test("keeps Assistant-only evidence details and a narrow project contract in Ass
   assert.match(assistant, /type AssistantProject = \{\s*id: string;\s*number: string;\s*name: string;\s*\};/);
   assert.doesNotMatch(assistant, /FloorOpsApp|type Project\b/);
 
-  assert.match(app, /import \{ AssistantView \} from "\.\/assistant\/components\/AssistantView";/);
-  assert.match(app, /<AssistantView projects=\{projectItems\} \/>/);
+  assert.match(app, /const loadAssistantView = \(\) => import\("\.\/assistant\/components\/AssistantView"\);/);
+  assert.match(app, /<LazyAssistantView projects=\{projectItems\} \/>/);
   assert.doesNotMatch(app, /\btype AssistantCitation\b|function AssistantView\b|function SourceDetailModal\b/);
 });
 
@@ -77,7 +77,7 @@ test("keeps Inbox-only helpers, reply UI, and a narrow record contract in the ex
   assert.match(inbox, /import \{ GmailReplyModal \} from "\.\/GmailReplyModal";/);
 
   assert.match(reply, /export function GmailReplyModal\(/);
-  assert.match(app, /import \{ InboxView \} from "\.\/inbox\/components\/InboxView";/);
-  assert.match(app, /<InboxView notify=\{notify\}/);
+  assert.match(app, /const loadInboxView = \(\) => import\("\.\/inbox\/components\/InboxView"\);/);
+  assert.match(app, /<LazyInboxView notify=\{notify\}/);
   assert.doesNotMatch(app, /function InboxView\b|function GmailReplyModal\b|function inboxProjectSuggestion\b|function inboxDate\b/);
 });
