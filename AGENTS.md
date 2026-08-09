@@ -6,18 +6,21 @@ These instructions apply to the entire repository and are intended to give every
 
 Start with [`docs/README.md`](docs/README.md), the audience-grouped index of every document (added July 24, 2026). Then, before changing code, read:
 
-1. `docs/guides/codex-to-codex-handoff.md`
-2. `docs/specs/architecture-decision-production-platform.md`
-3. `docs/specs/architecture-decision-workspace-first-cost-controlled-rollout.md`
-4. `docs/reviews/20-user-product-and-architecture-review.md`
-5. `docs/ledger/agent-plan-architecture-workspace-and-setup.md`
-6. `docs/reviews/complete-product-and-google-cloud-architecture-audit.md`
-7. `docs/specs/google-cloud-runtime-foundation.md`
-8. `docs/archive/ui-and-product-readiness-review.md`
+1. `docs/BOARD.md` (the generated packet board — always current, CI-enforced)
+2. `docs/guides/codex-to-codex-handoff.md`
+3. `docs/specs/architecture-decision-production-platform.md`
+4. `docs/specs/architecture-decision-workspace-first-cost-controlled-rollout.md`
+5. `docs/reviews/20-user-product-and-architecture-review.md`
+6. `docs/ledger/agent-plan-architecture-workspace-and-setup.md`
+7. `docs/reviews/complete-product-and-google-cloud-architecture-audit.md`
+8. `docs/specs/google-cloud-runtime-foundation.md`
 9. `docs/guides/google-workspace-rollout-guide.md`
 10. `docs/task-checklists/README.md`
 11. `docs/specs/collaboration-and-sharing.md`
 12. `docs/nightly-reviews/README.md` (the standing nightly review program; added July 24, 2026)
+
+(Historical UI audit detail lives in `docs/archive/ui-and-product-readiness-review.md` —
+archived August 2026; read it for history, not for current status.)
 
 ## Current product boundary
 
