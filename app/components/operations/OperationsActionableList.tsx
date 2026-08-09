@@ -28,18 +28,20 @@ export function OperationsActionableList({
   children: ReactNode;
 }) {
   const sortable = Boolean(onSort);
+  const header = <div className={headerClassName} aria-hidden={sortable ? undefined : "true"} role={sortable ? "row" : undefined}>
+    {columns.map((column, index) => {
+      if (typeof column === "string") return <span key={`${index}-${column}`}>{column}</span>;
+      const active = column.key === sortKey;
+      return <span
+        key={column.key}
+        role="columnheader"
+        aria-sort={active ? sortDirection : "none"}
+      ><button type="button" className="operations-sort-header" disabled={sortDisabled} onClick={() => onSort?.(column.key)}>{column.label}<span aria-hidden="true">{active ? sortDirection === "ascending" ? "↑" : "↓" : "↕"}</span></button></span>;
+    })}
+  </div>;
+
   return <>
-    <div className={headerClassName} aria-hidden={sortable ? undefined : "true"} role={sortable ? "row" : undefined}>
-      {columns.map((column, index) => {
-        if (typeof column === "string") return <span key={`${index}-${column}`}>{column}</span>;
-        const active = column.key === sortKey;
-        return <span
-          key={column.key}
-          role="columnheader"
-          aria-sort={active ? sortDirection : "none"}
-        ><button type="button" className="operations-sort-header" disabled={sortDisabled} onClick={() => onSort?.(column.key)}>{column.label}<span aria-hidden="true">{active ? sortDirection === "ascending" ? "↑" : "↓" : "↕"}</span></button></span>;
-      })}
-    </div>
+    {sortable ? <div role="table" aria-label={`${ariaLabel} sorting controls`}>{header}</div> : header}
     <ul className={`operations-actionable-list ${className}`.trim()} aria-label={ariaLabel} role="list">
       {children}
     </ul>

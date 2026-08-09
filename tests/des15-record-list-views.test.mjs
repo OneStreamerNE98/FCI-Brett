@@ -43,6 +43,7 @@ test("DES-15 extracted views implement search, sorting, progressive reveal, and 
   const leads = read("app/leads/components/LeadsView.tsx");
   const clients = read("app/clients/components/ClientsView.tsx");
   const projects = read("app/projects/components/ProjectsView.tsx");
+  assert.match(shared, /sortable \? <div role="table" aria-label=\{`\$\{ariaLabel\} sorting controls`\}>\{header\}<\/div> : header/u);
   assert.match(shared, /aria-sort=\{active \? sortDirection : "none"\}/u);
   assert.match(shared, /className="operations-sort-header"/u);
   assert.match(leads, /preference\.view === "list" \? <LeadStatusPanel/u);
