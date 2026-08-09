@@ -167,6 +167,14 @@ The Inbox is the **Gmail project inbox** — where you review emails and file th
   is not a Gmail label filter.
 - **FCI/Filed** — messages already copied into a project.
 
+Administrators first choose a human mailbox address in **Connected mailbox**, then choose
+one of those four buckets. Each attached mailbox keeps its own messages, bucket counts,
+analysis queue, labels, drafts, and filing history. Switching the address clears the
+previous mailbox's loaded results before anything from the next mailbox appears. Mailbox
+contents still load only after a named action; returning to the page may refresh the list
+of attached addresses, but it never reads Gmail on its own. Shared-mailbox access for
+non-administrator staff remains a separate, owner-gated step.
+
 **Filing is review-first — nothing happens automatically.** Rules can *suggest* a destination, but you always choose the exact project and approve every copy yourself. To file an email, use **Review & copy**, pick the exact project, review the preview (nothing is copied at the preview step), then confirm. Only then is the email and its attachments copied into that project's Drive folder. Your Inbox is never emptied or archived — the original email stays put; filing adds a copy.
 
 **Reply drafts are never sent for you.** Use **Draft reply** to write a response. Saving it stores an **unsent draft** in Gmail (or a local draft in simulation mode). Actually sending it is always a separate, deliberate action you take yourself.
@@ -183,7 +191,7 @@ AI** and **Draft with AI**:
   anything. **Save draft** remains the separate human action.
 
 In simulation these features read the local sample mailbox and never contact
-Google. In live mode they require the approved Workspace Gmail connection.
+Google. In live mode they use the exact attached Workspace mailbox selected above.
 Both modes still require `OPENAI_API_KEY`; if it is Missing, these AI controls
 are absent or disabled while the ordinary Inbox and manual draft flows keep
 working.
@@ -320,9 +328,9 @@ Office users also see the company **AI assistant** card here in a read-only form
 
 ### 2. Google Workspace
 
-The heart of company setup: connecting the one company Google account and creating the Shared Drive, folders, spreadsheets, and calendars the app uses. This is a four-stage flow and it has its own full walkthrough in the next section, "Connecting and verifying Google in plain words."
+The heart of company setup: attaching approved company mailboxes and creating the Shared Drive, folders, spreadsheets, and calendars the app uses. This is a four-stage flow and it has its own full walkthrough in the next section, "Connecting and verifying Google in plain words."
 
-The Stage 1 **App-managed Workspace configuration** controls four values that used to require a hosted-setting edit: project-folder provisioning, the Gmail intake mailbox, the Client Directory spreadsheet ID, and the Google Forms response spreadsheet ID. The mailbox selector offers only addresses already present in the hosted `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` allowlist and using a hosted allowed domain; Settings cannot add an account or widen either allowlist. Saving a different authorized address takes effect without a redeploy. Because Gmail reads as `users/me`, the saved mailbox must match the account actually connected to Google. If they differ, readiness names the saved mailbox and the connected account — the connected one masked — and blocks Google operations. **Connect Google Workspace** stays available, but it repairs the mismatch only when you reconnect as the account that is *already connected*; the safe, non-destructive fix is to re-select that connected account in the mailbox selector. Connecting as a **different** Google account is refused on any tenant that already holds saved Workspace data — including a tenant whose only saved value is this mailbox — and returns a different-tenant error that can be cleared only by **Start fresh on a new tenant**, the destructive reset described under "Stage 2 — Connect" below. Moving the effective intake mailbox to a different Google account on an established tenant therefore means accepting that reset and everything it discards, not simply reconnecting. The two Sheet fields verify the exact ID against Google before adopting it. Each live-Workspace row names its effective source as **App-saved**, **Environment**, or **None**. App-saved values win; the matching environment values remain first-boot fallbacks. In local simulation, project-folder provisioning is fixed on for the safe sample-folder workflow: the row says **Simulation fixture (always enabled)**, its control is locked, and neither the UI nor the API can save a misleading future live-mode value. Hosted OAuth secrets and identity allowlists are still outside the app.
+The Stage 1 **App-managed Workspace configuration** controls four values that used to require a hosted-setting edit: project-folder provisioning, the Gmail intake mailbox, the Client Directory spreadsheet ID, and the Google Forms response spreadsheet ID. The intake selector offers only addresses already present in the hosted `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` allowlist and using a hosted allowed domain; Settings cannot add an account or widen either allowlist. Saving a different authorized address takes effect without a redeploy. The selected intake address must also be one of the separately attached mailboxes before Gmail work is ready. Additional same-tenant role mailboxes are attached in Stage 2 without replacing the intake setting or duplicating the shared Drive workspace. A different **tenant** is still refused while tenant-owned data exists and requires the destructive **Start fresh on a new tenant** flow described below. The two Sheet fields verify the exact ID against Google before adopting it. Each live-Workspace row names its effective source as **App-saved**, **Environment**, or **None**. App-saved values win; the matching environment values remain first-boot fallbacks. In local simulation, project-folder provisioning is fixed on for the safe sample-folder workflow: the row says **Simulation fixture (always enabled)**, its control is locked, and neither the UI nor the API can save a misleading future live-mode value. Hosted OAuth secrets and identity allowlists are still outside the app.
 
 ### 3. Calendar & appointments
 
@@ -395,7 +403,7 @@ The **Review activity** area reads saved app data only; opening it never contact
 
 ### 8. Data & security
 
-A plain-language summary of the safeguards already in place: review-first email filing, one administrator-approved Workspace connection (consumer Gmail accounts are rejected in live mode), isolated local simulation that never contacts Google, and the installable web app. It also includes phone-install guidance.
+A plain-language summary of the safeguards already in place: review-first email filing, separately consented administrator-approved Workspace mailbox connections (consumer Gmail accounts are rejected in live mode), isolated local simulation that never contacts Google, and the installable web app. It also includes phone-install guidance.
 
 Administrators also see a read-only **Who has access** card. It shows the office-email, office-domain, and Administrator-email identifiers currently supplied by the hosting configuration — never secrets, keys, or tokens. If both office allowlists are empty, the card says **"Office access is not configured — the app denies everyone"**. This card describes the current development sign-in gate only: the lists are changed in hosting configuration, while live-login invitations and roles belong in **People & Access**. There is nothing to edit on this page.
 
@@ -433,20 +441,27 @@ Below the banner are **four stages, done in order**. The app opens the stage you
 ### Stage 1 — "Prepare the tenant"
 *On-screen subtitle: "One-time steps done in Google's consoles — usually your Workspace admin."*
 
-This is the one-time groundwork in Google's own admin consoles — verifying your company domain, creating the one connection account, and enabling Gmail, Calendar, Drive, and Sheets for it. The app shows a checklist of what still needs to be true before you can connect. Much of this is Google-console work; if any of it is unfamiliar, this is a "call the developer" stage. The stage turns **DONE** when the connection prerequisites are all ready.
+This is the one-time groundwork in Google's own admin consoles — verifying your company domain, creating the approved role-mailbox accounts, and enabling Gmail, Calendar, Drive, and Sheets. The app shows a checklist of what still needs to be true before you can connect. Much of this is Google-console work; if any of it is unfamiliar, this is a "call the developer" stage. The stage turns **DONE** when the connection prerequisites are all ready.
 
 ### Stage 2 — "Connect"
-*On-screen subtitle: "Authorize the one company Google account."*
+*On-screen subtitle: "Attach each approved company mailbox separately."*
 
-Press **Connect Google Workspace**, sign in as the company account selected for the Gmail intake mailbox, and approve the requested permissions. The hosted allowlist may contain more than one approved company address, but Gmail still runs as one connected `users/me` account at a time, so the selected mailbox and connected account must match. A personal `@gmail.com` account remains outside the authorized company allowlist. After you approve, the app returns to this page and refreshes readiness automatically.
+Press **Attach mailbox**, sign in as one approved company role mailbox, and approve the requested permissions. Repeat the action for each mailbox you intend to work. Every attachment is a separate ordinary Google OAuth consent; there is no impersonation or domain-wide delegation. The app reads each connection as that exact `users/me` account, and a personal `@gmail.com` account remains outside the authorized company allowlist. After each approval, the app returns to this page and refreshes the attached-mailbox list automatically.
+
+The requested Gmail permission is `gmail.modify`. That permission allows the app to read,
+modify, send, and delete mail in the attached account; it is **not** a read-only grant.
+FCI Operations still keeps filing review-first and never sends or deletes automatically,
+but the Google consent itself carries those capabilities. Attach only role mailboxes whose
+owner accepts that scope. Narrowing the scope later requires disconnecting and reconnecting
+every affected mailbox.
 
 If you are in simulation, this stage instead offers **Reset simulation data**, which restores the safe sample Gmail, Calendar, Drive, and Sheets data.
 
-Two buttons you will meet here later:
+Two controls you will meet here later:
 
-- **Reconnect Google Workspace** — appears if Google ever needs you to re-approve permissions.
-- **Disconnect Workspace** — severs this app's access immediately and asks Google to revoke
-  the grant. Two things to know. The connection record is **kept, marked revoked**, so the
+- **Attach mailbox** — also reconnects an address that needs fresh permission when you sign in as that exact mailbox again.
+- **Disconnect** on a mailbox row — severs this app's access to that one address immediately and asks Google to revoke
+  that grant. Other attached mailboxes stay connected. Two things to know. The connection record is **kept, marked revoked**, so the
   history of who connected and when survives; the saved token itself is destroyed, so
   reconnecting always requires approving access again from scratch. And if Google cannot be
   reached to confirm the revocation, you get a warning rather than a success message: the app
@@ -457,7 +472,7 @@ After a connection is disconnected, administrators can also choose **Start fresh
 
 This reset is destructive. In particular, it discards filed-email evidence: those rows point to Drive files in the old tenant, and the app will no longer be able to read those files after the move. Keeping the rows would preserve the appearance of an audit trail without usable evidence. The app records one administrator audit event naming the discarded stored account, but it cannot restore the removed evidence or identifiers. Connect and provision the new tenant only after the reset completes.
 
-Administrators also get a small **Connection health** expander showing the connected account and, per service, whether it is *Enabled* in the app and *Granted* by Google. Note the honest caveat the app itself prints: this reflects the saved consent, not a live health check.
+Administrators also get a small **Connection health** expander showing every attached mailbox and, per service, whether it is ready in the app and *Granted* by Google. Note the honest caveat the app itself prints: this reflects saved consent, not a live provider-health check.
 
 > [SCREENSHOT 10 — see Screenshot index]
 
@@ -483,7 +498,7 @@ You do **not** hand-build the project folders; the app creates them from the sav
 
 This stage proves each service actually works, then stays available as your ongoing toolbox. It has three **first-run checks**, each of which is completely safe:
 
-- **Gmail — labels & test email.** *Prepare FCI labels* creates the three FCI labels; *View inbox* lists real messages; *Send Workspace test* (or *Add sample email* in simulation) sends one test email **only to your own configured mailbox**. Nothing is ever sent to a client from here.
+- **Gmail — labels & test email.** First choose **Mailbox for Gmail verification**. *Prepare FCI labels* creates the three FCI labels in that exact mailbox; *View inbox* lists its real messages; *Send Workspace test* (or *Add sample email* in simulation) sends one test email **only to the selected mailbox**. Nothing is ever sent to a client from here.
 - **Calendar — appointments & test hold.** *View upcoming events* reads a seven-day window; *Create test hold* makes one private 30-minute hold with no guests and no notifications.
 - **Sheets — mirror sync.** *Sync now* runs one sync of the Client Directory and Project Register and reports exactly what changed.
 
@@ -552,7 +567,7 @@ Most of the time, FCI Operations looks after itself. Here is what actually needs
 
 **The in-app People & Access screen (In development).** There is an admin-only **People & Access** screen in the app. Administrators reach it from a **People & Access** link in the navigation (it carries an *In development* badge). It lets an administrator invite people and assign one of three roles — **Administrator**, **Office Operations**, or **Project Manager** — and disable or sign out a person. Because it is *In development*, treat its records as test data: this screen does **not yet** govern who can actually sign in, and it does not replace the hosting-environment allowlist described above. Use it to try the workflow, not to grant real access yet.
 
-Keep this straight in your head: the **app login** (who may open the app) is deliberately separate from the **Google data connection** (the one company account that supplies Gmail, Calendar, Drive, and Sheets). Connecting Google does **not** change how people log in.
+Keep this straight in your head: the **app login** (who may open the app) is deliberately separate from the **Google data connections** (the separately consented company mailboxes plus the shared Calendar, Drive, and Sheets workspace). Attaching Google mailboxes does **not** change how people log in. In this packet the Inbox picker remains Administrator-only; granting selected office users access is a separate access-control change.
 
 **How it will work at live login (planned).** The production plan replaces ChatGPT sign-in with **Sign in with your company Google account** and makes the **Administrator / Office Operations / Project Manager** roles — the same ones the People & Access screen already collects — enforced by the server, with project-level permissions so you can decide who sees which jobs. Field workers do not receive employee accounts in the first release; a future Field link is read-only, limited to one exact project, expiring, and revocable. Every employee session has a 30-minute idle limit and an eight-hour absolute limit.
 
@@ -653,9 +668,9 @@ The six issues you are most likely to hit, in plain words. Several of these are 
 
 2. **"This app is internal only" (org_internal).** The account you signed in with is outside the company's Google organization, or the wrong Google project is selected. Use the approved company account. If it persists, **developer**.
 
-3. **"The account is unauthorized."** The account you connected is not on the approved list, or its domain is not allowed. The approved-accounts and allowed-domain settings live in the hosting environment, so correcting the list is a **developer** change; after they update it, disconnect and reconnect the exact approved account.
+3. **"The account is unauthorized."** The mailbox you tried to attach is not on the approved list, or its domain is not allowed. The approved-accounts and allowed-domain settings live in the hosting environment, so correcting the list is a **developer** change; after they update it, use **Attach mailbox** and sign in as that exact approved address.
 
-4. **"Reauthorization is required" for Gmail, Calendar, Drive, or Sheets.** The permissions changed or a service was not fully approved last time. Fix it yourself: **Disconnect Workspace**, then **Reconnect** the exact approved account and approve every listed service.
+4. **"Reauthorization is required" for Gmail, Calendar, Drive, or Sheets.** The permissions changed or a service was not fully approved last time. Fix it yourself: disconnect that mailbox row, then use **Attach mailbox**, sign in as the exact same address, and approve every listed service. Other attached mailboxes are unaffected.
 
 5. **"Shared Drive verification fails."** Almost always because the ID points at a normal My Drive folder instead of a Shared Drive, or the connection account is not a **Manager** of that Shared Drive, or two drives share the same name. Confirm the account is a Manager and, in Resources, pick the intended drive explicitly. Keep provisioning off until verification passes.
 
@@ -665,7 +680,7 @@ The six issues you are most likely to hit, in plain words. Several of these are 
 
 ## When to call the developer
 
-Handle these yourself: returning to **Google Workspace** and letting its status recheck automatically, connecting/reconnecting/disconnecting Google with the approved account, running the Stage 4 verification checks, syncing the Client Directory, filing email through Review & copy, and adjusting your own and the office default settings.
+Handle these yourself: returning to **Google Workspace** and letting its status recheck automatically, attaching/reconnecting/disconnecting an approved mailbox, running the Stage 4 verification checks, syncing the Client Directory, filing email through Review & copy, and adjusting your own and the office default settings.
 
 Call the developer for anything that touches the hosting environment, Google's admin/cloud consoles, or the production launch — specifically:
 
@@ -711,7 +726,7 @@ Consolidated list of every screenshot placeholder, with whether an existing capt
 | 7 | Part 2 · Workflow & notifications + AI assistant | Reminder-hour fields, the office notification email, and Google Chat routing in Workflow; provider/key/model state, feature switches, and the data-at-rest disclosure in the dedicated AI assistant section | **Needs fresh.** No baseline of either sub-panel. |
 | 8 | Part 2 · Data & security | The four safeguards listed with their icons | **Needs fresh.** No baseline of this sub-panel. |
 | 9 | Part 2 · Google Workspace banner | Status banner reading "Simulation ready" with the SIMULATION tag and "Stage 1 of 4", above the four collapsible stage cards | **Needs fresh.** No baseline of the Google Workspace panel. |
-| 10 | Part 2 · Stage 2 Connect | Stage 2 expanded: the "Company account authorization" card with **Connect Google Workspace** and the admin **Connection health** expander | **Needs fresh.** |
+| 10 | Part 2 · Stage 2 Connect | Stage 2 expanded: the "Company mailbox authorization" card with **Attach mailbox**, the attached-mailbox rows, and the admin **Connection health** expander | **Needs fresh.** |
 | 11 | Part 2 · Stage 4 Verify | Stage 4: Gmail, Calendar, and Sheets verification rows with their action buttons and VERIFIED / READY TO VERIFY states | **Needs fresh.** |
 | 12 | Part 2 · Filing review | The "File to one project" review window: project selector, destination folders, attachment list, and the "Nothing has been copied yet" confirmation | **Needs fresh.** |
 

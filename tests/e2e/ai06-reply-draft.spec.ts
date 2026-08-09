@@ -27,6 +27,7 @@ const message = {
   snippet: "Can you confirm the install date for the Westport project?",
   labelIds: ["INBOX"],
 };
+const mailboxEmail = message.to;
 
 const draftText = "Hi [...],\n\nThanks for reaching out about CF-2026-041 — Westport Medical Center. The project is mobilizing. [...]\n\nJordan Vega, FCI Operations";
 
@@ -54,6 +55,30 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
     contentType: "application/json",
     body: JSON.stringify(body),
   });
+}
+
+function connectedMailboxPayload() {
+  return {
+    runtimeMode: "simulation",
+    simulation: true,
+    enabledServices: ["drive", "gmail", "calendar", "sheets"],
+    connection: {
+      connected: true,
+      status: "connected",
+      account: mailboxEmail,
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: { drive: true, gmail: true, calendar: true, sheets: true },
+      requiresReauthorization: false,
+    },
+    mailboxes: [{
+      email: mailboxEmail,
+      status: "connected",
+      connected: true,
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: { drive: true, gmail: true, calendar: true, sheets: true },
+      requiresReauthorization: false,
+    }],
+  };
 }
 
 async function mockInboxFoundation(
@@ -86,6 +111,8 @@ async function mockInboxFoundation(
       simulation: true,
     },
   }));
+  await page.route("**/api/v1/integrations/google/connection", (route) =>
+    fulfillJson(route, connectedMailboxPayload()));
   await page.route("**/api/v1/leads", (route) => fulfillJson(route, { leads: [] }));
   await page.route("**/api/v1/clients", (route) => fulfillJson(route, {
     clients: [{
@@ -126,12 +153,15 @@ async function mockInboxFoundation(
   }));
   await page.route(
     "**/api/v1/integrations/google/gmail/messages?*",
-    (route) => fulfillJson(route, {
-      bucket: "inbox",
-      messages: [message],
-      labelReady: true,
-      limit: 20,
-    }),
+    (route) => {
+      expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(mailboxEmail);
+      return fulfillJson(route, {
+        bucket: "inbox",
+        messages: [message],
+        labelReady: true,
+        limit: 20,
+      });
+    },
   );
 }
 
@@ -148,7 +178,8 @@ async function openReplyModal(page: Page) {
 test("Draft with AI fills the textarea, keeps the pinned no-send copy, and confirms before replacing", async ({ page }) => {
   await mockInboxFoundation(page, { keyState: "Configured", replyDrafts: true });
   const replyDraftBodies: unknown[] = [];
-  await page.route("**/api/v1/assistant/reply-draft", async (route) => {
+  await page.route("**/api/v1/assistant/reply-draft?*", async (route) => {
+    expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(mailboxEmail);
     replyDraftBodies.push(route.request().postDataJSON());
     await fulfillJson(route, { draft: draftText });
   });
@@ -193,7 +224,8 @@ test("Draft with AI is honestly disabled when the key is Missing or the toggle i
   const assistant = { keyState: "Missing" as "Configured" | "Missing", replyDrafts: false };
   await mockInboxFoundation(page, assistant);
   let replyDraftCalls = 0;
-  await page.route("**/api/v1/assistant/reply-draft", async (route) => {
+  await page.route("**/api/v1/assistant/reply-draft?*", async (route) => {
+    expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(mailboxEmail);
     replyDraftCalls += 1;
     await fulfillJson(route, { draft: draftText });
   });
@@ -226,7 +258,8 @@ test("Draft with AI is honestly disabled when the key is Missing or the toggle i
 test("a saved reply signature is not text the human wrote, so the first draft never asks to replace", async ({ page }) => {
   await mockInboxFoundation(page, { keyState: "Configured", replyDrafts: true }, replySignature);
   const replyDraftBodies: unknown[] = [];
-  await page.route("**/api/v1/assistant/reply-draft", async (route) => {
+  await page.route("**/api/v1/assistant/reply-draft?*", async (route) => {
+    expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(mailboxEmail);
     replyDraftBodies.push(route.request().postDataJSON());
     await fulfillJson(route, { draft: draftText });
   });

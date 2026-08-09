@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { env } from "cloudflare:workers";
 import { buildProjectFolderPlan } from "../../../lib/google-workspace";
-import { getEffectiveGoogleRuntimeSetup, getGoogleConnectionStatus } from "../../../lib/google-oauth-sites";
+import { getEffectiveGoogleRuntimeSetup, getGoogleConnectionStatus, listGoogleMailboxConnections } from "../../../lib/google-oauth-sites";
 import { readGoogleChatPublicConfig } from "../../../lib/google-chat-notifier-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
@@ -18,16 +18,39 @@ function folderPlanText(value: unknown, maximum: number) {
   return text;
 }
 
+async function loadGoogleWorkspaceSetup(requestedMailbox: string | null) {
+  if (requestedMailbox) {
+    const setup = await getEffectiveGoogleRuntimeSetup(requestedMailbox);
+    return Object.freeze({ setup, google: setup.config });
+  }
+  const setup = await getEffectiveGoogleRuntimeSetup();
+  const google = setup.config;
+  return Object.freeze({ setup, google });
+}
+
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
+  const requestedMailbox = request?.nextUrl?.searchParams.get("mailbox") ?? null;
+  if (requestedMailbox && !auth.user.isAdmin) {
+    return noStore({ error: "Administrator access is required to select a Google mailbox." }, { status: 403 });
+  }
   await ensureWorkspaceSchema();
-  const setup = await getEffectiveGoogleRuntimeSetup();
-  const google = setup.config;
+  let resolved: Awaited<ReturnType<typeof loadGoogleWorkspaceSetup>>;
+  try {
+    resolved = await loadGoogleWorkspaceSetup(requestedMailbox);
+  } catch (error) {
+    return noStoreResponse(googleIntegrationErrorResponse(
+      error,
+      "Google Workspace settings could not be loaded. Try again.",
+    ));
+  }
+  const { setup, google } = resolved;
   const workspace = google.drive;
-  const [connection, chatNotifications] = await Promise.all([
+  const [connection, chatNotifications, mailboxes] = await Promise.all([
     getGoogleConnectionStatus(google),
     readGoogleChatPublicConfig(),
+    auth.user.isAdmin ? listGoogleMailboxConnections(google) : Promise.resolve([]),
   ]);
   const adminAllowlist = (env as unknown as Record<string, string | undefined>).FCI_ADMIN_EMAILS;
   const missingDetails = [
@@ -52,9 +75,9 @@ export async function GET(request: NextRequest) {
       storageLabel: workspace.storageLabel,
       storageName: workspace.storageName,
       storageConfigured: Boolean(workspace.rootFolderId),
-      connectionKey: google.connectionKey,
       connectionStatus: connection.status,
       connectionAccount: connection.account,
+      ...(auth.user.isAdmin ? { selectedMailbox: google.selectedMailboxEmail ?? null } : {}),
       driveConnected: connection.services.drive,
       gmailConnected: connection.services.gmail,
       calendarConnected: connection.services.calendar,
@@ -112,6 +135,7 @@ export async function GET(request: NextRequest) {
     // No client consumer reads this field (the blueprint editor uses the admin-gated
     // /integrations/google/setup/blueprint route), so non-admins get no substitute for it.
     ...(auth.user.isAdmin ? { blueprint: setup.blueprint } : {}),
+    ...(auth.user.isAdmin ? { mailboxes } : {}),
     requiredEnvironment: missingDetails.map((detail) => detail.label),
     nextStep: google.simulation ? "Local Workspace simulation is ready. No Google account is connected and no data is sent to Google." : connection.requiresReauthorization ? "Reconnect the approved Workspace account and approve every selected service." : connection.connected ? "Google Workspace services are connected." : credentialsPresent ? "An FCI administrator can now connect Google Workspace." : "Add the missing Workspace configuration values before authorizing Google.",
   });

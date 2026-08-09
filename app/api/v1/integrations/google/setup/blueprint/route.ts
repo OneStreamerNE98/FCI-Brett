@@ -5,6 +5,14 @@ import {
   getWorkspaceBlueprint,
   saveWorkspaceBlueprint,
 } from "../../../../../../adapters/d1/workspace-blueprints";
+import type { D1Database } from "../../../../../../adapters/d1/d1-database";
+import {
+  acquireWorkspaceSetupLease,
+  completeWorkspaceSetupLease,
+  failWorkspaceSetupLease,
+  googleConnectionLeaseFence,
+  type WorkspaceSetupLease,
+} from "../../../../../../adapters/d1/workspace-setup-leases";
 import { parseBoundedJsonObject } from "../../../../../../lib/api-json-body";
 import {
   type DriveSetupItem,
@@ -357,6 +365,8 @@ export async function PUT(request: NextRequest) {
 
   let config = getGoogleRuntimeConfig();
   let previousBlueprint: WorkspaceBlueprint;
+  const database = env.DB as unknown as D1Database;
+  let lease: WorkspaceSetupLease | null = null;
   if (reconcileReview) {
     const setup = await getEffectiveGoogleRuntimeSetup();
     config = setup.config;
@@ -420,6 +430,21 @@ export async function PUT(request: NextRequest) {
           setup.config.drive.rootFolderId,
           reconcileReview,
         );
+        lease = await acquireWorkspaceSetupLease(database, {
+          id: crypto.randomUUID(),
+          connectionKey: setup.config.workspaceConnectionKey,
+          action: "blueprint-reconcile-save",
+          scopeKey: `blueprint-reconcile:${reconcileReview.resourceType}:${reconcileReview.key}`,
+          actor: auth.user.email,
+          now: Date.now(),
+          connectionFence: googleConnectionLeaseFence(setup.config),
+        });
+        if (!lease) {
+          return noStoreJson({
+            error: "The Google connection changed or this reconcile review is already being saved. Check for drift again.",
+            code: "workspace_reconcile_review_stale",
+          }, 409);
+        }
       }
     } catch (error) {
       const mapped = mapGoogleIntegrationError(
@@ -434,21 +459,33 @@ export async function PUT(request: NextRequest) {
     previousBlueprint = previous?.blueprint ?? seedWorkspaceBlueprint();
   }
   const changeSummary = summarizeWorkspaceBlueprintChanges(previousBlueprint, blueprint);
-  const result = await saveWorkspaceBlueprint(env.DB, {
-    id: crypto.randomUUID(),
-    connectionKey: config.connectionKey,
-    expectedVersion: expectedVersion as number,
-    blueprint,
-    actor: auth.user.email,
-    now: Date.now(),
-    auditEvent: {
+  let result: Awaited<ReturnType<typeof saveWorkspaceBlueprint>>;
+  try {
+    result = await saveWorkspaceBlueprint(env.DB, {
       id: crypto.randomUUID(),
-      eventType: "setup.blueprint_updated",
-      entityType: "workspace-blueprint",
-      entityId: config.connectionKey,
-      detail: `version=${(expectedVersion as number) + 1};${changeSummary}`,
-    },
-  });
+      connectionKey: config.connectionKey,
+      expectedVersion: expectedVersion as number,
+      blueprint,
+      actor: auth.user.email,
+      now: Date.now(),
+      auditEvent: {
+        id: crypto.randomUUID(),
+        eventType: "setup.blueprint_updated",
+        entityType: "workspace-blueprint",
+        entityId: config.connectionKey,
+        detail: `version=${(expectedVersion as number) + 1};${changeSummary}`,
+      },
+    });
+    if (lease) {
+      await completeWorkspaceSetupLease(database, lease, Date.now());
+      lease = null;
+    }
+  } catch (error) {
+    if (lease) {
+      await failWorkspaceSetupLease(database, lease, "blueprint_reconcile_save_failed", Date.now());
+    }
+    throw error;
+  }
   if (!result.saved) {
     return noStoreJson({
       error: "The Workspace blueprint changed after this editor loaded. Load the latest version before saving again.",

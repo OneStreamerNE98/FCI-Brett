@@ -105,8 +105,23 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
   const now = Date.now();
   const operationKey = `${config.connectionKey}:provision-project:${project.id}`;
   const leaseExpiresAt = now + 5 * 60 * 1000;
-  const operation = await env.DB.prepare("INSERT INTO google_drive_operations (id, connection_key, operation_key, project_id, status, lease_expires_at, last_error_code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, 'in-progress', ?, NULL, ?, ?, ?) ON CONFLICT(operation_key) DO UPDATE SET status = 'in-progress', lease_expires_at = excluded.lease_expires_at, last_error_code = NULL, created_by = excluded.created_by, updated_at = excluded.updated_at WHERE google_drive_operations.status != 'in-progress' OR google_drive_operations.lease_expires_at < ?")
-    .bind(crypto.randomUUID(), config.connectionKey, operationKey, project.id, leaseExpiresAt, auth.user.email, now, now, now)
+  const operation = await env.DB.prepare("INSERT INTO google_drive_operations (id, connection_key, operation_key, project_id, status, lease_expires_at, last_error_code, created_by, created_at, updated_at) SELECT ?, ?, ?, ?, 'in-progress', ?, NULL, ?, ?, ? WHERE (? = 1 OR EXISTS (SELECT 1 FROM google_connections WHERE id = ? AND connection_key = ? AND lower(google_email) = ? AND refresh_token_ciphertext = ? AND status = 'connected')) ON CONFLICT(operation_key) DO UPDATE SET status = 'in-progress', lease_expires_at = excluded.lease_expires_at, last_error_code = NULL, created_by = excluded.created_by, updated_at = excluded.updated_at WHERE google_drive_operations.status != 'in-progress' OR google_drive_operations.lease_expires_at < ?")
+    .bind(
+      crypto.randomUUID(),
+      config.connectionKey,
+      operationKey,
+      project.id,
+      leaseExpiresAt,
+      auth.user.email,
+      now,
+      now,
+      config.simulation ? 1 : 0,
+      config.authConnectionId ?? "",
+      config.authConnectionKey,
+      config.authConnectionEmail ?? "",
+      config.authConnectionRefreshTokenCiphertext ?? "",
+      now,
+    )
     .run();
   if (operation.meta.changes !== 1) {
     return noStore({ error: "A Drive folder request is already in progress for this project. Try again shortly." }, { status: 409 });
