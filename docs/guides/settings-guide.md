@@ -498,9 +498,13 @@ or removed resources stay visible as informational rows and are never deleted. E
 repair waits for an Administrator to click it.
 
 **Operations health** is the database-only troubleshooting view in the same Ongoing
-upkeep group. It lists stuck Drive leases, failed Gmail archives, and recent integration
-activity for the current connection. It does not contact Google and it never repairs or
-replays work automatically. Simulation results are labeled as local test operations.
+upkeep group. It lists stuck Drive leases and failed Gmail archives for the current
+connection, company-wide stale address-review claims, and recent integration activity.
+It does not contact Google and it never repairs or replays work automatically. Simulation
+results are labeled as local test operations. A stale address-review claim means a
+provisional receipt survived beyond its normal one-hour retention window; have the
+recorded user review the address again before retrying the original save, and never reopen
+the row by hand.
 When more than 50 items exist in a category, that section offers **Load more Drive issues**,
 **Load more archive issues**, or **Load more events** to page through older records with an
 opaque cursor.
@@ -527,9 +531,10 @@ Most of the time, FCI Operations looks after itself. Here is what actually needs
 - **Drift check** — press **Check for drift** after changing the blueprint or whenever a
   managed Google resource looks out of place. Review each Missing or Renamed action
   before applying it. Unmanaged rows are informational and never trigger deletion.
-- **Operations health** — review this when a Drive or Gmail action fails; the card revalidates automatically when you return to it. A stuck lease
+- **Operations health** — review this when a Drive, Gmail, or address save action fails; the card revalidates automatically when you return to it. A stuck lease
   needs its five-minute window to expire before you retry; a failed archive is retried
-  from the original **Review & copy** action. The recent-activity table shows what the
+  from the original **Review & copy** action. For a stale address-review claim, ask the
+  recorded user to review the address again before retrying the save. The recent-activity table shows what the
   app recorded, not a live Google health check. Press **Load more events** under Recent
   integration activity, or **Load more Drive issues** / **Load more archive issues** under
   Needs attention, to page past the newest 50 records.

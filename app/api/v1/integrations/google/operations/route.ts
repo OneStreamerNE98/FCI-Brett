@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { NextRequest } from "next/server";
 
 import { getConnectionScope } from "../../../../../lib/google-oauth-sites";
+import { listStaleAddressReviewClaims } from "../../../../../lib/address-mutation-sites";
 import { noStoreJson, noStoreResponse } from "../../../../../lib/no-store-json";
 import { requireOfficeUser } from "../../../../../lib/workspace-auth";
 
@@ -148,7 +149,7 @@ export async function GET(request: NextRequest) {
   const eventCursor = cursor.e;
   const eventWhere = cursorClause("created_at", "id", eventCursor);
 
-  const [driveResult, archiveResult, eventResult] = await Promise.all([
+  const [driveResult, archiveResult, eventResult, staleAddressClaims] = await Promise.all([
     includeDrive
       ? env.DB.prepare(
           `SELECT id, operation_key, project_id, status, lease_expires_at, last_error_code, updated_at
@@ -184,6 +185,9 @@ export async function GET(request: NextRequest) {
            LIMIT ${QUERY_LIMIT}`,
         ).bind(config.connectionKey, ...eventWhere.values).all<IntegrationEventRow>()
       : Promise.resolve({ results: [] as IntegrationEventRow[] }),
+    categoryParam === null
+      ? listStaleAddressReviewClaims(env.DB, { now: checkedAt, limit: QUERY_LIMIT })
+      : Promise.resolve([]),
   ]);
 
   const driveBounded = boundedRows(driveResult.results);
@@ -216,6 +220,15 @@ export async function GET(request: NextRequest) {
     detail: boundedText(row.detail, 1_000),
     createdAt: row.created_at,
   }));
+  const addressClaimsBounded = boundedRows(staleAddressClaims);
+  const addressReviewClaims = addressClaimsBounded.rows.map((claim) => ({
+    id: boundedText(claim.id, 200),
+    actorId: boundedText(claim.actorId, 254),
+    entityKind: boundedText(claim.entityKind, 100),
+    targetId: boundedText(claim.targetId, 200),
+    consumedAt: claim.consumedAt,
+    expiresAt: claim.expiresAt,
+  }));
 
   return noStoreJson({
     runtimeMode: config.simulation ? "simulation" : "workspace",
@@ -236,6 +249,10 @@ export async function GET(request: NextRequest) {
       items: events,
       hasMore: eventResult.results.length > RESULT_LIMIT,
       nextCursor: nextCursorFor(eventResult.results, eventResult.results.length > RESULT_LIMIT, "e"),
+    },
+    addressReviewClaims: {
+      items: addressReviewClaims,
+      hasMore: staleAddressClaims.length > RESULT_LIMIT,
     },
   });
 }

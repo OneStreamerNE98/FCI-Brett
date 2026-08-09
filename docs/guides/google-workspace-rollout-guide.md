@@ -723,3 +723,11 @@ Do not store real client data until every required item is complete.
   review-approved archive instead of deliberately creating a second archive. If it
   fails again, retain the row and safe error code for developer review; never repair the
   Drive files or D1 rows by hand.
+
+### Stale address-review claim
+
+- **Stage 4 → Ongoing upkeep → Operations health** also reports company-wide consumed
+  address-review receipts that survived beyond their normal one-hour retention window.
+  This is a database-only reconciliation read and does not contact Google.
+- Ask the recorded user to review the address again, then retry the original client,
+  lead, or project save. Never reopen or delete an address-review row by hand.
