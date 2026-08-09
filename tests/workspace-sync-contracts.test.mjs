@@ -446,11 +446,11 @@ test("expiry monitoring returns only active watch/channel state in deterministic
 });
 
 test("watch/queue and rotation documentation stays linked, gated, and explicit", () => {
-  const design = source("docs/google-workspace-watch-and-queue-design.md");
+  const design = source("docs/guides/google-workspace-watch-and-queue-design.md");
   const readme = source("README.md");
   const foundation = source("docs/task-checklists/07-production-foundation-and-migration.md");
   const operations = source("docs/task-checklists/08-operations-recovery-and-security.md");
-  const rollout = source("docs/google-workspace-rollout-guide.md");
+  const rollout = source("docs/guides/google-workspace-rollout-guide.md");
 
   assert.match(design, /No live integration is implemented or authorized here/);
   assert.match(design, /Begin with serialized scheduled polling[\s\S]*Do not use `users\.watch` or Pub\/Sub/);
@@ -460,8 +460,8 @@ test("watch/queue and rotation documentation stays linked, gated, and explicit",
   assert.match(design, /Each future Calendar notification channel is a \*\*separate\*\* `integration_resources` row/);
   assert.match(design, /`calendar_channel_token`/);
   assert.match(design, /Otter intake[\s\S]*explicitly deferred/i);
-  assert.match(readme, /docs\/google-workspace-watch-and-queue-design\.md/);
-  assert.match(foundation, /\.\.\/google-workspace-watch-and-queue-design\.md/);
+  assert.match(readme, /docs\/guides\/google-workspace-watch-and-queue-design\.md/);
+  assert.match(foundation, /\.\.\/guides\/google-workspace-watch-and-queue-design\.md/);
 
   assert.match(rollout, /Token-encryption key rotation \(current disconnect\/reconnect procedure\)/);
   assert.match(rollout, /Sites\/D1 connector[\s\S]*only the one currently[\s\S]*configured key/);

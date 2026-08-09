@@ -623,7 +623,7 @@ export function createEmployeeOidcClient(
       // The encrypted attempt is stateless rather than server-consumed. Google makes each
       // authorization code one-use and the router clears this cookie on every callback;
       // any fresh-code reuse of a retained attempt remains bounded by the fixed expiry.
-      // See docs/authorization-simulation.md for the accepted source-only boundary.
+      // See docs/specs/authorization-simulation.md for the accepted source-only boundary.
       const attempt = decryptAttempt(input.attemptCookie, encryptionKey);
       if (attempt.expiresAt <= completedAt) return invalid("attempt_expired");
       if (!secureEqual(attempt.state, state)) return invalid("state_invalid");

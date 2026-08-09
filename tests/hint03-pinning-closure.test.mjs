@@ -25,8 +25,8 @@ const shippedHints = [
 
 test("HINT-03 closes the forms-audit catalog at 12 of 20 with every shipped copy pinned", async () => {
   const [audit, ledger] = await Promise.all([
-    read("docs/infohint-audit-2026-07-24.md"),
-    read("docs/agent-plan-architecture-workspace-and-setup.md"),
+    read("docs/reviews/infohint-audit-2026-07-24.md"),
+    read("docs/ledger/agent-plan-architecture-workspace-and-setup.md"),
   ]);
   const sources = new Map(
     await Promise.all([...new Set(shippedHints.map(([file]) => file))].map(async (file) => [file, await read(file)])),

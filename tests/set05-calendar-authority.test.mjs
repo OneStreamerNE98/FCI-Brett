@@ -24,7 +24,7 @@ test("Calendar settings explain all three effective configuration sources", () =
 // what an operator actually needs and what stays true.
 test("SET-05 documentation makes environment Calendar IDs bootstrap-only", () => {
   for (const path of [
-    "docs/google-workspace-rollout-guide.md",
+    "docs/guides/google-workspace-rollout-guide.md",
     "docs/task-checklists/03-hosted-development-connection.md",
   ]) {
     const document = read(path);

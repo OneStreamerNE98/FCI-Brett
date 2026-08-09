@@ -2,7 +2,7 @@
 
 ## Source of truth
 
-The proposed production boundary, subject to the ownership decisions in [Complete product and integration architecture](task-checklists/10-complete-product-and-integration-architecture.md), makes FCI Operations authoritative for clients, contacts, independent projects, schedules, tasks, filing decisions, and application audit history. Google Workspace remains the company collaboration layer:
+The proposed production boundary, subject to the ownership decisions in [Complete product and integration architecture](../task-checklists/10-complete-product-and-integration-architecture.md), makes FCI Operations authoritative for clients, contacts, independent projects, schedules, tasks, filing decisions, and application audit history. Google Workspace remains the company collaboration layer:
 
 - **Sheets:** generated Client Directory and Project Register views.
 - **Shared Drive:** account documents, independent project folders, photos, archived emails, and attachments.
@@ -76,7 +76,7 @@ FCI Operations is intended to remain authoritative. The current development buil
 ## Workspace setup checklist
 
 - Subscribe to or trial Google Workspace and verify a company-controlled domain.
-- Approve the [20-user app-to-Google access matrix](task-checklists/06-20-user-operating-model-and-access.md), then create only the Google Groups required by that matrix.
+- Approve the [20-user app-to-Google access matrix](../task-checklists/06-20-user-operating-model-and-access.md), then create only the Google Groups required by that matrix.
 - Create the `FCI Operations` Shared Drive.
 - Create the Client Directory Sheet, intake mailbox, and two shared calendars.
 - Create the approved development Google Cloud project and enable Drive, Gmail, Calendar, and Sheets for the test connector. Leave Pub/Sub unprovisioned until Gmail push processing is implemented and approved.

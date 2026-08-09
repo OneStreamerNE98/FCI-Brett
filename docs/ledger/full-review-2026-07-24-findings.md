@@ -1,7 +1,7 @@
 # Holistic review — July 23–24, 2026 — findings ledger
 
 > **Sibling reviews:** all findings ledgers are grouped under
-> [docs/README.md → Findings & reviews](README.md#findings--reviews). (Added July 24, 2026.)
+> [docs/README.md → Findings & reviews](../README.md#findings--reviews). (Added July 24, 2026.)
 
 **Review target:** `origin/main` as of July 23–24, 2026 (post-merge state through
 PR #148 / commit `4da89b4`). This is a *holistic* quality walk of the merged waves
@@ -328,7 +328,7 @@ entry (details and dispositions in the **FIX-17** packet below):
 ## Wave R5 — packet drafts
 
 Rules: every packet follows the global guardrails in
-`docs/agent-plan-architecture-workspace-and-setup.md` (secrets, fail-closed, honest
+`docs/ledger/agent-plan-architecture-workspace-and-setup.md` (secrets, fail-closed, honest
 UI, append-only migrations, never-delete, simulation parity, server-side authz,
 review-first). All acceptance criteria are mutation-sensitive: a test must fail if
 the fix regresses. New packets carry no status line until started.
@@ -426,7 +426,7 @@ coordinate/fold into SET-06.
 **Effort:** small. **Cost:** $0.
 
 ### FIX-17 · Post-wave polish sweep (P3 bundle H-10 + H-9; small-medium)
-**Status:** Complete — PR #208, July 25, 2026. Opus fleet clean — zero confirmed findings: independent selector set-diff proved the dead-CSS sweep removed 64 selectors with zero live consumers (`.panel-header-subtitle*` exclusion honored, dynamic emitter verified live); goldens byte-identical (the DES-08d edits render outside the pinned capture); every Do item resolved — nine implemented as hunks, two dispositioned with recorded rationale (toast-overlap accepted-as-is: transient auto-dismissing overlay further narrowed by FIX-15's scoped suppression; brand-shrink routed → DES-10's mockup-first scope) — LaunchChecklist indeterminate/unavailable branches, DES-08d client-renderable counts with an honest unavailable row, segment "Derived" radio (value="" → null, no third stored value), sim calendar [now,now+7d) half-open window capped at 20, sim filing folder-ids validated fail-closed against blueprint leaves with the live branch byte-identical; 116+ unit tests executed green across both lenses. P3 notes: PR grep-proofs were narrative + a mutation-sensitive 28-family guard rather than literal command output; the guard omits two deleted zero-emitter modifiers (`.blocked-by-previous-step`/`.blocked-by-prerequisites`); `.title-actions` flex-wrap→nowrap now applies to ALL header action rows (intended, test-pinned — watch narrow-viewport overflow if actions grow); `workspace-simulation.ts` hunks noted for SET-25 merge-serialization. Source-only and undeployed. Guide impact: `docs/settings-guide.md` updated.
+**Status:** Complete — PR #208, July 25, 2026. Opus fleet clean — zero confirmed findings: independent selector set-diff proved the dead-CSS sweep removed 64 selectors with zero live consumers (`.panel-header-subtitle*` exclusion honored, dynamic emitter verified live); goldens byte-identical (the DES-08d edits render outside the pinned capture); every Do item resolved — nine implemented as hunks, two dispositioned with recorded rationale (toast-overlap accepted-as-is: transient auto-dismissing overlay further narrowed by FIX-15's scoped suppression; brand-shrink routed → DES-10's mockup-first scope) — LaunchChecklist indeterminate/unavailable branches, DES-08d client-renderable counts with an honest unavailable row, segment "Derived" radio (value="" → null, no third stored value), sim calendar [now,now+7d) half-open window capped at 20, sim filing folder-ids validated fail-closed against blueprint leaves with the live branch byte-identical; 116+ unit tests executed green across both lenses. P3 notes: PR grep-proofs were narrative + a mutation-sensitive 28-family guard rather than literal command output; the guard omits two deleted zero-emitter modifiers (`.blocked-by-previous-step`/`.blocked-by-prerequisites`); `.title-actions` flex-wrap→nowrap now applies to ALL header action rows (intended, test-pinned — watch narrow-viewport overflow if actions grow); `workspace-simulation.ts` hunks noted for SET-25 merge-serialization. Source-only and undeployed. Guide impact: `docs/guides/settings-guide.md` updated.
 
 **Why:** a cluster of independently-verified low-severity nits — some pre-existing,
 some redesign-orphaned — collectively drag the polish level of the settings and

@@ -1783,7 +1783,7 @@ test("GI-01 source laws pin manual triggering, adapter parity, safe acceptance o
     read("app/platform/google-cloud/production-composition.ts"),
     read("app/platform/postgres/google-form-lead-intake-schema.ts"),
     read("docs/task-checklists/11-google-quick-wins.md"),
-    read("docs/google-workspace-rollout-guide.md"),
+    read("docs/guides/google-workspace-rollout-guide.md"),
   ]);
   assert.match(domainSource, /matchFirstRunClientDuplicates\(/u);
   assert.doesNotMatch(routeSource, /POST \/api\/v1\/leads/u);

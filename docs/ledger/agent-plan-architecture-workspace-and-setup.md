@@ -14,9 +14,9 @@ PRs #56/#57 are merged source-only and undeployed; the reviewed PR #51–#57 mer
 train is complete. This revision adds Workstream E (Google-native integrations,
 GI-01…GI-07), SET-23…SET-26, WS-15/WS-16, and the July 21 setup-panel review
 amendments. Workstream F (dashboard design, DES-01…DES-09; design authority
-`docs/dashboard-design-spec.md`) was added July 22, 2026, and Workstream G (AI
+`docs/specs/dashboard-design-spec.md`) was added July 22, 2026, and Workstream G (AI
 assistant & automation, AI-01…AI-09 with gated Tier-2 stubs; design authority
-`docs/ai-assistant-spec.md`) on July 23, 2026.
+`docs/specs/ai-assistant-spec.md`) on July 23, 2026.
 **Deployment (corrected July 30, 2026 — the previous claim here was eleven days stale and
 wrong).** This document previously read *"Deployment baseline: `adc79b8`, private Sites
 development version 40 … the later source changes are not deployed."* That line was last
@@ -44,7 +44,7 @@ on the "undeployed" label below).
 
 For the ordered owner procedure — including the build stamp, issue-comment template, and
 on-screen verification — use the
-[`deployment runbook`](runbooks/deployment.md). This ledger explains what is true; the
+[`deployment runbook`](../runbooks/deployment.md). This ledger explains what is true; the
 runbook explains what to do.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
@@ -82,13 +82,13 @@ below, which also covers the state of GitHub itself (issues/PRs).
   `AI-*` AI assistant & automation · `EDIT-*` record editing (see
   [`# Record editing (EDIT)`](#record-editing-edit)) · `HINT-*` in-app guidance ·
   `OIDC-*` BE-04 post-merge security follow-ups (in
-  [`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md)).
+  [`docs/ledger/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md)).
   Dependencies are listed per item.
 
 ## Global guardrails (include in every packet)
 
 0. **Guide currency (added July 23, 2026).** Any packet touching `app/settings/**`
-   or the FloorOpsApp settings surfaces must update `docs/settings-guide.md` or
+   or the FloorOpsApp settings surfaces must update `docs/guides/settings-guide.md` or
    state "Guide impact: none" in its Status line on completion.
    **Pinned-prose warning (added July 27, 2026):** parts of the guide (and of the
    rollout guide) are matched by exact pattern in CI — `ai-outbound-guard`,
@@ -150,7 +150,7 @@ below, which also covers the state of GitHub itself (issues/PRs).
    authority model only — the hashes, the pinned selectors, and the three-suite
    requirement are unchanged. Never paste a new digest in to make a suite pass.
 8. Visual/design remediation through PR #30 is included in private Sites development
-   version 40 and is tracked in `docs/design-critique-fix-plan.md`. The source-only
+   version 40 and is tracked in `docs/ledger/design-critique-fix-plan.md`. The source-only
    `codex/actionable-lists` Phase 3 slice is complete in PR #33 and is not deployed.
    The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed.
    SET-02 is complete in PR #37, KPI-01 is complete in PR #41, and SET-03/SET-04 are
@@ -180,7 +180,7 @@ makes dozens of these labels obsolete at once, and nothing updates them.
 that was attempted twice, producing "61 undeployed packets" and then "75", both presented
 to the owner as fact. The owner then pointed out he could see record editing — merged that
 same day — running on the live site. The labels were the wrong instrument; the running app
-is the authority. `docs/flooring-kpis.md` carries a similar frozen line ("Source-only and
+is the authority. `docs/specs/flooring-kpis.md` carries a similar frozen line ("Source-only and
 undeployed · Migration 0012 not applied to Sites", pinned July 21) and is stale for the
 same reason.
 
@@ -231,7 +231,7 @@ To answer "is this live?", ask the owner when they last deployed, or look at the
 Goal: take the backend from today (Sites/Workers/D1/R2 + simulation) to the accepted
 production core (Cloud Run + Cloud SQL PostgreSQL + Secret Manager + Workspace OIDC)
 without breaking the development environment. Order follows the audit roadmap
-(`docs/complete-product-and-google-cloud-architecture-audit.md`).
+(`docs/reviews/complete-product-and-google-cloud-architecture-audit.md`).
 
 ### BE-01 · Documentation truth pass (small, no deps) — DO FIRST
 **Status:** Complete — PR #32, July 19, 2026.
@@ -254,7 +254,7 @@ exists. Distinguish stale current-state version references from accurate histori
 evidence. Sweep docs for a root `wrangler.jsonc` (only `wrangler.local.jsonc` exists;
 hosted bindings come from `.openai/hosting.json`).
 **Files:** `README.md`, the fulfilled rollout ADR, architecture/status handoff docs,
-`docs/complete-product-and-google-cloud-architecture-audit.md`, and the affected owner
+`docs/reviews/complete-product-and-google-cloud-architecture-audit.md`, and the affected owner
 checklists.
 **Accept:** the README is a ledger pointer, current/deployed version wording is explicit,
 historical release evidence remains truthful, no migration wording implies v1–v5 were
@@ -323,7 +323,7 @@ this route. Do NOT touch `db/schema.ts` or drizzle history; record
 infrastructure, sessions, and user admission remain unapplied. **Post-merge security review
 found a launch-blocking callback issue that PR #48 resolved, plus remaining hardening,
 test, and documentation gaps — see
-[`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md) (packets
+[`docs/ledger/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md) (packets
 OIDC-02..OIDC-04).**
 
 **Why (at packet start):** The single largest production gap was that the Cloud Run image
@@ -332,7 +332,7 @@ had no login.
 and its postgres adapter exist; `POST /api/v1/admin/invitations` mints credentials;
 `secure-session-transport.ts` implements hashed `__Host-fci_session` + CSRF — but nothing
 turns an OIDC assertion or invitation into a session row. Policy is fully specified in
-`docs/authorization-simulation.md`.
+`docs/specs/authorization-simulation.md`.
 **Do:** Add OIDC initiation + callback routes to
 `app/platform/google-cloud/employee-request-router.ts` (state, nonce, PKCE; server-side ID
 token verification; enforce `hd=cherryhillfci.com`; identity key = immutable Google `sub`,
@@ -440,7 +440,7 @@ route used. The same paths existed on both surfaces with different auth/shapes, 
 management UI called `/api/v1/admin/*` paths that 404 on the current worker.
 **Do:** Add POST /clients + /projects (+ leads/meetings GET/POST) to the employee router
 via the shared use-cases with capability checks, {data} envelope, idempotency. Record the
-per-route contract decision in `docs/google-cloud-runtime-foundation.md` (production =
+per-route contract decision in `docs/specs/google-cloud-runtime-foundation.md` (production =
 session+CSRF+envelope; bare JSON = development-only). For the dev admin 404s pick and
 document one remedy (thin D1-backed `/api/v1/admin/*` compatibility handlers, or feature
 detection in the two admin clients). Provider routes still 503.
@@ -471,7 +471,7 @@ Retry-After + security-audit event; configurable via production-config, fail-clo
 defaults. Dev: light fixed-window per office user on the four cost routes. Document.
 **Accept:** threshold tests (429 + audit event); under-threshold byte-identical.
 
-**Implementation record:** [Request rate limiting](request-rate-limiting.md) pins the
+**Implementation record:** [Request rate limiting](../specs/request-rate-limiting.md) pins the
 two surface contracts, production configuration bounds, audit evidence, and per-instance
 deployment limitation.
 
@@ -630,7 +630,7 @@ step 7; `docs/archive/development-section-audit.md:25` rates projects **Critical
 leads and clients **High**). KPI-03 says it outright — the audited,
 admin-only "Assign to me" drawer action is named an **interim pattern**, not
 a policy. The only roadmap owner is row 17 of
-`docs/complete-product-and-google-cloud-architecture-audit.md:327`, marked
+`docs/reviews/complete-product-and-google-cloud-architecture-audit.md:327`, marked
 "Unassigned domain work."
 
 The data layer was built expecting edits that were never wired: every core
@@ -658,7 +658,7 @@ shipped through at least one surface.
 unbuildable: EDIT-05 deferred project `status` to a who-may-edit answer that did not exist, and
 EDIT-06's Accept criterion cited an archive-only decision that had never been made. Also recorded
 as owner-decision rows in
-[`task-checklists/06-20-user-operating-model-and-access.md`](task-checklists/06-20-user-operating-model-and-access.md).
+[`task-checklists/06-20-user-operating-model-and-access.md`](../task-checklists/06-20-user-operating-model-and-access.md).
 
 1. **Who may edit — everyone edits; money and status are Administrator-only.** Any office user may
    change descriptive fields (names, sites, contacts, next actions, notes). **Administrator-only on
@@ -697,7 +697,7 @@ as owner-decision rows in
    order.
 
 ### EDIT-01 · Lead edit auditing, and recording the authorization gap honestly (small, no deps)
-**Status:** Complete — PR #222, July 27, 2026. Source-only and undeployed. All 13 lead fields audited with before→after details via a type-pinned action map (`satisfies Record<keyof ValidatedLeadValues, …>` — a 14th field breaks the compile until audited); audit INSERTs guarded by `WHERE EXISTS (id, updated_at)` so a stale write leaves zero audit rows; the six/one capability split recorded in `docs/authorization-simulation.md`; the no-`creationAuthorizationFor` pin shipped. Bot clean, CI green, orchestrator line-review passed. EDIT-03 upgrades the guard token to `version` (named exception).
+**Status:** Complete — PR #222, July 27, 2026. Source-only and undeployed. All 13 lead fields audited with before→after details via a type-pinned action map (`satisfies Record<keyof ValidatedLeadValues, …>` — a 14th field breaks the compile until audited); audit INSERTs guarded by `WHERE EXISTS (id, updated_at)` so a stale write leaves zero audit rows; the six/one capability split recorded in `docs/specs/authorization-simulation.md`; the no-`creationAuthorizationFor` pin shipped. Bot clean, CI green, orchestrator line-review passed. EDIT-03 upgrades the guard token to `version` (named exception).
 **Why:** this packet replaces an earlier EDIT-01 that would have produced security theater.
 The original said to wire `AUTHORIZATION_CAPABILITIES.leadsUpdate` into the lead PATCH route "using
 the call shape an existing capability-gated route already uses". That instruction was executable —
@@ -734,7 +734,7 @@ audit/validator pattern for the *other* entities and must not respecify lead fie
 named exception: **EDIT-03 upgrades this guard's token from `updated_at` to `version`** in the
 same change that adds the column.
 **Do (b) — record the authorization gap, do not paper over it.** Add a short subsection to
-`docs/authorization-simulation.md` (or the nearest authorization doc) stating plainly, with the
+`docs/specs/authorization-simulation.md` (or the nearest authorization doc) stating plainly, with the
 precise split: **six capabilities are handed in self-granted** at the nine route call sites —
 `recordsRead` (×3), `leadsCreate`, `tasksUpdate` (×3), `meetingsUpdate`, `createClient`, and
 `createProject` — while **`leadsUpdate` is simply unconsumed** (zero call sites; it enforces
@@ -746,7 +746,7 @@ capability scaffolding and do **not** build roles here.
 invisible. When durable identity lands, that wiring becomes a one-line change on an
 already-audited route.
 **Files:** `app/api/v1/leads/[leadId]/route.ts`, `app/ports/lead-repository.ts` (the audit
-`action` union), the D1 and PostgreSQL lead adapters, `docs/authorization-simulation.md`, tests.
+`action` union), the D1 and PostgreSQL lead adapters, `docs/specs/authorization-simulation.md`, tests.
 **Accept:** every one of the 13 mutable fields produces an audit row with a before→after detail;
 a failed update writes **no** audit row; `advanceLead` keeps its existing behavior and audit
 string byte-identical; the authorization doc records the six/one split (six capabilities
@@ -842,7 +842,7 @@ applied; golden hashes untouched; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### EDIT-04 · Lead editing (small-medium, after EDIT-01 + EDIT-03)
-**Status:** Complete — PR #231, July 28, 2026. Source-only and undeployed. Review: 4-lens fleet, 4 confirmed P2 / 0 refuted — create-mode prefill welded open (the AI-10 (f) implement-once contract, now pinned), terminal statuses Lost/Archived pinned, the create-contract change recorded; the pre-existing assistant `owner_email` evidence leak is recorded for a separate orchestrator PR. Guide impact: `docs/settings-guide.md` gains the Editing-a-lead and Editing-a-project sections in this flip. Reusable create/edit `LeadModal` (create mode carries optional prefill — the AI-10 (f) implement-once contract); all 13 lead fields round-trip through changed-key/version-fenced PATCH; Administrator-only estimated-value edits fail before conflict disclosure; scoped saved-value conflict re-apply, office-identity email projection (owner/createdBy filtered; contact email consciously office-visible client data), dashboard refresh, and stable focus fallback are pinned. **Create-contract change, recorded:** `POST /api/v1/leads` now rejects a non-office `ownerEmail` with 400 (previously 201 with an owner that immediately projected as null) — coherent with the projection rule, tested, and disclosed.
+**Status:** Complete — PR #231, July 28, 2026. Source-only and undeployed. Review: 4-lens fleet, 4 confirmed P2 / 0 refuted — create-mode prefill welded open (the AI-10 (f) implement-once contract, now pinned), terminal statuses Lost/Archived pinned, the create-contract change recorded; the pre-existing assistant `owner_email` evidence leak is recorded for a separate orchestrator PR. Guide impact: `docs/guides/settings-guide.md` gains the Editing-a-lead and Editing-a-project sections in this flip. Reusable create/edit `LeadModal` (create mode carries optional prefill — the AI-10 (f) implement-once contract); all 13 lead fields round-trip through changed-key/version-fenced PATCH; Administrator-only estimated-value edits fail before conflict disclosure; scoped saved-value conflict re-apply, office-identity email projection (owner/createdBy filtered; contact email consciously office-visible client data), dashboard refresh, and stable focus fallback are pinned. **Create-contract change, recorded:** `POST /api/v1/leads` now rejects a non-office `ownerEmail` with 400 (previously 201 with an owner that immediately projected as null) — coherent with the projection rule, tested, and disclosed.
 **Why:** the lead PATCH route already accepts all 13 fields
 (`app/api/v1/leads/[leadId]/route.ts:14`) while the UI sends only `stage`
 through `advanceLead` (`app/FloorOpsApp.tsx:948-986`). `nextAction` is
@@ -1188,7 +1188,7 @@ a regression test for matching, mismatched, and multiple approved accounts. Gmai
 `users/me`, so documentation alone cannot make a different intake mailbox reachable.
 (2) Remove `GOOGLE_WORKSPACE_PUBSUB_TOPIC` from
 `.env.example` (verified: zero code references; future watch transport is WS-12's
-decision). (3) Link `docs/google-workspace-organization.md` from the README validation
+decision). (3) Link `docs/guides/google-workspace-organization.md` from the README validation
 section. (4) Name the concrete dev secret mechanism (ChatGPT Sites runtime environment
 settings, with sensitive values marked as secrets) so it is unambiguous and distinct from
 `.openai/hosting.json`; Secret Manager remains production-only.
@@ -1260,7 +1260,7 @@ FCI/Filed applied, INBOX retained. On failure read `last_error_code` before retr
 `google-workspace`.
 
 ### WS-09 · AGENT+OWNER — Sheets mirror mechanics documented, then live-verified (medium, after WS-08)
-**Agent:** document in `docs/google-workspace-organization.md` what
+**Agent:** document in `docs/guides/google-workspace-organization.md` what
 `app/lib/google-sheets.ts` actually does: triggers (client/project creation via the
 DirectoryMirror port, post-provisioning, manual sync — **no scheduler exists**), app-owned
 columns vs the spreadsheet-owned Account Notes column, overwrite behavior on manual edits,
@@ -1309,7 +1309,7 @@ contracts, port definitions
 targeting the existing postgres `integration_cursors`/`outbox_events` tables, and local
 fake implementations with tests, not only the design doc below. Live watches, channels,
 and Pub/Sub remain forbidden until the checklist-07 gates pass.
-Write `docs/google-workspace-watch-and-queue-design.md`: Gmail users.watch-vs-polling
+Write `docs/guides/google-workspace-watch-and-queue-design.md`: Gmail users.watch-vs-polling
 decision (align with the guide's no-Pub/Sub direction or reverse it explicitly), historyId
 cursors in the existing postgres `integration_cursors`, renewal/expiry monitoring,
 idempotent processing through the implemented outbox pattern, degraded behavior on lapse;
@@ -1339,7 +1339,7 @@ appProperties) vs discardable (oauth attempts, sync state).
 (`calendars.insert`/`calendarList.list`), which the current consent does not hold
 (`calendar.events` only). Adding it is a consent-surface expansion the owner must
 approve under checklist-02 scope-review discipline; the app never widens consent
-silently. See [dashboard workspace setup design](specs/dashboard-workspace-setup-design.md).
+silently. See [dashboard workspace setup design](../specs/dashboard-workspace-setup-design.md).
 **Do (owner, guided):** Review the scope-addition rationale (calendar creation and
 listing from the setup dashboard); confirm the connector OAuth client's consent screen
 lists the calendar scope (the two OAuth clients are never merged); set
@@ -1354,7 +1354,7 @@ reauthorization pair; no other scope changed; checklist-02 row checked with a da
 autocomplete) use API keys, not the connector OAuth account, and require a billing
 account on the Google Cloud project. The owner budget is ≤$50/month; expected actual
 usage is ~$0–10/month inside free tiers, and a budget alert enforces the ceiling. See
-[Google integration opportunities](briefs/google-integration-opportunities.md) — this file
+[Google integration opportunities](../briefs/google-integration-opportunities.md) — this file
 lives at `docs/`, adjust the relative link if moved.
 **Do (owner, guided):** Attach a company-controlled Cloud Billing account to the
 verified development project (checklist 02); enable Maps Embed API, Address Validation
@@ -1571,7 +1571,7 @@ so this is buildable either way; only the guide wording changes if preservation 
 wanted.
 **Files:** `app/api/v1/integrations/google/` (a new sibling route — **not** an edit to the
 simulation-reset route, whose simulation-only gate is a safety property worth keeping
-intact), `app/settings/components/GoogleWorkspacePanel.tsx`, `docs/settings-guide.md`, tests.
+intact), `app/settings/components/GoogleWorkspacePanel.tsx`, `docs/guides/settings-guide.md`, tests.
 Zero `FloorOpsApp.tsx`.
 **Accept:** a reset in workspace mode requires both an explicit typed confirmation and an
 already-disconnected connection, and is refused otherwise; it clears every table the
@@ -1813,7 +1813,7 @@ reminder-hours fields round-trip independently (regression test); a custom rule'
 row visibly communicates it is not driving suggestions (pinned copy).
 
 ### SET-07 · Settings IA consistency: per-section badges, one deep-link label, nav/heading alignment (small, after SET-01)
-**Status:** Complete — PR #313, August 5, 2026. Source-only and undeployed. Settings navigation, deep-link slugs, and panel headings now derive from one typed catalog. Review found eight items (seven distinct): build badges had been reintroduced into the production Settings nav — including the single row a non-admin sees — one day after DES-16 retired them, so they were removed and the conflict disclosed rather than the stale packet text implemented; a pinned suite restored from red to 12/12; a mutation-blind assertion re-pointed; dead e2e route mocks restored; and a duplicated `/sheets/status` read per admin Settings load eliminated. Guide impact: `docs/settings-guide.md` updated for the renamed nav row.
+**Status:** Complete — PR #313, August 5, 2026. Source-only and undeployed. Settings navigation, deep-link slugs, and panel headings now derive from one typed catalog. Review found eight items (seven distinct): build badges had been reintroduced into the production Settings nav — including the single row a non-admin sees — one day after DES-16 retired them, so they were removed and the conflict disclosed rather than the stale packet text implemented; a pinned suite restored from red to 12/12; a mutation-blind assertion re-pointed; dead e2e route mocks restored; and a duplicated `/sheets/status` read per admin Settings load eliminated. Guide impact: `docs/guides/settings-guide.md` updated for the renamed nav row.
 **Do:** Add `featureState` to SETTINGS_SECTIONS entries and render per-section badges
 (My account=Working; Google Workspace=In development; Calendar=Setup required, computed
 from SET-05's payload once landed; Inbox rules=In development; Client Directory=computed
@@ -1828,7 +1828,7 @@ Setup required with one factual sentence; backup/retention stay Planned.
 deep-link string; slugs unchanged.
 
 ### SET-08 · Persist the launch checklists (medium, after SET-01+02)
-**Status:** Complete — PR #169, July 24, 2026. Source-only and undeployed. Opus fleet clean across route-security, persistence, UI-honesty, and tests lenses: admin-gated PATCH with server-stamped actor/timestamp and client-forged metadata rejected 400; widen-on-read proven in both directions; simulation reset provably never touches workspace_settings. Review fix (b6f98be, July 24, 2026) labels the simulated environment honestly — live rows read Simulated, the summary never counts simulated rows as verified. Residuals recorded in FIX-17; the cross-cutting settings-blob write fence is noted there as a candidate BE packet. Guide impact: updated `docs/settings-guide.md` with the persisted development-checklist contract and the simulated-environment note.
+**Status:** Complete — PR #169, July 24, 2026. Source-only and undeployed. Opus fleet clean across route-security, persistence, UI-honesty, and tests lenses: admin-gated PATCH with server-stamped actor/timestamp and client-forged metadata rejected 400; widen-on-read proven in both directions; simulation reset provably never touches workspace_settings. Review fix (b6f98be, July 24, 2026) labels the simulated environment honestly — live rows read Simulated, the summary never counts simulated rows as verified. Residuals recorded in FIX-17; the cross-cutting settings-blob write fence is noted there as a candidate BE packet. Guide impact: updated `docs/guides/settings-guide.md` with the persisted development-checklist contract and the simulated-environment note.
 
 **Why:** The 4 safeguard checkboxes are unbound inputs storing nothing; Testing & launch
 is a static list that looks trackable. Persisting is accepted tracked work.
@@ -1843,7 +1843,7 @@ reset does NOT clear it (lives in workspace_settings, not connection-scoped tabl
 assert in test).
 
 ### SET-09 · Integration audit viewer (small, after SET-01+02)
-**Status:** Complete — PR #308, August 5, 2026. Source-only and undeployed. The integration audit viewer paginates by opaque cursor. Ten review findings were fixed on-branch. Two off-scale spacing values it added were caught later by DES-13's drift guard once both had merged, and repaired in PR #315. Guide impact: `docs/settings-guide.md` updated for the Load more capability.
+**Status:** Complete — PR #308, August 5, 2026. Source-only and undeployed. The integration audit viewer paginates by opaque cursor. Ten review findings were fixed on-branch. Two off-scale spacing values it added were caught later by DES-13's drift guard once both had merged, and repaired in PR #315. Guide impact: `docs/guides/settings-guide.md` updated for the Load more capability.
 
 **NARROWED July 30, 2026 — WS-10 shipped the events reader, so most of this packet is
 already built.** The original text said `google_integration_events` "has no reader anywhere
@@ -1914,7 +1914,7 @@ card's sentence may say so.
 ### SET-13 · Workspace resource registry + effective-config layer + resources card (large, after completed SET-03+04+10) — FIRST in the dashboard-setup feature
 **Status:** Complete — PR #76, July 21, 2026. Source-only and undeployed; migration 0013 has not been applied to Sites.
 
-**Why:** Owner-approved direction ([design doc](specs/dashboard-workspace-setup-design.md)):
+**Why:** Owner-approved direction ([design doc](../specs/dashboard-workspace-setup-design.md)):
 dashboard-created resource IDs persist app-side and become runtime-authoritative with
 env fallback and a visible source badge. Today `authorize` gates on `oauthReady`, which
 requires resource-ID env vars — so nothing can be created from the dashboard because
@@ -2074,7 +2074,7 @@ deliberate; template content contains no secrets or env values; simulation e2e.
 **Effort:** medium.
 
 ### SET-18 · Reconcile & drift maintenance (medium, after SET-15+16+17)
-**Status:** Complete — PR #227, July 28, 2026. Source-only and undeployed; every outbound Google call on the reconcile path verified read-only, SET-22's shipped template flows unregressed in the shared files. Review: 6-lens fleet, 8 raw → 7 confirmed P2 / 1 refuted; three test hardenings by the orchestrator (Gmail trash-ENDPOINT deny joined the Drive body rule; the provider census widened from a name list to every `app/lib/workspace-*.ts`; main's blueprint-rename audit pin restored beside the new reconcile-mode pin) and two behavior fixes by the owning agent, verified independently: renamed owner sheets/templates now offer **adopt-into-blueprint** (blueprint-only mutation; the helper throws on system-managed resources and routes through `sanitizeWorkspaceBlueprint`; rename-in-Drive stays folder-only; calendars honestly action-less pending SET-20), and the reconcile card labels simulation results, failing closed when the `simulated` flag is absent. 58/58 on the touched suites; bot silent through the final window. Guide impact: `docs/settings-guide.md` updated.
+**Status:** Complete — PR #227, July 28, 2026. Source-only and undeployed; every outbound Google call on the reconcile path verified read-only, SET-22's shipped template flows unregressed in the shared files. Review: 6-lens fleet, 8 raw → 7 confirmed P2 / 1 refuted; three test hardenings by the orchestrator (Gmail trash-ENDPOINT deny joined the Drive body rule; the provider census widened from a name list to every `app/lib/workspace-*.ts`; main's blueprint-rename audit pin restored beside the new reconcile-mode pin) and two behavior fixes by the owning agent, verified independently: renamed owner sheets/templates now offer **adopt-into-blueprint** (blueprint-only mutation; the helper throws on system-managed resources and routes through `sanitizeWorkspaceBlueprint`; rename-in-Drive stays folder-only; calendars honestly action-less pending SET-20), and the reconcile card labels simulation results, failing closed when the `simulated` flag is absent. 58/58 on the touched suites; bot silent through the final window. Guide impact: `docs/guides/settings-guide.md` updated.
 **Why:** Owner requirement: blueprint edits after resources exist must drive a drift
 view — defined-but-missing offers create; removed-from-blueprint is shown unmanaged and
 is **never deleted**.
@@ -2241,7 +2241,7 @@ endpoints beyond one presence read; no secret or env values in markup; non-admin
 variant informational only. **Effort:** small. **Cost:** $0.
 
 ### SET-25 · First-run data import: clients AND projects (medium-large, after SET-16) — OWNER PRIORITY (July 21)
-**Status:** Complete — PR #213, July 26, 2026. Fable fleet (2 lenses + adversarial verify) confirmed the review-first contract by construction: `/confirm` is the only writer (preview builds its repository without the write lease, so any insert throws — zero-write assertion), every preview rowKey embeds a SHA-256 of that row's cells so an edited or swapped source 409s as stale instead of importing unreviewed data, projects provably cannot create clients (the insert selects `FROM clients c WHERE c.id = ?`), ambiguity is surfaced rather than guessed, and idempotency is real (durable-duplicate replay plus SQL NOT EXISTS guards inside the fenced batch). Review fixes on-branch (9f5ed6a): the red CI test was an APP bug — the post-confirm focus handoff used a single `requestAnimationFrame` that fired before React committed the reopen button, dropping keyboard focus to `document.body`; replaced with the `pendingFocusRef` + commit-effect idiom (jsdom/React 19.2.6 repro proved animation-frame → unfocused, commit-effect → focused). Also fixed: the gate notice is now the rendered constant (the acceptance test had asserted a string no user saw), over-long emails and control-character phones raise explicit `*_invalid` issues instead of importing blank, the "irreversible fingerprint" wording is corrected in both the guide and the UI (it is an unsalted SHA-256 of a low-entropy address), and the counts list uses real list semantics. Recorded residual: spreadsheet cells beginning with `=`, `+`, `-`, `@` are stored verbatim — inert today (React escapes on render, the Sheets client writes RAW, no CSV export exists) but must be revisited if a CSV export or a USER_ENTERED Sheets write is ever added. Source-only and undeployed; real-data import remains blocked behind WS-11. Guide impact: `docs/settings-guide.md` updated.
+**Status:** Complete — PR #213, July 26, 2026. Fable fleet (2 lenses + adversarial verify) confirmed the review-first contract by construction: `/confirm` is the only writer (preview builds its repository without the write lease, so any insert throws — zero-write assertion), every preview rowKey embeds a SHA-256 of that row's cells so an edited or swapped source 409s as stale instead of importing unreviewed data, projects provably cannot create clients (the insert selects `FROM clients c WHERE c.id = ?`), ambiguity is surfaced rather than guessed, and idempotency is real (durable-duplicate replay plus SQL NOT EXISTS guards inside the fenced batch). Review fixes on-branch (9f5ed6a): the red CI test was an APP bug — the post-confirm focus handoff used a single `requestAnimationFrame` that fired before React committed the reopen button, dropping keyboard focus to `document.body`; replaced with the `pendingFocusRef` + commit-effect idiom (jsdom/React 19.2.6 repro proved animation-frame → unfocused, commit-effect → focused). Also fixed: the gate notice is now the rendered constant (the acceptance test had asserted a string no user saw), over-long emails and control-character phones raise explicit `*_invalid` issues instead of importing blank, the "irreversible fingerprint" wording is corrected in both the guide and the UI (it is an unsalted SHA-256 of a low-entropy address), and the counts list uses real list semantics. Recorded residual: spreadsheet cells beginning with `=`, `+`, `-`, `@` are stored verbatim — inert today (React escapes on render, the Sheets client writes RAW, no CSV export exists) but must be revisited if a CSV export or a USER_ENTERED Sheets write is ever added. Source-only and undeployed; real-data import remains blocked behind WS-11. Guide impact: `docs/guides/settings-guide.md` updated.
 
 **Why:** Day-one onboarding gap: nothing loads the company's existing client and
 project lists when real use begins — without this, launch starts with manual re-entry.
@@ -2521,7 +2521,7 @@ assignable anytime.
 document under the currency rule below.
 **Why:** no user manual existed; the owner wants a non-technical design &
 reference document for administrators AND end users, anchored on Settings.
-**Do:** publish `docs/settings-guide.md` — Part 1 "Using the app (everyone)" and
+**Do:** publish `docs/guides/settings-guide.md` — Part 1 "Using the app (everyone)" and
 Part 2 "Administering the app", written from source truth (on-screen strings
 verified), with a currency banner, glossary, and screenshot index (placeholders
 fill as captures are curated). Repo doc now; one "Open the guide" link card in
@@ -2534,7 +2534,7 @@ tracking guard green.
 **Effort:** small (drafting complete at publication). **Cost:** $0.
 
 ### SET-38 · Stage 3 declutter: collapsible subsections + border cleanup (owner enhancement, July 24, 2026; NOT prioritized)
-**Status:** Complete — PR #190, July 24, 2026. Source-only and undeployed. Opus fleet clean: the subsections byte-reuse the stage-shell aria contract, content proven byte-invariant, the deterministic initial-state rule implemented with manual-choices-win semantics, session-only. Two review fixes recorded: the pre-existing DES-04 chip e2e re-pointed to expand the blueprint subsection first, and the disclosure init gated on the latest status request (workspaceResourcesLoadIdRef) so an OAuth-callback double-load cannot initialize from a stale completion — proven by an out-of-order e2e. Guide impact: `docs/settings-guide.md` documents the Stage 3 disclosure behavior.
+**Status:** Complete — PR #190, July 24, 2026. Source-only and undeployed. Opus fleet clean: the subsections byte-reuse the stage-shell aria contract, content proven byte-invariant, the deterministic initial-state rule implemented with manual-choices-win semantics, session-only. Two review fixes recorded: the pre-existing DES-04 chip e2e re-pointed to expand the blueprint subsection first, and the disclosure init gated on the latest status request (workspaceResourcesLoadIdRef) so an OAuth-callback double-load cannot initialize from a stale completion — proven by an out-of-order e2e. Guide impact: `docs/guides/settings-guide.md` documents the Stage 3 disclosure behavior.
 
 **Why:** owner feedback (July 24, 2026): the Settings → Google Workspace →
 Stage 3 "Define & create your workspace" area is visually congested, and the
@@ -2671,7 +2671,7 @@ WS-19's different-subject connect guard, and "Start fresh on a new tenant" leaks
 discarded tenant's mailbox into the new tenant. Probe and reset are D1-only; the two named
 files are the full edit surface.
 **Guide coordination (guardrail 0):** this packet takes the **Google Workspace
-administration** section of `docs/settings-guide.md`; AI-11(c) takes the **AI assistant**
+administration** section of `docs/guides/settings-guide.md`; AI-11(c) takes the **AI assistant**
 section; `tests/rendered-html.test.mjs` stays additive, serialize merges per the standing
 rule.
 **Accept:** with two allowlisted addresses in env, switching the intake mailbox in Settings
@@ -2784,7 +2784,7 @@ configuration changed.
 projects {status lifecycle, estimatedValue, createdAt, updatedAt}, but the Reports screen
 only shows pipeline-by-stage and projects-by-status. The owner currently has no close
 rate, booked-revenue, or backlog number anywhere.
-**Do:** (1) Write `docs/flooring-kpis.md` — the single source of truth: each KPI's name,
+**Do:** (1) Write `docs/specs/flooring-kpis.md` — the single source of truth: each KPI's name,
 exact formula, fields used, admin-only flag, and known approximations. Tier-1 set:
 **Win rate** = converted ÷ (converted + lost) leads in period, overall and by `source`
 (non-financial); **Booked value per month** = Σ estimatedValue of leads whose status
@@ -2809,7 +2809,7 @@ panel/stat conventions, and each dollar KPI marked with the admin-only note (gat
 `app/features/reports/flooring-kpis.ts`) so unit tests pin the math to the definitions
 doc. (3) Keep drill-through consistency: where a KPI has a natural destination (win rate →
 Leads, backlog → Projects Active filter), reuse the PR #27 bounded-filter links.
-**Files:** `docs/flooring-kpis.md` (new), `app/features/reports/flooring-kpis.ts` (new),
+**Files:** `docs/specs/flooring-kpis.md` (new), `app/features/reports/flooring-kpis.ts` (new),
 `app/FloorOpsApp.tsx` (Reports region), `app/globals.css` (reuse existing panel/stat
 classes; additions only if unavoidable), `tests/` (unit for every formula incl. zero-
 denominator and empty-period cases; rendered coverage per repo convention).
@@ -2837,7 +2837,7 @@ run `npm run db:generate` for immutable migration 0012 per
 (2) Extend POST /api/v1/projects validation (bounded, all three optional) and the
 New-project modal with the three optional inputs (category select, sq ft, contract
 value — modal field conventions from the accessibility pass); render them in the project
-drawer stats. (3) Update `docs/flooring-kpis.md` and the KPI helper: **Product mix** =
+drawer stats. (3) Update `docs/specs/flooring-kpis.md` and the KPI helper: **Product mix** =
 job count and value share by category (value share financial); **Revenue per square
 foot** = contract_value (fallback estimatedValue) ÷ square_feet, per job and period
 average (financial); **Estimate accuracy** = contract_value ÷ estimatedValue where both
@@ -2847,7 +2847,7 @@ only when at least one record carries the field ("Not yet captured" otherwise �
 fake zero). (4) Do NOT add installation dates or callbacks here — that is KPI-03.
 **Files:** `db/schema.ts`, `drizzle/` (generated), `app/domain/` project validation,
 `app/api/v1/projects/route.ts`, `app/FloorOpsApp.tsx` (modal + drawer + Reports),
-`docs/flooring-kpis.md`, `tests/`.
+`docs/specs/flooring-kpis.md`, `tests/`.
 **Accept:** migration 0012 is additive-only and `npm run db:migrate:local` applies it;
 create-project round-trips the three fields (API + e2e); KPI panel shows the new KPIs
 with captured data and "Not yet captured" without; existing projects (null fields) never
@@ -2880,7 +2880,7 @@ fields are the forward-compatible seed for the future Scheduling milestone — n
 definitions doc that Scheduling must consume, not duplicate, them.
 **Files:** `db/schema.ts`, `drizzle/`, `app/api/v1/projects/route.ts` (extend
 the existing audited-action PATCH surface), `app/FloorOpsApp.tsx` (drawer),
-`docs/flooring-kpis.md`, `tests/`.
+`docs/specs/flooring-kpis.md`, `tests/`.
 **Accept:** both actions are admin-gated server-side and append activity events; invalid
 date order fails closed; KPIs compute from the new fields with pinned fallbacks; full
 suites pass.
@@ -2916,7 +2916,7 @@ format). Effort: small.
 
 Goal: tighten the app's integration with Google products the company already pays for,
 selected from the adopted
-[Google integration opportunities](briefs/google-integration-opportunities.md) research
+[Google integration opportunities](../briefs/google-integration-opportunities.md) research
 (owner budget ≤$50/month; the whole workstream is expected to cost ~$0–10/month
 actual). Every packet is source-only, simulation-testable, and owner-gated for any new
 scope, API key, or billing attachment. GI packets follow the same guardrails, status
@@ -3038,7 +3038,7 @@ without folder re-listing — "what changed on this project" at a glance.
 **Do:** Serialized `changes.getStartPageToken`/`changes.list` cursor polling per
 Shared Drive (existing `auth/drive` scope; the page token never expires; explicitly
 no `changes.watch`, no Pub/Sub). Corrected August 3, 2026: no Gmail history polling
-exists in this repo to pattern-match — `docs/google-workspace-watch-and-queue-design.md:15-18`
+exists in this repo to pattern-match — `docs/guides/google-workspace-watch-and-queue-design.md:15-18`
 records polling as not authorized, and no `scheduled()` handler or cron trigger
 exists. The scheduling model is an unmade OWNER decision that must be made before
 dispatch, not during: an admin-pressed bounded reader keeps this packet medium; real
@@ -3118,7 +3118,7 @@ packets that are merged, including PRs #51, #53, and #66, are undeployed. Delive
 not become a separate task source of truth.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
-`docs/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
+`docs/ledger/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
 
 1. Items without a status line remain **Open**. When an agent starts an item it adds a status
    line in its own PR and updates that line on merge.
@@ -3155,13 +3155,13 @@ not become a separate task source of truth.
 | Surface | Role | Rule |
 |---|---|---|
 | This document | Active agent work for architecture / Workspace / Setup-UI | Status lines updated per PR (rules above) |
-| `docs/design-critique-fix-plan.md` | UI remediation ledger (PRs #24–#30) | Already canonical; SET work updates the relevant Phase 3/4 entries |
+| `docs/ledger/design-critique-fix-plan.md` | UI remediation ledger (PRs #24–#30) | Already canonical; SET work updates the relevant Phase 3/4 entries |
 | `docs/task-checklists/*` | **Owner-facing** setup, connection, acceptance, and operations checkboxes | Owners check boxes; agents only fix stale facts (BE-01) or add evidence templates (WS-11) |
-| `docs/complete-product-and-google-cloud-architecture-audit.md` roadmap | Architecture branch history and gates | TRK-01 cross-references its open items to BE/WS ids |
+| `docs/reviews/complete-product-and-google-cloud-architecture-audit.md` roadmap | Architecture branch history and gates | TRK-01 cross-references its open items to BE/WS ids |
 | `README.md` "Prioritized next work" | Entry point / pointer | BE-01 fixes its content; TRK-01 makes it point to the ledgers instead of duplicating them |
 | `docs/specs/administration-and-access-plan.md` | **Approved first-release access design** (fixed roles, five admin workflows, initial Administrators `admincrm@`/`brett@cherryhillfci.com`) | BE-04 and any access work must conform to it; do not re-open its decisions |
 | `docs/archive/pre-workspace-development-plan.md` | What can start now vs. must wait for Workspace/credentials | Consistent with this plan's owner gate; TRK-01 cross-links it |
-| `docs/20-user-product-and-architecture-review.md` | P0/P1/P2 findings, corrected delivery order, go/no-go gates | The gates govern second-user/real-data admission; BE/WS items map onto its delivery order |
+| `docs/reviews/20-user-product-and-architecture-review.md` | P0/P1/P2 findings, corrected delivery order, go/no-go gates | The gates govern second-user/real-data admission; BE/WS items map onto its delivery order |
 
 **Alignment rule:** `docs/task-checklists/README.md` remains an owner-facing dashboard and
 points here instead of duplicating agent sequencing. The design ledger owns the
@@ -3219,7 +3219,7 @@ not fail; lint and `npm test` pass; no historical review snapshot changes.
 
 # Workstream F — Dashboard design enhancement (DES)
 
-Owner-approved July 22, 2026. Design authority: `docs/dashboard-design-spec.md`
+Owner-approved July 22, 2026. Design authority: `docs/specs/dashboard-design-spec.md`
 (+ the sign-off mockup `docs/dashboard-design-mockup.html`). Binding simplicity
 guardrails and the interactive-vs-static affordance grammar live in the spec —
 every packet's PR includes 1280 px and 390 px screenshots. House rules: at most
@@ -3398,9 +3398,9 @@ executes, and leave one truth.
 **Do (narrowed August 3, 2026 — two sub-items struck as already delivered: the
 editor-editing-state axe extension exists twice, `tests/e2e/page-layouts.spec.ts:176`
 and `:701`, and the findings-ledger FIX-08 disposition is already recorded,
-`docs/full-review-2026-07-21-findings.md:301-302`):** commit the approved 1280/390
+`docs/ledger/full-review-2026-07-21-findings.md:301-302`):** commit the approved 1280/390
 reference screenshots of the durable routes on the post-series frame; add one
-notifications-popover axe assertion; update `docs/design-critique-fix-plan.md`
+notifications-popover axe assertion; update `docs/ledger/design-critique-fix-plan.md`
 (Phase 3/4 closed with PR references); reconcile all DES statuses. Residue is the
 reference screenshots plus the one notifications-popover axe assertion only.
 **Accept:** ledgers agree with reality; screenshots committed; guard suite
@@ -3554,7 +3554,7 @@ the 16/24 above-grid scale.
 golden-hash-pinned (`tests/e2e/page-layouts.spec.ts:8-9`); CSS-value changes are
 hash-safe, markup or class changes inside pinned sections are not, and this packet has
 **no regeneration authority**. Design-spec CSS strings are pinned mutation-sensitively
-(`docs/dashboard-design-spec.md:111-114`). **Takes the `app/FloorOpsApp.tsx` queue slot
+(`docs/specs/dashboard-design-spec.md:111-114`). **Takes the `app/FloorOpsApp.tsx` queue slot
 AND the `globals.css` lock**; it must add itself to the FloorOpsApp claim-list tail in the
 same PR (claimed in the tail August 3, 2026).
 
@@ -3664,7 +3664,7 @@ this packet first anyway: the scales are the migration rails.
 **Constraints:** CSS-values-only — **zero markup or class changes**, so both golden hashes
 remain byte-identical by construction (assert it anyway); takes the `globals.css` lock and
 touches the settings module CSS; **no `app/FloorOpsApp.tsx` change and no queue slot**;
-`docs/dashboard-design-spec.md`'s token table is updated in the same PR so the design
+`docs/specs/dashboard-design-spec.md`'s token table is updated in the same PR so the design
 authority records the new scales; the owner reviews before/after screenshots at
 390/834/1280 **before merge** — this changes the look of every page and carries owner
 sign-off, not silent taste.
@@ -4167,7 +4167,7 @@ the design grammar) on the Leads/Clients/Projects row grids at ≥821px, degradi
 compact sort menu in the card band; (3) the Clients-style search input added to Leads and
 Projects; (4) per-user persistence of view choice and sort alongside the existing
 page-layout preferences — one personalisation system, not two. (5) **Record the approved
-amendment in `docs/dashboard-design-spec.md` in this same PR**: the board/list toggle and
+amendment in `docs/specs/dashboard-design-spec.md` in this same PR**: the board/list toggle and
 sort headers are authorized as a deliberate exception to the "no second way to do an
 existing action" rule, owner-approved August 3, 2026.
 **Constraints:** component-anchored — this packet targets the post-DES-14 extracted
@@ -4286,7 +4286,7 @@ so it dispatches after AI-11(c) merges.
 ### The August 4 responsive-layout audit series (DES-19…DES-24)
 
 Filed from the owner-commissioned Opus audit committed verbatim at
-[`docs/design-reviews/2026-08-04-responsive-layout-audit.md`](design-reviews/2026-08-04-responsive-layout-audit.md)
+[`docs/design-reviews/2026-08-04-responsive-layout-audit.md`](../design-reviews/2026-08-04-responsive-layout-audit.md)
 (Figma evidence board linked there). Each packet cites its audit section rather than
 duplicating it — the audit is the evidence record; these packets are the work orders.
 All six honor the usability acceptance lens and the Apple direction recorded under
@@ -4428,7 +4428,7 @@ constants byte-identical (the panel is not on a pinned page — confirm); `npm t
 # Workstream G — AI assistant & automation (AI)
 # Workstream G — AI assistant & automation (AI)
 
-Owner-approved July 23, 2026. Design authority: `docs/ai-assistant-spec.md`
+Owner-approved July 23, 2026. Design authority: `docs/specs/ai-assistant-spec.md`
 (architecture decision, tool-registry bounds, safety model, canonical copy,
 triage calibration protocol, cost model, Tier-2 gates). Goal: make the
 existing office-gated assistant genuinely useful — organize email, keep
@@ -4490,7 +4490,7 @@ source-only/unapplied and the PR says so; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-02 · Assistant & Inbox surface extraction + phone-call option (medium; the ONLY FloorOpsApp packet — one queue slot, three serial PRs a→b→c)
-**Status:** Complete — PR #182 + PR #187 + PR #193, July 24, 2026. Source-only and undeployed. All three serial sub-PRs fleet-clean: a and b were byte-identical extractions of the Assistant and Inbox surfaces (39/39 and 38/38 executed green, every pin a required re-point), and c added the phone-call meeting option — the packet's only behavior change — with the full option-list mutation-pinned, evidence at 1280/390, and the meeting guide updated in-PR per the currency rule. The FloorOpsApp queue slot is RELEASED; the fix-tail (NFIX-03, FIX-15, FIX-17, SET-22) and AI-04 are unblocked — SET-26 stays gated on SET-23 (its acceptance needs the SET-23 viewer). Guide impact: `docs/meeting-notes-and-otter.md` updated (phone-call now offered).
+**Status:** Complete — PR #182 + PR #187 + PR #193, July 24, 2026. Source-only and undeployed. All three serial sub-PRs fleet-clean: a and b were byte-identical extractions of the Assistant and Inbox surfaces (39/39 and 38/38 executed green, every pin a required re-point), and c added the phone-call meeting option — the packet's only behavior change — with the full option-list mutation-pinned, evidence at 1280/390, and the meeting guide updated in-PR per the currency rule. The FloorOpsApp queue slot is RELEASED; the fix-tail (NFIX-03, FIX-15, FIX-17, SET-22) and AI-04 are unblocked — SET-26 stays gated on SET-23 (its acceptance needs the SET-23 viewer). Guide impact: `docs/briefs/meeting-notes-and-otter.md` updated (phone-call now offered).
 
 **Why:** AssistantView, InboxView, and GmailReplyModal live inside
 `FloorOpsApp.tsx`; without extraction every AI UI packet would serialize
@@ -4710,12 +4710,12 @@ and machine-enforced outbound law.
 source contains Gmail send/draft-write or Chat webhook calls; every assistant
 route sets `no-store`; the worker still exports `fetch` only (no `scheduled`
 handler) — mutation-tested with a synthetic send call. Reconcile
-`docs/ai-assistant-spec.md` §8 Tier-2 stubs (AI-T2-1…6) against reality,
-update `docs/meeting-notes-and-otter.md` for the phone-call type, flip all AI
+`docs/specs/ai-assistant-spec.md` §8 Tier-2 stubs (AI-T2-1…6) against reality,
+update `docs/briefs/meeting-notes-and-otter.md` for the phone-call type, flip all AI
 statuses, and update Sequencing at a glance + the FloorOpsApp queue appendix.
-**Files:** `tests/ai-outbound-guard.test.mjs`, `docs/ai-assistant-spec.md`,
-`docs/agent-plan-architecture-workspace-and-setup.md`,
-`docs/meeting-notes-and-otter.md`.
+**Files:** `tests/ai-outbound-guard.test.mjs`, `docs/specs/ai-assistant-spec.md`,
+`docs/ledger/agent-plan-architecture-workspace-and-setup.md`,
+`docs/briefs/meeting-notes-and-otter.md`.
 **Accept:** guard fails on a synthetic send-call injection; ledgers agree
 with reality; every Tier-2 entry names its gate; `npm test` green.
 **Effort:** small. **Cost:** $0.
@@ -4739,7 +4739,7 @@ already links to `/inbox?bucket=needs-review` calling it *"the inbox review
 queue"*, and DES-08c is Blocked by owner decision *"until the AI wave lands a
 truthful attention signal"*. One durable row makes all four true at once.
 Owner decisions governing this packet are recorded verbatim in
-`docs/ai-assistant-spec.md` §12; two of them are deliberate deviations from that
+`docs/specs/ai-assistant-spec.md` §12; two of them are deliberate deviations from that
 spec's own principles and are written down as such.
 **Do:** (a) **Classify.** New `app/application/assistant/inbox-analysis.ts`: one
 provider pass per email returning party, multi-intent labels, extracted lead
@@ -4801,7 +4801,7 @@ directory under `app/api/v1/`, `app/lib/google-gmail.ts`,
 `app/domain/mail-item.ts`, `db/schema.ts` + a D1 migration,
 `app/platform/postgres/settings-persistence-schema.ts`,
 `app/FloorOpsApp.tsx` (`initialValues` on `LeadModal` only — queue slot),
-`docs/ai-assistant-spec.md`, `docs/settings-guide.md`, tests.
+`docs/specs/ai-assistant-spec.md`, `docs/guides/settings-guide.md`, tests.
 **Accept:** analyzing a seeded inbox writes `mail_items` rows with
 `status='needs-review'`, and reloading the Inbox makes **zero** additional
 provider calls for already-analyzed messages (analyze-once economics measured,
@@ -4822,7 +4822,7 @@ untouched; `npm test` green.
 **Effort:** large — file as sub-PRs (a+b+c engine and persistence; d+e queue and
 notification; f lead capture and the queue slot) so the `FloorOpsApp.tsx` slot is
 held only for the last one. **Cost:** provider spend only; the spec's ≤200
-emails/day budget (`docs/ai-assistant-spec.md:186-194`) is the ceiling, and
+emails/day budget (`docs/specs/ai-assistant-spec.md:186-194`) is the ceiling, and
 analyze-once is what keeps it there.
 **Progress:** sub-PRs (a+b+c) — the write-free classifier, the only-writer
 persistence route, and the bounded sweep — merged in PR #235, July 28, 2026,
@@ -5014,7 +5014,7 @@ state this no-FloorOpsApp path in the PR, per the FloorOpsApp queue appendix.
 and `app/api/v1/inbox-analysis/route.ts`, so **(c) takes the inbox-file cluster
 serialization** (the AI-12 appendix rule): build on post-#287/#288 main, and no packet
 touching `app/api/v1/inbox-analysis/route.ts` may run in parallel with it. (c) also edits
-`docs/settings-guide.md` (guardrail 0) — it takes the **AI assistant** section; SET-41 takes
+`docs/guides/settings-guide.md` (guardrail 0) — it takes the **AI assistant** section; SET-41 takes
 the **Google Workspace administration** section; `tests/rendered-html.test.mjs` stays
 additive, serialize merges per the standing rule.
 (d) **The AI activity view** (owner requirement, July 26 — previously unowned): inside the new
@@ -5140,7 +5140,7 @@ the first place.
 **Files:** `app/api/v1/inbox-analysis/route.ts`, `app/inbox/components/InboxView.tsx`,
 `app/ports/mail-item-repository.ts`, `app/adapters/d1/mail-item-repository.ts`, and
 `app/adapters/postgres/mail-item-repository.ts` (the exhausted-count query and the guarded
-clear-attempts UPDATE are new port methods), `docs/settings-guide.md`, tests —
+clear-attempts UPDATE are new port methods), `docs/guides/settings-guide.md`, tests —
 `tests/ai10-inbox-analysis-route.test.mjs` and `tests/ai10-inbox-review-queue.test.mjs`
 are **add-scenarios-only (no pin edits)**, and the GET fixtures in
 `tests/e2e/ai10-inbox-analysis-trigger.spec.ts` and `tests/e2e/ai11-typed-accepts.spec.ts`
@@ -5161,7 +5161,7 @@ outcomes.
 # Workstream H — In-app guidance (HINT)
 
 Owner-approved July 23, 2026 (forms-only decision). Design authority:
-`docs/infohint-audit-2026-07-24.md` — the curated table is normative. HINT-01
+`docs/reviews/infohint-audit-2026-07-24.md` — the curated table is normative. HINT-01
 and HINT-02 are complete; HINT-03 is the final closure packet. Source contains
 only the 12 recommended rows (9 original + 3 sequenced after AI-08), all with
 verbatim mutation-pinned copy. Optional rows still need a fresh owner opt-in,
@@ -5304,7 +5304,7 @@ paragraph.**
 **Design-remediation wave order (approved July 21, 2026 — anti-rework):** the
 full-codebase review and the settings redesign run in four waves so nothing is built
 twice. **R1** — full-review foundation fix packets (FIX-01…FIX-06 plus FIX-10 in
-`docs/full-review-2026-07-21-findings.md`) that touch shared primitives, config
+`docs/ledger/full-review-2026-07-21-findings.md`) that touch shared primitives, config
 layering, or test infrastructure. **R1 completed July 22, 2026 (PRs #95–#112,
 reviewed and flipped), so R2 is unblocked and active.**
 **R2** — the SET-29 → SET-34 stage-shell series (design authority:
@@ -5329,7 +5329,7 @@ AI-06 (PR #212) and SET-25 (PR #213) are COMPLETE as of July 26, 2026, and
 fully merged: AI-09 closed it by reconciling one truthful account of what the AI
 does, what is production-gated, and every residual the series recorded.
 **AI-10 is a new packet opened after that closure**, on a recorded owner decision
-of July 26, 2026 (`docs/ai-assistant-spec.md` §12). Adding a packet after the
+of July 26, 2026 (`docs/specs/ai-assistant-spec.md` §12). Adding a packet after the
 closure packet is a deliberate convention break, called out here rather than made
 silently: AI-09 closed the *reconciliation* of AI-01→AI-08, not the workstream's
 capacity to take new work. AI-10 is **the dispatchable head of the AI lane** and
@@ -5480,7 +5480,7 @@ FloorOpsApp queue ships it, and the later one consumes it and records that it di
 ## Enhancement & follow-up backlog (single home — added July 28, 2026, owner request)
 
 The owner's product-level roadmap remains
-[`docs/archive/ui-and-product-readiness-review.md`](archive/ui-and-product-readiness-review.md) (steps 1–13,
+[`docs/archive/ui-and-product-readiness-review.md`](../archive/ui-and-product-readiness-review.md) (steps 1–13,
 "Next: lead-to-closeout operations", "Later: automation and intelligence") — this section does
 NOT copy it. It is the single home for **review-born and research-born items that would
 otherwise be owned by nobody**. Rules: each item is ONE line + a pointer; when an item gains a
@@ -5508,7 +5508,7 @@ remain the only dispatch authority).
 - Client-status semantics (archived clients selectable in pickers; status is display-only
   everywhere) — enhancement candidate from the EDIT-05 review.
 - Gmail Workspace Add-on ("the flagship",
-  [`docs/briefs/google-integration-opportunities.md`](briefs/google-integration-opportunities.md)) — filing
+  [`docs/briefs/google-integration-opportunities.md`](../briefs/google-integration-opportunities.md)) — filing
   where staff already read mail; strategic option, not scheduled.
 
 **Orchestrator to-dos (not Codex):**

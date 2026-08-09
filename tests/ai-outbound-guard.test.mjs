@@ -425,11 +425,11 @@ test("the Worker remains fetch-only with no scheduled AI handler", async () => {
 
 test("AI-09 documentation has one source-verified account, explicit Tier-2 gates, and one residual register", async () => {
   const [spec, guide, meetings, plan, rateLimitGuide] = await Promise.all([
-    read("docs/ai-assistant-spec.md"),
-    read("docs/settings-guide.md"),
-    read("docs/meeting-notes-and-otter.md"),
-    read("docs/agent-plan-architecture-workspace-and-setup.md"),
-    read("docs/request-rate-limiting.md"),
+    read("docs/specs/ai-assistant-spec.md"),
+    read("docs/guides/settings-guide.md"),
+    read("docs/briefs/meeting-notes-and-otter.md"),
+    read("docs/ledger/agent-plan-architecture-workspace-and-setup.md"),
+    read("docs/specs/request-rate-limiting.md"),
   ]);
 
   const tierTwo = sectionFromHeading(

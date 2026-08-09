@@ -6,18 +6,21 @@ These instructions apply to the entire repository and are intended to give every
 
 Start with [`docs/README.md`](docs/README.md), the audience-grouped index of every document (added July 24, 2026). Then, before changing code, read:
 
-1. `docs/codex-to-codex-handoff.md`
-2. `docs/architecture-decision-production-platform.md`
-3. `docs/specs/architecture-decision-workspace-first-cost-controlled-rollout.md`
-4. `docs/20-user-product-and-architecture-review.md`
-5. `docs/agent-plan-architecture-workspace-and-setup.md`
-6. `docs/complete-product-and-google-cloud-architecture-audit.md`
-7. `docs/google-cloud-runtime-foundation.md`
-8. `docs/archive/ui-and-product-readiness-review.md`
-9. `docs/google-workspace-rollout-guide.md`
+1. `docs/BOARD.md` (the generated packet board — always current, CI-enforced)
+2. `docs/guides/codex-to-codex-handoff.md`
+3. `docs/specs/architecture-decision-production-platform.md`
+4. `docs/specs/architecture-decision-workspace-first-cost-controlled-rollout.md`
+5. `docs/reviews/20-user-product-and-architecture-review.md`
+6. `docs/ledger/agent-plan-architecture-workspace-and-setup.md`
+7. `docs/reviews/complete-product-and-google-cloud-architecture-audit.md`
+8. `docs/specs/google-cloud-runtime-foundation.md`
+9. `docs/guides/google-workspace-rollout-guide.md`
 10. `docs/task-checklists/README.md`
-11. `docs/collaboration-and-sharing.md`
+11. `docs/specs/collaboration-and-sharing.md`
 12. `docs/nightly-reviews/README.md` (the standing nightly review program; added July 24, 2026)
+
+(Historical UI audit detail lives in `docs/archive/ui-and-product-readiness-review.md` —
+archived August 2026; read it for history, not for current status.)
 
 ## Current product boundary
 
@@ -146,7 +149,7 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   agents never merge their own or another agent's PR unless the owner explicitly
   delegates it for a named PR.
 - **Never two agents in the same files at the same time.** Work is divided by packet:
-  the status lines in the [agent execution plan](docs/agent-plan-architecture-workspace-and-setup.md)
+  the status lines in the [agent execution plan](docs/ledger/agent-plan-architecture-workspace-and-setup.md)
   are the claim mechanism. A packet that is `In progress` or `In review` is owned —
   do not take it, and do not edit the files its branch touches. The
   `app/FloorOpsApp.tsx` single-file queue rule is the canonical example, and its queue
@@ -163,7 +166,7 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   and rejects stale merged-PR references, but nothing makes prose availability lists true —
   which is exactly why they must not be dispatched from.)
 - **Owner decisions have exactly one home.** AI-workstream decisions live in
-  `docs/ai-assistant-spec.md` §12; operating-model and record-editing decisions live in
+  `docs/specs/ai-assistant-spec.md` §12; operating-model and record-editing decisions live in
   `docs/task-checklists/06-20-user-operating-model-and-access.md`. Every other surface
   (ledger preambles, plan files, packet bodies) **points, never copies** — and on any
   conflict, the home wins. Copies drift; this session proved it twice.
@@ -180,7 +183,7 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
 - **Standing review surfaces (added July 24, 2026).** A themed nightly review program
   runs on the owner's kickoff; its index is
   [`docs/nightly-reviews/README.md`](docs/nightly-reviews/README.md) and its findings
-  ledger is [`docs/nightly-review-2026-07-findings.md`](docs/nightly-review-2026-07-findings.md).
+  ledger is [`docs/ledger/nightly-review-2026-07-findings.md`](docs/ledger/nightly-review-2026-07-findings.md).
   Separately, an automated review comments on every pull request; each
   review-and-merge cycle addresses every automated comment on-thread with an
   agree/disagree reason and whether it was fixed.
@@ -333,7 +336,7 @@ ode_modules` first (rmdir
 
 ## Current implementation order
 
-Use the status lines and dependency order in [`docs/agent-plan-architecture-workspace-and-setup.md`](docs/agent-plan-architecture-workspace-and-setup.md) for active backend, Workspace, and Settings work. Use the design-critique ledger for UI remediation and the task checklists for owner setup and acceptance. Pull requests and issues may mirror those ledgers, but they do not define a separate task sequence.
+Use the status lines and dependency order in [`docs/ledger/agent-plan-architecture-workspace-and-setup.md`](docs/ledger/agent-plan-architecture-workspace-and-setup.md) for active backend, Workspace, and Settings work. Use the design-critique ledger for UI remediation and the task checklists for owner setup and acceptance. Pull requests and issues may mirror those ledgers, but they do not define a separate task sequence.
 
 Staging execution, infrastructure or migration apply, live Workspace identity, production deployment, a second user, real data, scheduling, messaging, and AI document indexing remain behind their recorded approval and acceptance gates.
 

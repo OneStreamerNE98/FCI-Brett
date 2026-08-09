@@ -39,7 +39,7 @@ Google’s OpenID Connect documentation explains that the `hd` request value is 
 
 Reuse the company's existing Workspace subscription for employee accounts, Groups, the operations mailbox, Shared Drive, calendars, Docs, and derived Sheets reporting. This reduces duplicate products and licenses, but Workspace does not replace Cloud SQL, application authorization, security audit, backups, or recovery testing. Sheets is not the transactional database, and AppSheet or Apps Script must not become an unreviewed second system of record.
 
-The current Sites application remains the development environment. Separate Google Cloud project boundaries must be defined, but the development project is the only one needed for the current connector. Staging and production projects are created only after the applicable owner gate; staging billable resources are created only for approved migration, restore, or release exercises, and optional services stay disabled until their features are scheduled. See the accepted [Workspace-first, cost-controlled rollout](specs/architecture-decision-workspace-first-cost-controlled-rollout.md).
+The current Sites application remains the development environment. Separate Google Cloud project boundaries must be defined, but the development project is the only one needed for the current connector. Staging and production projects are created only after the applicable owner gate; staging billable resources are created only for approved migration, restore, or release exercises, and optional services stay disabled until their features are scheduled. See the accepted [Workspace-first, cost-controlled rollout](../specs/architecture-decision-workspace-first-cost-controlled-rollout.md).
 
 ## Accounts to create
 
@@ -71,7 +71,7 @@ and registers the blueprint spreadsheets after the Shared Drive is adopted.
 > spreadsheet, ensure the starter document templates, and rename owner-managed root
 > folders. **Ensuring templates is a required step, not an optional one** — the stage
 > counts it toward "ready" and the Calendars row stays locked until it completes. See the
-> [dashboard workspace setup design](specs/dashboard-workspace-setup-design.md). The manual
+> [dashboard workspace setup design](../specs/dashboard-workspace-setup-design.md). The manual
 > path below remains valid, and remains required for Shared Drive creation and every
 > Admin-console/DNS/OAuth/secret step.
 
@@ -330,7 +330,7 @@ The Google Forms lead-intake action uses the existing Sheets scope. It performs 
 bounded read only when an administrator presses **Check for new form responses**;
 there is no scheduler, webhook, Pub/Sub subscription, or additional OAuth scope.
 The owner records both the Form ID and linked response Sheet ID in
-[checklist 11](task-checklists/11-google-quick-wins.md), while only the response
+[checklist 11](../task-checklists/11-google-quick-wins.md), while only the response
 Sheet ID is needed at runtime. Paste that ID into the Stage 1 **Lead-form response
 spreadsheet ID** field and choose **Verify and adopt**. The app-managed resource becomes
 authoritative; `GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID` remains only a bootstrap
@@ -363,7 +363,7 @@ configured/missing state. Administrators map the five closed event types to thos
 fixed space aliases, save the global enable toggle, and enable routes individually;
 office users see the same mapping
 read-only. The browser never receives a webhook URL. See the
-[Google Chat notification boundary](specs/google-chat-notifications.md).
+[Google Chat notification boundary](../specs/google-chat-notifications.md).
 
 `GOOGLE_CHAT_NOTIFICATIONS_ENABLED` is now a bootstrap fallback. The card shows
 **App-saved**, **Environment**, or **None**, and an app-saved true or false wins. Webhook
@@ -424,7 +424,7 @@ FCI `appProperties` already stamped on Drive folders and archive artifacts;
 starts with a new OAuth attempt and a full verified Sheets sync. The authoritative
 table-by-table treatment and the still-intentional Cloud Run `503 feature_unavailable`
 boundary are documented in the
-[Google Cloud runtime foundation](google-cloud-runtime-foundation.md#production-google-connector-boundary-and-cutover-state).
+[Google Cloud runtime foundation](../specs/google-cloud-runtime-foundation.md#production-google-connector-boundary-and-cutover-state).
 This procedure documents a future cutover gate; it does not authorize production
 configuration, consent, data migration, or deployment now.
 

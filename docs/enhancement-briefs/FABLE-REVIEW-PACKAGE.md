@@ -35,7 +35,7 @@ result is in §3.
 **2. A stale status line hid that fix.** NFIX-06 still read `In progress` although its
 branch merged July 31, so the packet looked unstarted and nothing contradicted my false
 finding. **My earlier sweep only checked one of the five guarded ledgers** — NFIX packets
-live in `docs/nightly-review-2026-07-findings.md`. Fixed in **PR #282**; all five ledgers
+live in `docs/ledger/nightly-review-2026-07-findings.md`. Fixed in **PR #282**; all five ledgers
 are now verified clean.
 
 **3. I called People & Access "broken in production." It is not.** It renders an honest
@@ -302,16 +302,16 @@ stale repeatedly in this repo. All 39 below were enumerated mechanically against
 `origin/main` @ `301947d`.
 
 **A correction that matters for orchestration:** an earlier assessment I ran covered **28
-packets by scanning only `docs/agent-plan-architecture-workspace-and-setup.md`.** The open
+packets by scanning only `docs/ledger/agent-plan-architecture-workspace-and-setup.md`.** The open
 work is spread across **four** ledgers, and it missed eleven. Anything that surveys "what is
 left" must read all four:
 
 | Ledger | Open packets |
 |---|---|
-| `docs/agent-plan-architecture-workspace-and-setup.md` | AI, DES, GI, SET, WS (28) |
-| `docs/full-review-2026-07-21-findings.md` | F-14…F-18, FIX-09/11/12/14/16/20 (11) |
-| `docs/nightly-review-2026-07-findings.md` | NFIX — none open |
-| `docs/full-review-2026-07-24-findings.md` | none open |
+| `docs/ledger/agent-plan-architecture-workspace-and-setup.md` | AI, DES, GI, SET, WS (28) |
+| `docs/ledger/full-review-2026-07-21-findings.md` | F-14…F-18, FIX-09/11/12/14/16/20 (11) |
+| `docs/ledger/nightly-review-2026-07-findings.md` | NFIX — none open |
+| `docs/ledger/full-review-2026-07-24-findings.md` | none open |
 
 ### Owner packets — not agent work (13)
 

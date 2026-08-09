@@ -137,7 +137,7 @@ test("guards Administrator integration GETs before schema or persistence work", 
 test("isolates rendered role tests from contributor environment files", async () => {
   const [viteConfig, collaborationGuide, continuousIntegration] = await Promise.all([
     read("vite.config.ts"),
-    read("docs/collaboration-and-sharing.md"),
+    read("docs/specs/collaboration-and-sharing.md"),
     read(".github/workflows/ci.yml"),
   ]);
 

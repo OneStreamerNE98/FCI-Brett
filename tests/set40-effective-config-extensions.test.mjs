@@ -263,7 +263,7 @@ test("simulation presents Drive provisioning as forced and cannot claim a saved 
       new URL("../app/settings/components/GoogleWorkspacePanel.tsx", import.meta.url),
       "utf8",
     ),
-    readFile(new URL("../docs/settings-guide.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/guides/settings-guide.md", import.meta.url), "utf8"),
   ]);
   assert.match(panel, /if \(!isAdmin \|\| simulation\) return;/u);
   assert.match(panel, /Source: \{simulation \? "Simulation fixture \(always enabled\)"/u);

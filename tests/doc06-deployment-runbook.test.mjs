@@ -54,11 +54,11 @@ test("DOC-06 is indexed, ledger-linked, screen-verified, and free of a live snap
   const [runbook, index, ledger] = await Promise.all([
     read("docs/runbooks/deployment.md"),
     read("docs/README.md"),
-    read("docs/agent-plan-architecture-workspace-and-setup.md"),
+    read("docs/ledger/agent-plan-architecture-workspace-and-setup.md"),
   ]);
 
   assert.match(index, /\[runbooks\/deployment\.md\]\(runbooks\/deployment\.md\)/u);
-  assert.match(ledger, /\[`deployment runbook`\]\(runbooks\/deployment\.md\)/u);
+  assert.match(ledger, /\[`deployment runbook`\]\(\.\.\/runbooks\/deployment\.md\)/u);
   // RE-POINTED, deliberately. The original pinned the literal in-flight line
   // "**Status:** In progress — `codex/doc06-deployment-runbook`", which froze a transient
   // state as if it were permanent: the moment that branch merged, the only way to keep CI

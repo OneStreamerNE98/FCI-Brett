@@ -1,7 +1,7 @@
 # Nightly Review Program — findings ledger (July 2026)
 
 > **Sibling reviews:** all findings ledgers are grouped under
-> [docs/README.md → Findings & reviews](README.md#findings--reviews). (Added July 24, 2026.)
+> [docs/README.md → Findings & reviews](../README.md#findings--reviews). (Added July 24, 2026.)
 
 **Target:** `origin/main`, re-synced at each night's kickoff. **Method:** per
 night — automated scans (viewport capture matrix; overlap / overflow /
@@ -9,7 +9,7 @@ touch-target / control-gap / mid-word-wrap detectors with WCAG 2.2 SC 2.5.8
 geometry as the violation threshold) followed by 2–3 focused review lenses,
 adversarial verification of every P1/P2 candidate, and dedup-first filing
 against the open packet backlog and all prior nights. Program index:
-[`nightly-reviews/README.md`](nightly-reviews/README.md).
+[`nightly-reviews/README.md`](../nightly-reviews/README.md).
 
 **Grammar note:** findings use four-hash headings `#### N<night>-<seq> ·
 <title> (P<sev>)` (outside the tracking guard's packet-structure assertions);
@@ -26,7 +26,7 @@ guard's tracked-document list in the same PR that files the first NFIX packet.
 Static review of `origin/main` (post-#180): three Opus lenses (boundaries,
 duplication with the 3+-instances rule, dead code), adversarial verification on
 every P1/P2. Summary page:
-[`nightly-reviews/night-06-architecture-duplication.md`](nightly-reviews/night-06-architecture-duplication.md).
+[`nightly-reviews/night-06-architecture-duplication.md`](../nightly-reviews/night-06-architecture-duplication.md).
 
 #### N6-1 · Application read-path bypasses the ports architecture (P2, verified)
 Five `app/application` read services (search-records, dashboard-data,
@@ -75,7 +75,7 @@ the house testability convention were deliberately not filed.
 Static review of the live (non-simulation) Google paths: three Opus lenses
 (idempotency/partial-failure, quota/backoff/degradation, token/scope hygiene),
 adversarial verification on every P1/P2. Summary page:
-[`nightly-reviews/night-08-google-integration-depth.md`](nightly-reviews/night-08-google-integration-depth.md).
+[`nightly-reviews/night-08-google-integration-depth.md`](../nightly-reviews/night-08-google-integration-depth.md).
 
 #### N8-1 · Client Directory sheet sync has no lease (P2, verified)
 `syncClientDirectory` reads sheet rows then blind-appends new clients with no
@@ -135,7 +135,7 @@ against the seeded e2e server (populated test data), 114 deduped probe
 findings (93 touch-target, 10 wrap, 7 gap, 3 container-overflow, 1 overlap),
 then three Opus lenses (targets/gaps, overflow/wrap + visual screenshot pass,
 synthesis) and adversarial verification per P1/P2. Summary page:
-[`nightly-reviews/night-01-phone-viewports.md`](nightly-reviews/night-01-phone-viewports.md).
+[`nightly-reviews/night-01-phone-viewports.md`](../nightly-reviews/night-01-phone-viewports.md).
 
 #### N1-1 · Testing & launch forces page-level horizontal scroll on phones (P2, verified)
 Two causes, one symptom — the app's only page-level horizontal overflow
@@ -190,7 +190,7 @@ Static review: three Opus lenses (domain/application computation, API route
 correctness, client-state + synthesis), adversarial verification with
 executed-proof preference per P1/P2. **Zero P1/P2 survived verification** —
 the computation core held up; eight P3s filed. Summary page:
-[`nightly-reviews/night-07-code-correctness.md`](nightly-reviews/night-07-code-correctness.md).
+[`nightly-reviews/night-07-code-correctness.md`](../nightly-reviews/night-07-code-correctness.md).
 
 #### N7-1 · filing-rules mutations are office-gated; every sibling settings config route requires admin (P3, verified core, severity-refuted from P2)
 POST/PATCH/DELETE call `requireOfficeUser` without `{admin:true}` — confirmed
@@ -202,7 +202,7 @@ write). Defense-in-depth parity fix. → NFIX-05.
 #### N7-2 · Revenue-per-sq-ft averages per-project ratios, not aggregate ÷ aggregate (P3; verified intentional)
 `average(value/sqft per project)` weights a 250-sqft job equally with a
 10,000-sqft job. **Resolved as documented intended behavior (automated
-review):** `docs/flooring-kpis.md` defines this KPI as "the arithmetic mean
+review):** `docs/specs/flooring-kpis.md` defines this KPI as "the arithmetic mean
 of those per-job ratios, **not aggregate dollars divided by aggregate square
 feet**" — the code matches its source of truth exactly. No open decision;
 revisit only if the owner wants the definition itself changed.
@@ -210,7 +210,7 @@ revisit only if the owner wants the definition itself changed.
 #### N7-3 · Booked value/count and average job value include cancelled projects (P3; verified intentional)
 `bookedProjects` filters only by creation month; `averageJobValue` spans all
 loaded valued projects. **Resolved as documented intended behavior (automated
-review):** `docs/flooring-kpis.md` defines monthly bookings by `createdAt`
+review):** `docs/specs/flooring-kpis.md` defines monthly bookings by `createdAt`
 with no status exclusion and average job value across "all currently loaded
 projects." Code matches the accepted formulas. No open decision; revisit only
 if the owner wants the definitions changed.
@@ -254,9 +254,9 @@ cards, features/maps, and repo internals were not read by any lens.
 
 Scan-first over `origin/main` at `c0f7b47`: 102 page-views (17 routes ×
 768/834/1024/600/720/900) against the seeded e2e server using the newly
-committed scanner [`tools/nightly/layout-scan.mjs`](../tools/nightly/layout-scan.mjs),
+committed scanner [`tools/nightly/layout-scan.mjs`](../../tools/nightly/layout-scan.mjs),
 then live `elementFromPoint` hit-testing of every candidate. Summary page:
-[`nightly-reviews/night-02-tablet-awkward-middles.md`](nightly-reviews/night-02-tablet-awkward-middles.md).
+[`nightly-reviews/night-02-tablet-awkward-middles.md`](../nightly-reviews/night-02-tablet-awkward-middles.md).
 **Two of three scan passes were discarded as invalid** — see that page's
 coverage-honesty section, which is the substantive part of this night.
 
@@ -351,7 +351,7 @@ scrolls.
 ## Packets
 
 ### NFIX-01 · Sheets mirror sync robustness: lease, write order, status recovery (small-medium)
-**Status:** Complete — PR #184, July 24, 2026. Source-only and undeployed. Opus fleet + two review fixes: the sync serializes behind the existing 5-minute connection-scoped lease (overlapping syncs 409 honestly), the Project Register replaces via one atomic open-range updateCells (never observably empty, stale rows cleared), over-age live 'syncing' recovers as 'pending' on reads; the fixes fault-isolated BOTH lease bookkeeping paths so a transient release/fail rejection can neither record a real success as failure nor mask the original sync error. Residual: a >TTL-hung request could still let a successor overlap — closed structurally by NFIX-02's timeouts (amendment below). Guide impact: `docs/settings-guide.md` updated.
+**Status:** Complete — PR #184, July 24, 2026. Source-only and undeployed. Opus fleet + two review fixes: the sync serializes behind the existing 5-minute connection-scoped lease (overlapping syncs 409 honestly), the Project Register replaces via one atomic open-range updateCells (never observably empty, stale rows cleared), over-age live 'syncing' recovers as 'pending' on reads; the fixes fault-isolated BOTH lease bookkeeping paths so a transient release/fail rejection can neither record a real success as failure nor mask the original sync error. Residual: a >TTL-hung request could still let a successor overlap — closed structurally by NFIX-02's timeouts (amendment below). Guide impact: `docs/guides/settings-guide.md` updated.
 
 **Why:** N8-1/N8-3/N8-4 — the mirror sync is the one unleased live mutation
 family: concurrent syncs duplicate rows and wedge all future syncing; the
@@ -440,7 +440,7 @@ byte-identical; `npm test` and e2e green.
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-05 · Correctness small fixes: filing-rules admin gate, normalized win-rate sources, readable sync timestamps (small)
-**Status:** Complete — PR #202, July 25, 2026. Opus fleet clean — zero findings, executed proof (959-test full sweep, 0 fail): admin gate landed on exactly the three mutations with GET left office-visible (matches the admin-only UI), the non-admin 403 test proven to fail without the fix; win-rate grouping matches the updated `docs/flooring-kpis.md` definition exactly with a doc-pin test (the formula-refinement rule satisfied in-PR); mirror timestamps render via the shared `toLocaleString` pattern with e2e assertions strengthened (negative raw-epoch checks added). Merged on green CI after an empty bot window (one summon, no response). Source-only and undeployed.
+**Status:** Complete — PR #202, July 25, 2026. Opus fleet clean — zero findings, executed proof (959-test full sweep, 0 fail): admin gate landed on exactly the three mutations with GET left office-visible (matches the admin-only UI), the non-admin 403 test proven to fail without the fix; win-rate grouping matches the updated `docs/specs/flooring-kpis.md` definition exactly with a doc-pin test (the formula-refinement rule satisfied in-PR); mirror timestamps render via the shared `toLocaleString` pattern with e2e assertions strengthened (negative raw-epoch checks added). Merged on green CI after an empty bot window (one summon, no response). Source-only and undeployed.
 
 **Why:** N7-1 (filing-rules mutations office-gated while every sibling
 settings config route requires admin; UI already admin-only), N7-4 (win-rate
@@ -450,14 +450,14 @@ milliseconds).
 a non-admin 403 test (mirrors sibling settings routes); key
 win-rate-by-source on trimmed+lowercased source with a canonical display
 label (first-seen casing) — this is a **formula refinement**, so the same PR
-must update the win-rate grouping definition in `docs/flooring-kpis.md`
+must update the win-rate grouping definition in `docs/specs/flooring-kpis.md`
 (currently "trimmed `source`") and the pure-helper tests, per that document's
 own refinement rule; format `DirectorySyncPanel` `lastSyncedAt` via the
 existing `toLocaleString` pattern used for the same field in
 GoogleWorkspacePanel.
 **Accept:** non-admin office user gets 403 on all three filing-rules
 mutations (test-asserted); same-source case variants collapse to one row with
-a combined rate (test-asserted) AND `docs/flooring-kpis.md` + pure-helper
+a combined rate (test-asserted) AND `docs/specs/flooring-kpis.md` + pure-helper
 tests updated in the same PR; "Last synced" renders a locale timestamp;
 `npm test` green; no other behavior change. Owner dispatch of this packet is
 the sign-off on the grouping-definition refinement.

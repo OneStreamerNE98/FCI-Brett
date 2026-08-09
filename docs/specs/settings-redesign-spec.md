@@ -2,7 +2,7 @@
 
 **Status:** Approved by the owner on July 21, 2026 (wireframe sign-off). This document is
 the design authority for the SET-29…SET-34 packet series in
-`docs/agent-plan-architecture-workspace-and-setup.md`. The approved wireframe is
+`docs/ledger/agent-plan-architecture-workspace-and-setup.md`. The approved wireframe is
 committed beside this file as `docs/settings-redesign-wireframe.html`.
 
 **Inputs:** the July 2026 settings design review (Fable), the full-review UI-honesty

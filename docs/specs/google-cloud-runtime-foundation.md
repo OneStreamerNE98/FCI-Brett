@@ -18,7 +18,7 @@ This slice creates the reviewable Cloud Run and Cloud SQL runtime foundation wit
 
 This is still not the employee web application. The current page and broader API tree imports `cloudflare:workers`, uses D1/R2 bindings, and depends on the Sites identity boundary. The source image has no seeded employee, no composed production file/Google provider actions, and no rendered interface. Workspace OIDC/session issuance, OIDC verifier/attempt-cookie hardening, the negative-case/real-PostgreSQL login test matrix, and an uncomposed GCS storage adapter now exist in source through PR #55, but that does not activate file routes, configure live identity, or admit an employee. It must not be deployed as though it were a usable employee rollout. The production checklist item “Containerize the Next.js application” remains open until the remaining routes, interface, object-storage composition, identity, and provider boundaries are ported and accepted.
 
-The [Workspace-first, cost-controlled rollout](specs/architecture-decision-workspace-first-cost-controlled-rollout.md) controls how this source foundation may later be provisioned. Development remains on Sites, staging is created on demand, standalone and regional-HA Cloud SQL profiles must be priced before selection, and optional service modules remain disabled. Nothing in this document authorizes a continuously running development or staging database.
+The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md) controls how this source foundation may later be provisioned. Development remains on Sites, staging is created on demand, standalone and regional-HA Cloud SQL profiles must be priced before selection, and optional service modules remain disabled. Nothing in this document authorizes a continuously running development or staging database.
 
 ## What is implemented
 
@@ -97,7 +97,7 @@ The folder/archive recovery path is a reconciliation operation against company-o
 Drive identity, not permission to copy development credential material or silently drop
 unmatched rows. Any mismatch is blocking evidence for the cutover report. The operator
 sequence is in
-[Production connection is a new connection](google-workspace-rollout-guide.md#production-connection-is-a-new-connection).
+[Production connection is a new connection](../guides/google-workspace-rollout-guide.md#production-connection-is-a-new-connection).
 Nothing in this section composes a provider, applies a grant or migration, changes
 Secret Manager, performs consent, or deploys Cloud Run.
 
@@ -228,14 +228,14 @@ Keep Cloud Run minimum instances at zero and optional Cloud Tasks, Scheduler, Pu
 
 ## Database role boundary
 
-[`infrastructure/postgres/least-privilege.sql`](../infrastructure/postgres/least-privilege.sql) is a source policy, not an automatic deployment script. It separates:
+[`infrastructure/postgres/least-privilege.sql`](../../infrastructure/postgres/least-privilege.sql) is a source policy, not an automatic deployment script. It separates:
 
 - an external bootstrap administrator;
 - a `NOLOGIN` migration/schema-owner capability role;
 - a `NOLOGIN` runtime capability role; and
 - a development/staging-only rehearsal importer scoped to one isolated rehearsal schema.
 
-Use [`infrastructure/postgres/rehearsal-importer-template.sql`](../infrastructure/postgres/rehearsal-importer-template.sql) only as a reviewed per-schema grant template after the isolated rehearsal schema has been migrated. It rejects non-rehearsal schema names and validates the exact nine-table migration/control boundary needed by the six imported tables. It has not been applied to a hosted or shared database; GitHub CI exercises equivalent exact grants in its disposable rehearsal schema without executing this template file.
+Use [`infrastructure/postgres/rehearsal-importer-template.sql`](../../infrastructure/postgres/rehearsal-importer-template.sql) only as a reviewed per-schema grant template after the isolated rehearsal schema has been migrated. It rejects non-rehearsal schema names and validates the exact nine-table migration/control boundary needed by the six imported tables. It has not been applied to a hosted or shared database; GitHub CI exercises equivalent exact grants in its disposable rehearsal schema without executing this template file.
 
 The environment-specific migration login must have permission to set the owner role, and the migration command verifies `CURRENT_USER` after `SET ROLE`. Inherited membership alone would leave new objects owned by the login and would not apply the owner role’s default privileges.
 
