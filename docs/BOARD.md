@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 42 not started · 3 in progress · 2 in review · 2 blocked · 135 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 41 not started · 3 in progress · 3 in review · 2 blocked · 135 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -135,7 +135,7 @@ row holds the full text. Packets without a status line are not started.
 | NFIX-18 | Address review release is best-effort with no compensation (small-medium) | In progress — `codex/nfix18-address-review-compensation` | agent-plan |
 | NFIX-19 | FIX-09 stage-4 verification race (resolved) | Resolved in PR #330 | agent-plan |
 | NFIX-20 | DevOps hygiene batch (medium) | — | agent-plan |
-| NFIX-21 | Worker-isolate rate limiter is a per-isolate limit (small; hardening) | — | agent-plan |
+| NFIX-21 | Worker-isolate rate limiter is a per-isolate limit (small; hardening) | In review — PR #360 | agent-plan |
 | NFIX-22 | Decompose InboxView and centralize inbox contracts (medium-large) | — | agent-plan |
 | NFIX-23 | Decompose GoogleWorkspacePanel and centralize Workspace contracts (medium-large, after NFIX-22) | — | agent-plan |
 | NFIX-24 | FloorOps shell state ownership and major-view code splitting (large; FloorOpsApp queue) | In review — PR #357 | agent-plan |

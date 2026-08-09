@@ -51,8 +51,11 @@ state would require a separately approved infrastructure and reliability decisio
 ## Controlled Sites development contract
 
 The development surface applies a light fixed window immediately after the existing
-same-origin and office-user checks. Each normalized office-user email receives 10
-requests per 60-second window for each of six isolated scopes:
+same-origin and office-user checks. It is deliberately a best-effort, per-isolate abuse
+and cost guard, not a globally exact per-user quota: each Cloudflare Worker isolate owns
+an independent in-memory counter map. A normalized office-user email therefore receives
+10 requests per 60-second window for each of eight isolated scopes within one Worker
+isolate. Requests routed across multiple isolates can exceed that aggregate rate.
 
 | Scope | Route | Protected cost |
 | --- | --- | --- |
@@ -60,7 +63,9 @@ requests per 60-second window for each of six isolated scopes:
 | `inbox-analysis` | `POST/PATCH /api/v1/inbox-analysis` | AI-10 inbox sweep opportunity or review-queue mutation |
 | `uploads` | `POST /api/v1/uploads` | R2 object write opportunity |
 | `google-sheets-sync` | `POST /api/v1/integrations/google/sheets/sync` | Google Sheets reconciliation |
+| `google-form-lead-intake` | `POST/PATCH /api/v1/integrations/google/forms/leads` | Google Forms intake sweep or review mutation |
 | `project-drive-provisioning` | `POST /api/v1/projects/:projectId/drive` | Google Drive provisioning |
+| `address-validation` | `POST /api/v1/address-validation` | Google Maps address-validation request opportunity |
 | `tasks` | `POST /api/v1/tasks`, `PATCH /api/v1/tasks/:taskId` | Record-write opportunity |
 
 The `tasks` scope is the one an assistant flow can reach indirectly: the AI-07 review surface
@@ -88,9 +93,10 @@ requests retain their existing denial behavior and do not consume an office-user
 
 ## Verification and rollout boundary
 
-Focused tests pin thresholds, refill/reset timing, user and route isolation,
+Focused tests pin thresholds, refill/reset timing, user and route isolation, the
+independent allowance exposed by two simulated Worker isolates,
 `Retry-After`, the production audit event, fail-closed audit failure, exact
-eleven-handler wiring across ten route files and the six scopes, configuration
+seventeen-handler wiring across thirteen route files and the eight scopes, configuration
 defaults/bounds, and unchanged
 allowed-response bytes. `npm test`
 continues to build both surfaces and run the complete Node suite.
