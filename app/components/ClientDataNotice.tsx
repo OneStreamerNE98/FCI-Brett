@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CircleAlert, RefreshCw } from "lucide-react";
 
 export type ClientDataNoticeState = "loading" | "error";
@@ -8,11 +8,11 @@ export type ClientDataNoticeState = "loading" | "error";
 /**
  * One loading/failure-and-retry surface for request-driven client reads.
  *
- * DES-26 (August 2026): the retry button now fires on pointer-down and key-down
+ * DES-26 (August 2026): the retry button fires on pointer-down and key-down
  * instead of click so the action is captured before a background revalidation
- * can unmount the notice.  An internal "retrying" state keeps the button stable
- * while the retry is in flight, and pointer tracking lets callers (and tests)
- * observe whether the pointer is over the control.
+ * can unmount the notice.  The one-shot guard resets on every re-entry to
+ * error state so a second (or Nth) retry attempt is never blocked — the guard
+ * prevents double-fires within a single retry cycle, not across cycles.
  */
 export function ClientDataNotice({
   state,
@@ -37,9 +37,22 @@ export function ClientDataNotice({
   const [retrying, setRetrying] = useState(false);
   const isPointerOverRef = useRef(false);
   const retryFiredRef = useRef(false);
+  const prevStateRef = useRef<ClientDataNoticeState>(state);
+
+  // Reset the one-shot guard on every re-entry to error state so a second
+  // retry after a failed first attempt is never blocked.  The guard still
+  // prevents double-fires within a single retry cycle, which is the
+  // original intent.
+  useEffect(() => {
+    if (state === "error" && prevStateRef.current !== "error") {
+      retryFiredRef.current = false;
+      setRetrying(false);
+    }
+    prevStateRef.current = state;
+  }, [state]);
 
   const fireRetry = useCallback(() => {
-    if (retryFiredRef.current) return; // one shot per mount
+    if (retryFiredRef.current) return; // one shot per retry cycle
     retryFiredRef.current = true;
     setRetrying(true);
     onRetry();

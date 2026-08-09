@@ -106,3 +106,51 @@ test("DES-26 Primary-button-only guard on pointer-down", () => {
     "handlePointerDown must guard against non-primary buttons",
   );
 });
+
+test("DES-26 Guard resets on re-entry to error so a second retry is never blocked", () => {
+  // The one-shot guard (retryFiredRef) must reset when state transitions
+  // back to "error" from a different state.  Without this, the first failed
+  // retry permanently disables the button — the 27 call sites do NOT remount
+  // the component between retries, so "per mount" is "forever."
+  //
+  // The mechanism: prevStateRef tracks the previous state; a useEffect
+  // detects the transition into "error" and resets the guard + retrying
+  // status.
+  assert.match(
+    source,
+    /prevStateRef\.current !== "error"/u,
+    "reset guard must check prevStateRef to detect re-entry into error",
+  );
+  assert.match(
+    source,
+    /retryFiredRef\.current = false/u,
+    "reset guard must clear retryFiredRef so a second retry is possible",
+  );
+  assert.match(
+    source,
+    /setRetrying\(false\)/u,
+    "reset guard must clear the retrying status so the button is re-enabled",
+  );
+});
+
+test("DES-26 State-transition effect tracks previous state across renders", () => {
+  // prevStateRef must be updated after every render so the next render
+  // can compare against the true previous state.
+  assert.match(
+    source,
+    /prevStateRef\.current = state/u,
+    "prevStateRef must be written after the guard-reset check",
+  );
+  assert.match(
+    source,
+    /prevStateRef = useRef/u,
+    "prevStateRef must be a useRef to persist across renders",
+  );
+  // The useEffect must close with }, [state]) — meaning it re-runs
+  // only when state changes.
+  assert.match(
+    source,
+    /\},?\s*\[state\]\)/u,
+    "guard-reset useEffect must depend on [state]",
+  );
+});
