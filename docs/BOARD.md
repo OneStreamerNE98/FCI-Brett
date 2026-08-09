@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 49 not started · 2 in progress · 2 blocked · 131 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 49 not started · 2 blocked · 133 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -19,7 +19,7 @@ row holds the full text. Packets without a status line are not started.
 | AI-08 | AI settings card + "what you can ask" help (small-medium, after AI-03 — lands before AI-05/06/07 so gates precede the gated features) | Complete — PR #152, July 23, 2026. | agent-plan |
 | AI-09 | Guardrail tests, Tier-2 reconciliation, ledger closure (small; docs/tests only, last) | Complete — PR #216, July 26, 2026. | agent-plan |
 | AI-10 | Email intake: durable review queue and review-first lead capture (large; after AI-09) | Complete — PR #235 + PR #238 + PR #245, July 30, 2026. | agent-plan |
-| AI-11 | Typed accepts, AI settings section, and the label catalog editor (large; after AI-10) | In progress — `kimi/ai11d-activity-attribution` | agent-plan |
+| AI-11 | Typed accepts, AI settings section, and the label catalog editor (large; after AI-10) | Complete — PR #255 + PR #277 + PR #300 + PR #340, August 9, 2026. | agent-plan |
 | AI-12 | A failed inbox analysis is invisible, and a provider outage reads as "You're caught up" (medium) | Complete — PR #287, August 4, 2026. | agent-plan |
 | BE-01 | Documentation truth pass (small, no deps) — DO FIRST | Complete — PR #32, July 19, 2026. | agent-plan |
 | BE-02 | Bounded request bodies on five dev mutation routes (small, no deps) | Complete — PR #36, July 19, 2026. | agent-plan |
@@ -87,7 +87,7 @@ row holds the full text. Packets without a status line are not started.
 | FIX-06 | API uniformity bundle (P3s; small) | Complete — PR #110, July 22, 2026. | review-2026-07-21 |
 | FIX-07 | Admin gating single source of truth (P2 F-13; small) | Complete — PR #137, July 23, 2026. | review-2026-07-21 |
 | FIX-08 | FloorOpsApp honesty polish bundle (P3s; small) | Superseded — absorbed into DES-05. | review-2026-07-21 |
-| FIX-09 | E2e through the real simulation backend (P2 F-7; medium) | In progress — `kimi/fix09-e2e-simulation-backend` | review-2026-07-21 |
+| FIX-09 | E2e through the real simulation backend (P2 F-7; medium) | Complete — PR #317 + PR #330, August 7, 2026. | review-2026-07-21 |
 | FIX-10 | Single shared advisory-lock constant (P2 F-16; small; Wave R1) | Complete — PR #112, July 22, 2026. | review-2026-07-21 |
 | FIX-11 | Anonymous login-flow throttle (P2 F-14; small; blocked on the allUsers invoker-grant review, production-only) | — | review-2026-07-21 |
 | FIX-12 | R4 consolidation + residual sweep (P3s F-17/F-18 + recorded residuals; medium; Wave R4, after the SET-29 series) | — | review-2026-07-21 |
