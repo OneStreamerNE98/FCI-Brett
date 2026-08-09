@@ -15,7 +15,7 @@ test("AI-10 lead capture stays review-first and reuses the existing lead and rev
 
   assert.match(
     app,
-    /const loadInboxView = \(\) => loadMajorViewWithDeadline\("Inbox", \(\) => import\("\.\/inbox\/components\/InboxView"\)\);/u,
+    /const loadInboxView = \(\) => import\("\.\/inbox\/components\/InboxView"\);/u,
   );
   assert.match(app, /function openInboxLead\(/u);
   assert.match(app, /onCreateLead=\{openInboxLead\}/u);

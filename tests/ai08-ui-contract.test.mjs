@@ -157,7 +157,7 @@ test("uses native disclosure semantics and keeps help isolated to the Assistant 
   assert.equal(help.match(/<li key=\{question\}>/gu)?.length, 1);
   assert.match(assistantView, /<AssistantHelpPanel \/>/u);
   assert.equal(assistantView.match(/<AssistantHelpPanel \/>/gu)?.length, 1);
-  assert.match(app, /const loadAssistantView = \(\) => loadMajorViewWithDeadline\("AI Assistant", \(\) => import\("\.\/assistant\/components\/AssistantView"\)\);/u);
+  assert.match(app, /const loadAssistantView = \(\) => import\("\.\/assistant\/components\/AssistantView"\);/u);
   assert.match(app, /<LazyAssistantView projects=\{projectItems\} \/>/u);
   assert.doesNotMatch(app, /<AssistantHelpPanel \/>/u);
 

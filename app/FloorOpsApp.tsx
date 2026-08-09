@@ -1,6 +1,7 @@
 "use client";
 
-import { lazy, Suspense, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -18,7 +19,6 @@ import { ProjectDrawer } from "./projects/components/ProjectDrawer";
 import { NewProjectModal, ProjectEditConflictError, optionalFlooringCategory, projectManagerLabel } from "./projects/components/ProjectModals";
 import { invalidateDirectoryGets, mapLeadRecord, optionalProjectTimestamp, optionalRecordNumber, useDirectoryData } from "./application/use-directory-data";
 import { type CurrentUserSettingsPayload, useCurrentUserSettings } from "./application/use-current-user-settings";
-import { loadMajorViewWithDeadline } from "./application/load-major-view";
 import type { InboxLeadProposal } from "./inbox/components/InboxView";
 import { DEFAULT_FILING_RULES, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
@@ -131,19 +131,19 @@ const managementNavItems: { label: OperationsView; icon: typeof LayoutDashboard 
   { label: "Settings", icon: Settings },
 ];
 
-const loadAssistantView = () => loadMajorViewWithDeadline("AI Assistant", () => import("./assistant/components/AssistantView"));
-const loadClientsView = () => loadMajorViewWithDeadline("Clients", () => import("./clients/components/ClientsView"));
-const loadInboxView = () => loadMajorViewWithDeadline("Inbox", () => import("./inbox/components/InboxView"));
-const loadLeadsView = () => loadMajorViewWithDeadline("Leads", () => import("./leads/components/LeadsView"));
-const loadProjectsView = () => loadMajorViewWithDeadline("Projects", () => import("./projects/components/ProjectsView"));
-const loadScheduleView = () => loadMajorViewWithDeadline("Schedule", () => import("./schedule/components/ScheduleView"));
+const loadAssistantView = () => import("./assistant/components/AssistantView");
+const loadClientsView = () => import("./clients/components/ClientsView");
+const loadInboxView = () => import("./inbox/components/InboxView");
+const loadLeadsView = () => import("./leads/components/LeadsView");
+const loadProjectsView = () => import("./projects/components/ProjectsView");
+const loadScheduleView = () => import("./schedule/components/ScheduleView");
 
-const LazyAssistantView = lazy(() => loadAssistantView().then((module) => ({ default: module.AssistantView })));
-const LazyClientsView = lazy(() => loadClientsView().then((module) => ({ default: module.ClientsView })));
-const LazyInboxView = lazy(() => loadInboxView().then((module) => ({ default: module.InboxView })));
-const LazyLeadsView = lazy(() => loadLeadsView().then((module) => ({ default: module.LeadsView })));
-const LazyProjectsView = lazy(() => loadProjectsView().then((module) => ({ default: module.ProjectsView })));
-const LazyScheduleView = lazy(() => loadScheduleView().then((module) => ({ default: module.ScheduleView })));
+const LazyAssistantView = dynamic(() => loadAssistantView().then((module) => module.AssistantView), { ssr: false, loading: () => <MajorViewLoading view="AI Assistant" /> });
+const LazyClientsView = dynamic(() => loadClientsView().then((module) => module.ClientsView), { ssr: false, loading: () => <MajorViewLoading view="Clients" /> });
+const LazyInboxView = dynamic(() => loadInboxView().then((module) => module.InboxView), { ssr: false, loading: () => <MajorViewLoading view="Inbox" /> });
+const LazyLeadsView = dynamic(() => loadLeadsView().then((module) => module.LeadsView), { ssr: false, loading: () => <MajorViewLoading view="Leads" /> });
+const LazyProjectsView = dynamic(() => loadProjectsView().then((module) => module.ProjectsView), { ssr: false, loading: () => <MajorViewLoading view="Projects" /> });
+const LazyScheduleView = dynamic(() => loadScheduleView().then((module) => module.ScheduleView), { ssr: false, loading: () => <MajorViewLoading view="Schedule" /> });
 
 function preloadMajorView(view: OperationsView) {
   const preload = view === "AI Assistant" ? loadAssistantView
@@ -1204,7 +1204,6 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
           <AppErrorBoundary key={view}>
             {development && <section className="development-banner" role="status" aria-label="Development environment; test data only"><ShieldCheck size={17} /><div><strong>Development environment · Test data only</strong><span>Use approved test records while this working copy moves toward production readiness.</span></div></section>}
             <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData(false, true)} />
-            <Suspense fallback={<MajorViewLoading view={view} />}>
             {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.overview} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("overview", layout)} onView={navigateToView} onProject={openProject} onLead={openLead} />}
             {view === "Leads" && <LazyLeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal({})} onAdvance={advanceLead} onLead={openLead} />}
             {view === "Clients" && <LazyClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
@@ -1214,7 +1213,6 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
             {view === "AI Assistant" && <LazyAssistantView projects={projectItems} />}
             {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.reports} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("reports", layout)} />}
             {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} onCurrentUserSettingsLoaded={reconcileCurrentUserSettings} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} onImportConfirmed={refreshDirectoryData} syncingSheet={sheetSyncing} />}
-            </Suspense>
           </AppErrorBoundary>
         </div>
       </main>

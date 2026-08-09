@@ -421,9 +421,6 @@ test("the scheduler law is enforced across every client-reachable module, not ju
   assert.deepEqual(
     sites,
     [
-      // One-shot lazy-import deadline: rejects a route load into the error
-      // boundary; it schedules no refresh and issues no repeated request.
-      { label: "app/application/load-major-view.ts", functionName: "loadMajorViewWithDeadline", timer: "setTimeout" },
       // Day-rollover refresh for the dashboard snapshot; same ruling as below.
       { label: "app/application/use-directory-data.ts", functionName: "schedule", timer: "setTimeout" },
       // Day-rollover refresh. ADJUDICATED August 4, 2026: this stays. The
