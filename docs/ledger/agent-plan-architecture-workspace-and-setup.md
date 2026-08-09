@@ -3957,6 +3957,7 @@ outcomes.
 **Effort:** small-medium. **Cost:** $0.
 
 ### NFIX-18 · Address review release is best-effort with no compensation (small-medium)
+**Status:** In progress — `codex/nfix18-address-review-compensation`
 
 **Why:** filed August 6, 2026 from the review (B8, confirmed).
 `releaseFailedAddressMutation` (`app/lib/address-mutation-sites.ts`, lines ~66–73)
