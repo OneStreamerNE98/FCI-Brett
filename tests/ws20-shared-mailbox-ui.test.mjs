@@ -54,6 +54,16 @@ test("WS-20 Settings attaches globally and disconnects only the named mailbox", 
   assert.match(settings, /function runRetryForGmailMailbox\(mailbox: string, action: \(\) => void\)/u);
   assert.match(settings, /gmailVerificationGeneration === gmailMailboxGenerationRef\.current/u);
   assert.match(settings, /gmailVerificationMailbox === selectedGmailMailboxRef\.current/u);
+  assert.match(
+    settings,
+    /gmailVerificationMailbox\s*&& isAdmin\s*&& nextWorkspace\?\.gmailEnabled === true/u,
+    "selected-mailbox verification must not depend on the unscoped default connection",
+  );
+  assert.match(
+    settings,
+    /gmailActionsEnabled = simulation \|\| \(sharedDriveReadyForGmail && gmailReady\)/u,
+    "a healthy selected mailbox must stay actionable after the default mailbox disconnects",
+  );
   assert.match(settings, /setGmailWorking\(false\)/u);
   assert.doesNotMatch(settings, /mailbox\.connectionKey|mailbox\.connection_key/u);
   assert.doesNotMatch(settings, /setInterval\s*\(|setTimeout\s*\(/u);

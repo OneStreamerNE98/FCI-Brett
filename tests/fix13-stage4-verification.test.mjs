@@ -342,7 +342,7 @@ test("existing Gmail and Calendar reads expose only secret-free verification boo
   );
   assert.match(
     panel,
-    /const \[data, sheetsResult\] = await Promise\.all[\s\S]+const gmailVerificationMailbox = selectedGmailMailboxRef\.current[\s\S]+const gmailVerificationEligible = Boolean\([\s\S]+stageFourServiceEligible\(nextWorkspace, "gmail"\)[\s\S]+const calendarVerificationEligible = isAdmin && stageFourServiceEligible\(nextWorkspace, "calendar"\)[\s\S]+gmailVerificationEligible[\s\S]+readStageFourVerification[\s\S]+gmailVerificationMailbox[\s\S]+calendarVerificationEligible[\s\S]+readStageFourVerification/,
+    /const \[data, sheetsResult\] = await Promise\.all[\s\S]+const gmailVerificationMailbox = selectedGmailMailboxRef\.current[\s\S]+const gmailVerificationEligible = Boolean\([\s\S]+nextWorkspace\?\.gmailEnabled === true[\s\S]+const calendarVerificationEligible = isAdmin && stageFourServiceEligible\(nextWorkspace, "calendar"\)[\s\S]+gmailVerificationEligible[\s\S]+readStageFourVerification[\s\S]+gmailVerificationMailbox[\s\S]+calendarVerificationEligible[\s\S]+readStageFourVerification/,
   );
   assert.match(
     panel,

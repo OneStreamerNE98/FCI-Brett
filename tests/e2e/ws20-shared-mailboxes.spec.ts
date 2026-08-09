@@ -623,3 +623,79 @@ test("a delayed setup verification cannot mark the newly selected mailbox ready"
   await expect(gmailVerification).not.toHaveAttribute("data-stage-four-state", "VERIFIED");
   await expect(gmailVerification).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
 });
+
+test("Gmail verification remains available when the default mailbox is disconnected", async ({ page }) => {
+  await mockShell(page);
+  await page.unroute("**/api/v1/google-workspace");
+  let firstReadinessRead = true;
+  await page.route("**/api/v1/google-workspace", (route) => {
+    if (firstReadinessRead) {
+      firstReadinessRead = false;
+      return fulfillJson(route, { error: "FCI TEST force a visible retry" }, 503);
+    }
+    return fulfillJson(route, {
+      credentialsPresent: true,
+      missing: [],
+      missingDetails: [],
+      workspace: {
+        runtimeMode: "workspace",
+        simulation: false,
+        storageName: "FCI Operations",
+        storageConfigured: true,
+        connectionStatus: "not-connected",
+        connectionAccount: null,
+        driveConnected: false,
+        gmailConnected: false,
+        calendarConnected: false,
+        sheetsConnected: false,
+        requiresReauthorization: false,
+        provisioningEnabled: true,
+        gmailEnabled: true,
+        calendarEnabled: true,
+        sheetsEnabled: true,
+        clientDirectorySheetConfigured: true,
+        enabledServices: ["drive", "gmail", "calendar", "sheets"],
+      },
+    });
+  });
+  await page.route("**/api/v1/integrations/google/connection", (route) => fulfillJson(route, {
+    runtimeMode: "workspace",
+    simulation: false,
+    enabledServices: ["drive", "gmail", "calendar", "sheets"],
+    connection: {
+      connected: true,
+      status: "connected",
+      account: "info@fci.example",
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: { drive: true, gmail: true, calendar: true, sheets: true },
+      requiresReauthorization: false,
+    },
+    mailboxes: [mailboxConnection("info@fci.example")],
+  }));
+
+  const verificationMailboxes: string[] = [];
+  await page.route("**/api/v1/integrations/google/gmail/messages?*", async (route) => {
+    const url = new URL(route.request().url());
+    verificationMailboxes.push(url.searchParams.get("mailbox") ?? "");
+    await fulfillJson(route, {
+      bucket: "needs-review",
+      messages: [],
+      labelReady: true,
+      testEmailPassed: true,
+      limit: 20,
+    });
+  });
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-4");
+  const stageFour = page.locator('[data-workspace-stage="4"]');
+  const mailboxPicker = stageFour.getByRole("combobox", { name: /^Mailbox for Gmail verification/ });
+  await expect(mailboxPicker).toHaveValue("info@fci.example");
+
+  await page.getByRole("button", { name: "Retry status check", exact: true }).click();
+  await expect.poll(() => verificationMailboxes).toContain("info@fci.example");
+  await expect(stageFour.getByRole("button", { name: "View inbox", exact: true })).toBeEnabled();
+  await expect(stageFour.locator('[data-stage-four-verification="gmail"]')).toHaveAttribute(
+    "data-stage-four-state",
+    "VERIFIED",
+  );
+});

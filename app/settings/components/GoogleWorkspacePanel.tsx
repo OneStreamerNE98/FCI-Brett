@@ -690,7 +690,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         !silent
         && gmailVerificationMailbox
         && isAdmin
-        && stageFourServiceEligible(nextWorkspace, "gmail"),
+        && nextWorkspace?.gmailEnabled === true,
       );
       const calendarVerificationEligible = isAdmin && stageFourServiceEligible(nextWorkspace, "calendar");
       setMissingDetails(data.missingDetails ?? []);
@@ -1592,16 +1592,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const calendarReady = connected && workspace?.calendarEnabled === true && workspace?.calendarConnected === true;
   const sheetsReady = connected && workspace?.sheetsEnabled === true && workspace?.sheetsConnected === true && workspace?.clientDirectorySheetConfigured === true;
   const gmailVerificationPassed = gmailLabelsReady && gmailTestEmailPassed;
-  const driveStepStatus = stepStatus({
-    simulation,
-    previousComplete: connectComplete,
-    prerequisitesReady: driveReady,
-    complete: driveVerified || workspaceCreationProgress.sharedDriveComplete,
-  });
-  const gmailStepStatus = stepStatus({ simulation, previousComplete: driveStepStatus === "Complete", prerequisitesReady: gmailReady, complete: gmailLabelsReady });
+  const sharedDriveReadyForGmail = driveVerified || workspaceCreationProgress.sharedDriveComplete;
+  const gmailStepStatus = stepStatus({ simulation, previousComplete: sharedDriveReadyForGmail, prerequisitesReady: gmailReady, complete: gmailLabelsReady });
   const calendarStepStatus = stepStatus({ simulation, previousComplete: gmailStepStatus === "Complete", prerequisitesReady: calendarReady, complete: calendarChecked });
   const sharedDriveDomainUsersOnly = resourceRows.find((resource) => resource.key === "primary")?.restrictions?.domainUsersOnly ?? null;
-  const gmailActionsEnabled = simulation || (driveStepStatus === "Complete" && gmailReady);
+  const gmailActionsEnabled = simulation || (sharedDriveReadyForGmail && gmailReady);
   const calendarActionsEnabled = simulation || (gmailStepStatus === "Complete" && calendarReady);
   const sheetsActionsEnabled = simulation || (calendarStepStatus === "Complete" && sheetsReady);
   const statusSourcesLoading = checking
