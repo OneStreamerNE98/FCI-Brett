@@ -396,7 +396,7 @@ function templateMetadata(kind) {
 }
 
 function fakeDatabase() {
-  const state = { resources: [], blueprint: null, connection: null, project: null, mapping: null, activities: [], events: [], queries: [] };
+  const state = { resources: [], blueprint: null, connection: null, project: null, mapping: null, activities: [], events: [], queries: [], leases: new Map(), removeConnectionBeforeLease: false };
   const database = {
     state,
     prepare(sql) {
@@ -408,6 +408,9 @@ function fakeDatabase() {
           if (/FROM workspace_resources WHERE connection_key = \?/u.test(sql)) {
             return { results: state.resources.filter((row) => row.connection_key === query.values[0]) };
           }
+          if (/FROM google_connections ORDER BY lower\(google_email\), connection_key/u.test(sql)) {
+            return { results: state.connection ? [state.connection] : [] };
+          }
           throw new Error(`Unexpected all query: ${sql}`);
         },
         async first() {
@@ -415,12 +418,56 @@ function fakeDatabase() {
           if (/FROM workspace_blueprints WHERE connection_key = \?/u.test(sql)) {
             return state.blueprint?.connection_key === query.values[0] ? state.blueprint : null;
           }
-          if (/FROM google_connections WHERE connection_key = \?/u.test(sql)) return state.connection;
+          if (/FROM google_connections WHERE connection_key = \?/u.test(sql)) {
+            return state.connection?.connection_key === query.values[0] ? state.connection : null;
+          }
+          if (/FROM google_connections WHERE google_subject = \?/u.test(sql)) {
+            return state.connection?.google_subject === query.values[0] ? state.connection : null;
+          }
+          if (/FROM google_connections WHERE lower\(google_email\) = \?/u.test(sql)) {
+            return state.connection?.google_email.toLowerCase() === query.values[0] ? state.connection : null;
+          }
           if (/FROM projects p JOIN clients c/u.test(sql)) return state.project;
           if (/FROM drive_folder_mappings/u.test(sql)) return state.mapping;
           throw new Error(`Unexpected first query: ${sql}`);
         },
         async run() {
+          if (sql.startsWith("INSERT INTO google_drive_operations")) {
+            if (state.removeConnectionBeforeLease) {
+              state.removeConnectionBeforeLease = false;
+              state.connection = null;
+            }
+            const [id, connectionKey, operationKey, projectId, leaseExpiresAt, actor, createdAt, updatedAt] = query.values;
+            const bypass = query.values[8] === 1;
+            const connectionMatches = bypass || (
+              state.connection?.id === query.values[9]
+              && state.connection?.connection_key === query.values[10]
+              && state.connection?.google_email.toLowerCase() === query.values[11]
+              && state.connection?.status === "connected"
+            );
+            if (!connectionMatches) return { meta: { changes: 0 } };
+            const now = query.values.at(-1);
+            const current = state.leases.get(operationKey);
+            if (current?.status === "in-progress" && current.leaseExpiresAt >= now) {
+              return { meta: { changes: 0 } };
+            }
+            state.leases.set(operationKey, { id, connectionKey, operationKey, projectId, leaseExpiresAt, actor, createdAt, updatedAt, status: "in-progress" });
+            return { meta: { changes: 1 } };
+          }
+          if (sql.startsWith("UPDATE google_drive_operations SET status = 'completed'")) {
+            const [updatedAt, operationKey, leaseExpiresAt] = query.values;
+            const current = state.leases.get(operationKey);
+            if (current?.status !== "in-progress" || current.leaseExpiresAt !== leaseExpiresAt) return { meta: { changes: 0 } };
+            state.leases.set(operationKey, { ...current, status: "completed", leaseExpiresAt: null, updatedAt });
+            return { meta: { changes: 1 } };
+          }
+          if (sql.startsWith("UPDATE google_drive_operations SET status = 'failed'")) {
+            const [errorCode, updatedAt, operationKey, leaseExpiresAt] = query.values;
+            const current = state.leases.get(operationKey);
+            if (current?.status !== "in-progress" || current.leaseExpiresAt !== leaseExpiresAt) return { meta: { changes: 0 } };
+            state.leases.set(operationKey, { ...current, status: "failed", leaseExpiresAt: null, errorCode, updatedAt });
+            return { meta: { changes: 1 } };
+          }
           if (sql.startsWith("INSERT INTO activity_events")) {
             state.activities.push({ values: [...query.values] });
             return { meta: { changes: 1 } };
@@ -485,6 +532,8 @@ async function workspaceEnvironment(database, rootId) {
   }));
   database.state.connection = {
     id: "connection-1",
+    connection_key: config.connectionKey,
+    google_subject: "subject-operations",
     google_email: "operations@cherryhillfci.com",
     refresh_token_ciphertext: await oauthModule.encryptGoogleSecret(
       "FCI_TEST_REFRESH_TOKEN",
@@ -860,6 +909,34 @@ test("route creates blank Doc, Sheet, and Slides files in workspace mode and rec
     database.state.queries.some((query) => /(?:INSERT|UPDATE)\s+(?:INTO\s+)?workspace_resources/iu.test(query.sql)),
     false,
   );
+});
+
+test("project file creation performs no provider or audit write when tenant reset wins the exact lease", async () => {
+  const database = fakeDatabase();
+  const rootId = "app-shared-drive-reset-race";
+  const projectFolderId = "project-root-reset-race";
+  await workspaceEnvironment(database, rootId);
+  database.state.project = sampleProject();
+  database.state.mapping = { drive_file_id: projectFolderId, drive_url: `https://drive.google.test/${projectFolderId}` };
+  database.state.removeConnectionBeforeLease = true;
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("A reset-winning project-file request must not reach Google.");
+  };
+
+  const response = await invokeRoute("project-1", {
+    email: OFFICE_EMAIL,
+    body: { kind: "doc", name: "Reset race" },
+  });
+  const body = await response.json();
+  assert.equal(response.status, 409);
+  assert.equal(body.code, "project_file_create_in_progress");
+  assert.equal(providerCalls, 0);
+  assert.equal(database.state.connection, null);
+  assert.equal(database.state.leases.size, 0);
+  assert.equal(database.state.activities.length, 0);
+  assert.equal(database.state.events.length, 0);
 });
 
 test("route copies a registered template with a files.copy request pinned to parent and name", async () => {

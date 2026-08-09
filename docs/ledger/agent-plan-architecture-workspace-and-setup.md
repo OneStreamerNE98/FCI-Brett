@@ -1583,6 +1583,7 @@ afterwards provisions cleanly; the settings guide states the evidence-loss conse
 **Effort:** medium. **Cost:** $0.
 
 ### WS-20 · Attach additional shared mailboxes to the workspace (medium-large)
+**Status:** In progress — `codex/ws20-shared-mailboxes`
 **Why:** owner request, August 3, 2026 — staff should be able to work shared inboxes
 (`ops@`, `info@`, `sales@`) rather than the single connection mailbox, and eventually see
 their own mail. **Those are two different features with very different costs, and this packet
@@ -3366,7 +3367,7 @@ assertion); Reports regen diff = KpiMetric structure only; screenshot pass.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-08 · Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue)
-**Status:** Blocked — sub-scope c only, deferred by owner decision (July 24, 2026) until the AI wave lands a truthful attention signal (revisit after AI-02/AI-04). Every other sub-scope is merged: b (PR #167), d (PR #170), a-T1 (PR #174, incl. the Unspecified-industry honesty review fix), and a-T2 (PR #179 — migration 0019 nullable projects.segment, closed two-value catalog, industry-derived default with widen-on-read, KPI segment splits computed but deliberately rendered nowhere pending a non-golden display slot). Source-only and undeployed; migration 0019 unapplied to Sites. Guide impact: none.
+**Status:** Blocked — sub-scope c only, awaiting an owner decision to lift the July 24 deferral now that its truthful AI-10 needs-review signal dependency is complete in PR #235 + PR #238 + PR #245. Every other sub-scope is merged: b (PR #167), d (PR #170), a-T1 (PR #174, incl. the Unspecified-industry honesty review fix), and a-T2 (PR #179 — migration 0019 nullable projects.segment, closed two-value catalog, industry-derived default with widen-on-read, KPI segment splits computed but deliberately rendered nowhere pending a non-golden display slot). Source-only and undeployed; migration 0019 unapplied to Sites. Guide impact: none.
 
 **Why:** owner selections of July 22 — all four extras plus the meetings
 resolution of spec §5.
@@ -3393,6 +3394,7 @@ layouts unaffected).
 **Effort:** small each; a-T2 small-medium. **Cost:** $0.
 
 ### DES-09 · Guardrail wrap-up + ledger closure (small; tests/docs only, last)
+**Status:** In review — PR #359
 **Why:** close the design-critique ledger's Phase-3/4 open items this series
 executes, and leave one truth.
 **Do (narrowed August 3, 2026 — two sub-items struck as already delivered: the
@@ -3725,7 +3727,7 @@ are pinned byte-for-byte by **four** suites, not three;
 this filing — see the FloorOpsApp claim-list tail).
 
 ### DES-26 · The vanishing retry: background revalidation unmounts an error notice mid-click (small-medium; after SET-42)
-**Status:** In progress — `deepseek/des26-stable-retry-affordance`
+**Status:** Complete — PR #348
 
 **Why:** proven August 5, 2026 while fixing PR #319, not inferred. SET-42 gave settings panels
 two recovery paths: the explicit Retry button, and lifecycle revalidation. An instrumented probe
@@ -3820,6 +3822,7 @@ and sibling features stay mounted while the failed panel shows its recovery UI;
 **Effort:** medium. **Cost:** $0.
 
 ### NFIX-12 · Execute the remaining direct-route coverage gaps (small-medium)
+**Status:** In progress — `deepseek/nfix12-route-coverage-gaps`
 
 **Why:** filed August 6, 2026 from the review's corrected T1 census. The original NFIX-12
 premise was rejected during PR #329 review: `useEffectEvent` is a stable API in the
@@ -3957,6 +3960,7 @@ outcomes.
 **Effort:** small-medium. **Cost:** $0.
 
 ### NFIX-18 · Address review release is best-effort with no compensation (small-medium)
+**Status:** In progress — `codex/nfix18-address-review-compensation`
 
 **Why:** filed August 6, 2026 from the review (B8, confirmed).
 `releaseFailedAddressMutation` (`app/lib/address-mutation-sites.ts`, lines ~66–73)
@@ -4296,6 +4300,7 @@ DES-13. Sequencing below is binding; none of these dispatch before their named
 predecessors merge.
 
 ### DES-19 · Responsive layout primitives and the dynamic-state guard (medium-large; after DES-13 and DES-14)
+**Status:** In progress — `kimi/des19-responsive-primitives`
 
 **Why:** audit P1 #1, P3 "viewport patches" (11 breakpoint values, 142 local layout
 rules, 9 wrapping), and P3 "tests weak on state transitions" — conditional states break

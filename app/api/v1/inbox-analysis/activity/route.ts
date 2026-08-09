@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import type { D1Database } from "../../../../adapters/d1/d1-database";
 import { createD1MailItemRepository } from "../../../../adapters/d1/mail-item-repository";
 import type { MailItem } from "../../../../domain/mail-item";
-import { getConnectionScope } from "../../../../lib/google-oauth-sites";
+import { getGoogleConnectionScopes } from "../../../../lib/google-oauth-sites";
 import { noStoreJson, noStoreResponse } from "../../../../lib/no-store-json";
 import { requireOfficeUser } from "../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
@@ -81,16 +81,38 @@ export async function GET(request: NextRequest) {
     await ensureWorkspaceSchema();
     const database = env.DB as unknown as D1Database;
     const repository = createD1MailItemRepository(database);
-    const connectionKey = getConnectionScope().connectionKey;
-    const labelCatalog = await readAssistantLabelCatalog(database);
-    const [page, storedCounts] = await Promise.all([
-      repository.listReviewActivity(connectionKey, ACTIVITY_PAGE_LIMIT),
-      repository.listReviewActivityLabelCounts(
-        connectionKey,
-        labelCatalog.labels.map(({ slug }) => slug),
-      ),
+    const [labelCatalog, scopes] = await Promise.all([
+      readAssistantLabelCatalog(database),
+      getGoogleConnectionScopes(),
     ]);
-    const countBySlug = new Map(storedCounts.map((count) => [count.slug, count]));
+    const activityByConnection = await Promise.all(
+      scopes.mailboxConnectionKeys.map(async (connectionKey) => {
+        const [page, storedCounts] = await Promise.all([
+          repository.listReviewActivity(connectionKey, ACTIVITY_PAGE_LIMIT),
+          repository.listReviewActivityLabelCounts(
+            connectionKey,
+            labelCatalog.labels.map(({ slug }) => slug),
+          ),
+        ]);
+        return Object.freeze({ page, storedCounts });
+      }),
+    );
+    const items = activityByConnection
+      .flatMap(({ page }) => page.items)
+      .sort((left, right) =>
+        right.updatedAt - left.updatedAt || left.id.localeCompare(right.id)
+      )
+      .slice(0, ACTIVITY_PAGE_LIMIT);
+    const countBySlug = new Map<string, { acceptedCount: number; dismissedCount: number }>();
+    for (const { storedCounts } of activityByConnection) {
+      for (const count of storedCounts) {
+        const current = countBySlug.get(count.slug);
+        countBySlug.set(count.slug, {
+          acceptedCount: (current?.acceptedCount ?? 0) + count.acceptedCount,
+          dismissedCount: (current?.dismissedCount ?? 0) + count.dismissedCount,
+        });
+      }
+    }
     return noStoreJson({
       labels: labelCatalog.labels,
       counts: labelCatalog.labels.map((label) => {
@@ -101,12 +123,15 @@ export async function GET(request: NextRequest) {
           dismissedCount: count?.dismissedCount ?? 0,
         });
       }),
-      rows: page.items.map((item) => activityRow(
+      rows: items.map((item) => activityRow(
         item,
         labelCatalog.knownSlugs,
         labelCatalog.version,
       )),
-      totalCount: page.totalCount,
+      totalCount: activityByConnection.reduce(
+        (total, { page }) => total + page.totalCount,
+        0,
+      ),
       pageLimit: ACTIVITY_PAGE_LIMIT,
     });
   } catch {

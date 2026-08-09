@@ -270,6 +270,9 @@ async function waitForBlockedPostgresQuery(pool, applicationName, fragment) {
 }
 
 const ANALYSIS_CONNECTION_KEY = "google-workspace";
+const ANALYSIS_AUTH_CONNECTION_ID = "google-connection-ai11-label-catalog";
+const ANALYSIS_AUTH_CONNECTION_EMAIL = "operations@cherryhillfci.com";
+const ANALYSIS_AUTH_CONNECTION_CIPHERTEXT = "encrypted-ai11-label-catalog-refresh-token";
 const ANALYSIS_CLIENT_ID = "11111111-1111-4111-8111-111111111111";
 const ANALYSIS_PROJECT_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -357,6 +360,17 @@ class AnalysisDatabase {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
+      CREATE TABLE google_connections (
+        id TEXT PRIMARY KEY,
+        connection_key TEXT NOT NULL UNIQUE,
+        google_email TEXT NOT NULL,
+        refresh_token_ciphertext TEXT NOT NULL,
+        status TEXT NOT NULL
+      );
+      INSERT INTO google_connections
+        (id, connection_key, google_email, refresh_token_ciphertext, status)
+      VALUES
+        ('${ANALYSIS_AUTH_CONNECTION_ID}', '${ANALYSIS_CONNECTION_KEY}', '${ANALYSIS_AUTH_CONNECTION_EMAIL}', '${ANALYSIS_AUTH_CONNECTION_CIPHERTEXT}', 'connected');
       CREATE TABLE workspace_settings (
         id TEXT PRIMARY KEY,
         shared_drive_id TEXT,
@@ -460,7 +474,14 @@ function analysisSweepInput(database, client, provider) {
     actor: ADMIN_EMAIL,
     signal: new AbortController().signal,
     workspace: {
-      config: { simulation: false, connectionKey: ANALYSIS_CONNECTION_KEY },
+      config: {
+        simulation: false,
+        connectionKey: ANALYSIS_CONNECTION_KEY,
+        authConnectionKey: ANALYSIS_CONNECTION_KEY,
+        authConnectionId: ANALYSIS_AUTH_CONNECTION_ID,
+        authConnectionEmail: ANALYSIS_AUTH_CONNECTION_EMAIL,
+        authConnectionRefreshTokenCiphertext: ANALYSIS_AUTH_CONNECTION_CIPHERTEXT,
+      },
       client,
     },
     provider,

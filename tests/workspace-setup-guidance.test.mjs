@@ -61,7 +61,7 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
     assert.match(panel, new RegExp(`number=\\{${stage}\\}[\\s\\S]{0,240}title="${heading.replace(/[&]/g, "\\&")}"`));
   }
   for (const heading of [
-    "Company account authorization",
+    "Company mailbox authorization",
     "Verify each service",
     "Ongoing upkeep",
   ]) {
@@ -378,7 +378,8 @@ test("Workspace readiness surfaces only Google Chat missing-secret names without
   const route = await read("app/api/v1/google-workspace/route.ts");
 
   assert.match(route, /import \{ readGoogleChatPublicConfig \} from "\.\.\/\.\.\/\.\.\/lib\/google-chat-notifier-sites"/);
-  assert.match(route, /const \[connection, chatNotifications\] = await Promise\.all\(/);
+  assert.match(route, /const \[connection, chatNotifications, mailboxes\] = await Promise\.all\(/);
+  assert.match(route, /auth\.user\.isAdmin \? listGoogleMailboxConnections\(google\) : Promise\.resolve\(\[\]\)/);
   assert.match(route, /\.\.\.chatNotifications\.missingDetails/);
   assert.match(route, /const credentialsPresent = google\.connectReady && adminAllowlistPresent/);
   assert.match(route, /const configured = google\.oauthReady && adminAllowlistPresent/);
@@ -386,28 +387,31 @@ test("Workspace readiness surfaces only Google Chat missing-secret names without
   assert.doesNotMatch(route, /chatNotifications\.(?:webhook|url|secretValue)/i);
 });
 
-test("administrator connection health is a bounded Stage 2 expander without duplicate mode or status", async () => {
+test("administrator connection health is a mailbox-scoped Stage 2 expander without duplicate mode or status", async () => {
   const [panel, route, oauth] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/api/v1/integrations/google/connection/route.ts"),
     read("app/lib/google-oauth.ts"),
   ]);
 
-  assert.match(panel, /if \(!isAdmin\) return;[\s\S]+cachedGetJson<ConnectionHealthPayload>\("\/api\/v1\/integrations\/google\/connection"/);
+  assert.match(panel, /const loadConnectionHealth = useCallback[\s\S]+if \(!isAdmin\) return;[\s\S]+cachedGetJson<ConnectionHealthPayload>\(GOOGLE_CONNECTION_URL/);
   assert.match(panel, /isAdmin && <details className=\{`workspace-connection-health/);
   assert.match(panel, /<summary className=\{panelStyles\.connectionHealthToggle\}/);
-  assert.match(panel, /Account and recorded service permissions/);
-  assert.match(panel, /maskWorkspaceAccountForDisplay\(connectionHealth\.connection\.account\)/);
-  assert.match(panel, /connectionHealth\.connection\.requiresReauthorization/);
+  assert.match(panel, /Attached mailboxes and recorded service permissions/);
+  assert.match(panel, /attachedMailboxes\.map\(\(mailbox\) => <section[\s\S]+\{mailbox\.email\}/);
+  assert.match(panel, /mailbox\.requiresReauthorization/);
   assert.match(panel, /connectionHealth\.enabledServices\.includes\(service\.key\)/);
-  assert.match(panel, /connectionHealth\.connection\.grantedServices\?\.\[service\.key\]/);
+  assert.match(panel, /mailbox\.grantedServices\?\.\[service\.key\]/);
+  assert.match(panel, /mailbox\.services\[service\.key\] === true/);
   for (const service of ["drive", "gmail", "calendar", "sheets"]) {
     assert.match(panel, new RegExp(`key: "${service}"`));
   }
   assert.match(panel, /Not applicable — simulated/);
   assert.match(panel, /Recorded permission reflects the saved Google consent only\. It is not a live provider-health or freshness check\./);
-  assert.equal(panel.match(/Disconnect Workspace/g)?.length, 1);
-  assert.match(route, /runtimeMode: config\.environment[\s\S]+connection: await getGoogleConnectionStatus\(config\)[\s\S]+enabledServices: config\.enabledServices/);
+  assert.doesNotMatch(panel, /Disconnect Workspace/);
+  assert.match(panel, /aria-label=\{`Disconnect \$\{mailbox\.email\}`\}/);
+  assert.match(route, /requireOfficeUser\(request, \{ admin: true \}\)[\s\S]+const \[connection, mailboxes\] = await Promise\.all\([\s\S]+listGoogleMailboxConnections\(config\)/);
+  assert.match(route, /runtimeMode: config\.environment[\s\S]+connection,[\s\S]+enabledServices: config\.enabledServices,[\s\S]+mailboxes/);
   assert.match(oauth, /grantedServices: null/);
   assert.match(oauth, /const grantedServices = grantedGoogleServices\(config, scopes\)/);
   const payloadType = panel.slice(panel.indexOf("type ConnectionHealthPayload"), panel.indexOf("type ConnectionHealthState"));
@@ -416,7 +420,7 @@ test("administrator connection health is a bounded Stage 2 expander without dupl
   const healthEnd = panel.indexOf("</details>}", healthStart);
   assert.ok(healthStart >= 0 && healthEnd > healthStart);
   const healthSource = panel.slice(healthStart, healthEnd);
-  assert.match(healthSource, /<dt>Account<\/dt>/);
+  assert.match(healthSource, /attachedMailboxes\.map\(\(mailbox\) => <section[\s\S]+OperationsDataTable/);
   assert.doesNotMatch(healthSource, /<dt>Mode<\/dt>|<dt>Status<\/dt>|<Status\b/);
   assert.doesNotMatch(healthSource, /Disconnect Workspace|Reconnect Google Workspace|Reset simulation data/);
 });
@@ -453,7 +457,7 @@ test("Workspace resources stay endpoint-owned in one dependency-ordered Stage 3 
   assert.match(stageOneSource, /Drive authority:[\s\S]+GOOGLE_WORKSPACE_SHARED_DRIVE_ID/);
   assert.match(stageOneSource, /App-managed Workspace configuration[\s\S]+Project-folder provisioning[\s\S]+Client Directory spreadsheet ID[\s\S]+Lead-form response spreadsheet ID/);
   assert.match(stageOneSource, /App-saved values win\. Hosted values remain bootstrap fallbacks\./);
-  assert.match(stageTwoSource, /Company account authorization/);
+  assert.match(stageTwoSource, /Company mailbox authorization/);
   assert.match(stageTwoSource, /Simulation runs locally, and nothing is sent to Google/);
   assert.match(stageTwoSource, /<details className=\{`workspace-connection-health/);
   assert.doesNotMatch(stageTwoSource, /<section className="workspace-connection-health"|workspace-connection-status|Simulated connection ready|Google Workspace connected/);
@@ -597,7 +601,8 @@ test("Workspace setup masks accounts and exposes copy-exact safe helpers", async
 
   assert.match(panel, /function maskWorkspaceAccountForDisplay/);
   assert.match(panel, /\.map\(\(account\) => maskWorkspaceAccountForDisplay\(account\)/);
-  assert.match(panel, /maskWorkspaceAccountForDisplay\(connectionHealth\.connection\.account\)/);
+  assert.match(panel, /const bannerAccount = maskWorkspaceAccountForDisplay\(/);
+  assert.match(panel, /isAdmin && attachedMailboxes\.length > 0 && <label/);
   assert.doesNotMatch(panel, /workspace\?\.connectionAccount \?\?/);
   assert.doesNotMatch(panel, /<dd>\{connectionHealth\.connection\.account/);
 
@@ -629,9 +634,9 @@ test("Workspace setup masks accounts and exposes copy-exact safe helpers", async
   const healthCard = panel.indexOf('{isAdmin && <details className={`workspace-connection-health');
   const healthCardEnd = panel.indexOf("</details>}", healthCard);
   assert.ok(connectionActions >= 0 && healthCard > connectionActions && healthCardEnd > healthCard);
-  assert.match(panel.slice(connectionActions, healthCard), /Reconnect Google Workspace[\s\S]+Disconnect Workspace/);
+  assert.match(panel.slice(connectionActions, healthCard), /Reconnect mailbox[\s\S]+Attach mailbox[\s\S]+aria-label=\{`Disconnect \$\{mailbox\.email\}`\}/);
   assert.doesNotMatch(panel.slice(healthCard, healthCardEnd), /Disconnect Workspace|Reconnect Google Workspace|Reset simulation data/);
-  assert.equal(panel.match(/Disconnect Workspace/g)?.length, 1);
+  assert.doesNotMatch(panel, /Disconnect Workspace/);
   assert.doesNotMatch(panel, /workspace-checklist|type="checkbox"/);
   assert.match(checklist, /Keep authorization restricted to the approved Workspace domain/);
   assert.match(checklist, /Keep Gmail filing review-first and project-specific/);

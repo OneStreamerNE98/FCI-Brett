@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 async function openReadyApp(page: import("@playwright/test").Page, url = "/") {
@@ -75,6 +76,10 @@ test("notifications use typed persistent errors and navigation disclosure popove
   await expect(workspaceNavigation.getByRole("button", { name: "View scheduling status" })).toHaveCount(0);
   await expect(workspaceNavigation.getByText("Notifications", { exact: true })).toHaveCount(0);
   await expect(workspaceNavigation.getByText("Schedule alerts will appear after scheduling is connected", { exact: true })).toHaveCount(0);
+  const popoverAccessibility = await new AxeBuilder({ page }).include("#notifications-popover").analyze();
+  expect(
+    popoverAccessibility.violations.filter(({ impact }) => impact === "serious" || impact === "critical"),
+  ).toEqual([]);
   await page.keyboard.press("Escape");
   await expect(workspaceNavigation).toHaveCount(0);
 

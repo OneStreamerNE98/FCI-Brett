@@ -17,6 +17,9 @@ const COMPLETE_ACTIVITY_ID = "44444444-4444-4444-8444-444444444444";
 const REOPEN_ACTIVITY_ID = "77777777-7777-4777-8777-777777777777";
 const REVIEW_ID = "99999999-9999-4999-8999-999999999999";
 const CONNECTION_KEY = "workspace-simulation";
+const SIMULATION_MAILBOX = "workspace-simulation@fci.example";
+const REVIEW_MAILBOX = "shared-intake@cherryhillfci.com";
+const REVIEW_CONNECTION_KEY = "gmail_task_review_mailbox";
 const GMAIL_MESSAGE_ID = "gmail-ai11-task-accept";
 const CREATED_AT = Date.UTC(2026, 6, 23, 12, 0, 0);
 const COMPLETED_AT = CREATED_AT + 60_000;
@@ -51,11 +54,15 @@ class StatefulD1Database {
     projectIds = [PROJECT_ID],
     leadIds = [LEAD_ID],
     mailItems = [],
+    googleConnections = [],
   } = {}) {
     this.tasks = new Map();
     this.meetings = new Map();
     this.activities = [];
     this.mailItems = new Map(mailItems.map((item) => [item.id, { ...item }]));
+    this.googleConnections = new Map(
+      googleConnections.map((connection) => [connection.google_email.toLowerCase(), { ...connection }]),
+    );
     this.prepared = [];
     this.projectIds = new Set(projectIds);
     this.leadIds = new Set(leadIds);
@@ -104,6 +111,15 @@ class StatefulD1Database {
     if (statement.sql === "SELECT * FROM project_meetings WHERE id = ?") {
       return this.meetings.get(statement.values[0]) ?? null;
     }
+    if (statement.sql.includes("FROM workspace_blueprints WHERE connection_key = ?")) {
+      return null;
+    }
+    if (statement.sql.includes("FROM workspace_settings WHERE id = ?")) {
+      return null;
+    }
+    if (statement.sql.includes("FROM google_connections WHERE lower(google_email) = ?")) {
+      return this.googleConnections.get(String(statement.values[0]).toLowerCase()) ?? null;
+    }
     throw new Error(`Unexpected D1 first query: ${statement.sql}`);
   }
 
@@ -143,6 +159,9 @@ class StatefulD1Database {
     if (statement.sql.startsWith("SELECT * FROM project_meetings WHERE project_id = ?")) {
       return [...this.meetings.values()].filter((row) => row.project_id === statement.values[0]);
     }
+    if (statement.sql.includes("FROM workspace_resources WHERE connection_key = ?")) {
+      return [];
+    }
     throw new Error(`Unexpected D1 all query: ${statement.sql}`);
   }
 
@@ -161,7 +180,9 @@ class StatefulD1Database {
       if (statement.sql.startsWith("UPDATE mail_items SET status = 'accepted'")) {
         const reviewId = statement.values.find((value) => this.mailItems.has(value));
         const current = reviewId ? this.mailItems.get(reviewId) : null;
-        const connectionKey = statement.values.find((value) => value === CONNECTION_KEY);
+        const connectionKey = statement.values.find(
+          (value) => value === current?.connection_key,
+        );
         const gmailMessageId = statement.values.find((value) => value === GMAIL_MESSAGE_ID);
         const intent = statement.values.find((value) =>
           value === "schedule" || value === "warranty"
@@ -710,6 +731,13 @@ test("D1 task routes round-trip create, list, and completion with activity evide
   assert.equal(created.title, "Review project notes");
   assert.equal(created.status, "open");
   assert.equal(created.source, "meeting");
+  assert.equal(
+    database.prepared.some(({ sql }) =>
+      /FROM (?:google_connections|workspace_resources|workspace_blueprints|workspace_settings)/u.test(sql)
+    ),
+    false,
+    "ordinary task creation must not resolve a Gmail mailbox",
+  );
 
   const listUrl = new URL(
     `/api/v1/tasks?status=open&projectId=${PROJECT_ID}`,
@@ -756,7 +784,13 @@ test("D1 task routes round-trip create, list, and completion with activity evide
 });
 
 test("D1 task route atomically accepts a matching schedule review through the existing POST", async () => {
-  database.reset({ mailItems: [inboxReviewRow()] });
+  const reviewRow = inboxReviewRow({ connection_key: REVIEW_CONNECTION_KEY });
+  database.reset({
+    mailItems: [reviewRow],
+    googleConnections: [googleConnectionRow()],
+  });
+  workerEnvironment.GOOGLE_INTEGRATION_MODE = "workspace";
+  workerEnvironment.GOOGLE_WORKSPACE_INTAKE_MAILBOX = REVIEW_MAILBOX;
   const requestBody = {
     title: "Schedule the customer-requested measure",
     details: "Proposed from the reviewed email. Confirm the exact time before committing.",
@@ -765,13 +799,20 @@ test("D1 task route atomically accepts a matching schedule review through the ex
     sourceRef: GMAIL_MESSAGE_ID,
     inboxReviewId: REVIEW_ID,
     inboxReviewIntent: "schedule",
+    inboxReviewMailbox: REVIEW_MAILBOX.toUpperCase(),
   };
-  const response = await tasksRoute.POST(taskRequest(
-    "/api/v1/tasks",
-    "POST",
-    requestBody,
-    REVIEW_ADMIN_EMAIL,
-  ));
+  let response;
+  try {
+    response = await tasksRoute.POST(taskRequest(
+      "/api/v1/tasks",
+      "POST",
+      requestBody,
+      REVIEW_ADMIN_EMAIL,
+    ));
+  } finally {
+    delete workerEnvironment.GOOGLE_INTEGRATION_MODE;
+    delete workerEnvironment.GOOGLE_WORKSPACE_INTAKE_MAILBOX;
+  }
 
   assert.equal(response.status, 201);
   assert.equal(response.headers.get("cache-control"), "no-store");
@@ -780,12 +821,20 @@ test("D1 task route atomically accepts a matching schedule review through the ex
   assert.equal(body.task.sourceRef, GMAIL_MESSAGE_ID);
   assert.deepEqual(body.inboxReview, { id: REVIEW_ID, status: "accepted" });
   assert.equal(database.tasks.size, 1);
+  assert.equal(
+    database.prepared.some(({ sql, values }) =>
+      sql.includes("FROM google_connections WHERE lower(google_email) = ?")
+      && values[0] === REVIEW_MAILBOX
+    ),
+    true,
+    "the server must resolve the human mailbox email to its internal key",
+  );
   assert.deepEqual(
     database.activities.map(({ action }) => action),
     ["Task created"],
   );
   assert.deepEqual(database.mailItems.get(REVIEW_ID), {
-    ...inboxReviewRow(),
+    ...reviewRow,
     status: "accepted",
     approved_project_id: PROJECT_ID,
     attempted_label_definition_version: null,
@@ -810,12 +859,20 @@ test("D1 task route atomically accepts a matching schedule review through the ex
     sql.startsWith("INSERT INTO tasks ") && sql.includes("changes() = 1"));
   assert.ok(guardedTaskInsert, "task creation is fenced by the accepted-row update");
 
-  const repeated = await tasksRoute.POST(taskRequest(
-    "/api/v1/tasks",
-    "POST",
-    requestBody,
-    REVIEW_ADMIN_EMAIL,
-  ));
+  workerEnvironment.GOOGLE_INTEGRATION_MODE = "workspace";
+  workerEnvironment.GOOGLE_WORKSPACE_INTAKE_MAILBOX = REVIEW_MAILBOX;
+  let repeated;
+  try {
+    repeated = await tasksRoute.POST(taskRequest(
+      "/api/v1/tasks",
+      "POST",
+      requestBody,
+      REVIEW_ADMIN_EMAIL,
+    ));
+  } finally {
+    delete workerEnvironment.GOOGLE_INTEGRATION_MODE;
+    delete workerEnvironment.GOOGLE_WORKSPACE_INTAKE_MAILBOX;
+  }
   assert.equal(repeated.status, 409);
   assert.deepEqual(await repeated.json(), {
     error: "Inbox review changed since it was loaded.",
@@ -850,6 +907,7 @@ test("D1 task route keeps a stale or mismatched review atomic and admin-only", a
       sourceRef: GMAIL_MESSAGE_ID,
       inboxReviewId: REVIEW_ID,
       inboxReviewIntent: "schedule",
+      inboxReviewMailbox: SIMULATION_MAILBOX,
     }, REVIEW_ADMIN_EMAIL));
     assert.equal(response.status, 409);
     assert.equal(response.headers.get("cache-control"), "no-store");
@@ -868,6 +926,7 @@ test("D1 task route keeps a stale or mismatched review atomic and admin-only", a
       sourceRef: GMAIL_MESSAGE_ID,
       inboxReviewId: REVIEW_ID,
       inboxReviewIntent: "schedule",
+      inboxReviewMailbox: SIMULATION_MAILBOX,
     },
     SECOND_OFFICE_EMAIL,
   ));
@@ -891,6 +950,7 @@ test("D1 task route rejects malformed review composition before persistence", as
       sourceRef: GMAIL_MESSAGE_ID,
       inboxReviewId: REVIEW_ID,
       inboxReviewIntent: "project-update",
+      inboxReviewMailbox: SIMULATION_MAILBOX,
     },
     {
       title: "Review accepts cannot masquerade as manual work",
@@ -898,6 +958,15 @@ test("D1 task route rejects malformed review composition before persistence", as
       sourceRef: GMAIL_MESSAGE_ID,
       inboxReviewId: REVIEW_ID,
       inboxReviewIntent: "schedule",
+      inboxReviewMailbox: SIMULATION_MAILBOX,
+    },
+    {
+      title: "Review accepts require a human mailbox email",
+      source: "email",
+      sourceRef: GMAIL_MESSAGE_ID,
+      inboxReviewId: REVIEW_ID,
+      inboxReviewIntent: "schedule",
+      inboxReviewMailbox: REVIEW_CONNECTION_KEY,
     },
   ]) {
     database.reset({ mailItems: [inboxReviewRow()] });
@@ -1141,6 +1210,72 @@ test("project-meeting POST accepts phone-call and echoes the meeting type", asyn
   assert.equal([...database.meetings.values()][0].meeting_type, "phone-call");
 });
 
+test("NFIX-12 project-meeting GET lists meetings, rejects invalid inputs, and surfaces authorization errors", async () => {
+  database.reset();
+  // Seed a meeting so the list route has something to return.
+  database.meetings.set("meeting-1", {
+    id: "meeting-1",
+    project_id: PROJECT_ID,
+    title: "FCI TEST — DO NOT USE design review",
+    meeting_at: "2026-07-23T13:00:00.000Z",
+    meeting_type: "in-person",
+    source_provider: null,
+    source_url: null,
+    attendees_json: JSON.stringify(["Test Customer"]),
+    notes: "Discussed test-only milestones.",
+    transcript: null,
+    summary: null,
+    decisions: null,
+    action_items_json: JSON.stringify(["Confirm test-only dates"]),
+    created_by: "admincrm@cherryhillfci.com",
+    created_at: CREATED_AT,
+    updated_at: CREATED_AT,
+  });
+
+  // Success: office user with recordsRead capability lists meetings.
+  const good = await meetingsRoute.GET(
+    taskRequest(`/api/v1/projects/${PROJECT_ID}/meetings`, "GET"),
+    { params: Promise.resolve({ projectId: PROJECT_ID }) },
+  );
+  assert.equal(good.status, 200);
+  const goodPayload = await good.json();
+  assert.ok(Array.isArray(goodPayload.meetings), "response must have a meetings array");
+  assert.equal(goodPayload.meetings.length, 1);
+  assert.equal(goodPayload.meetings[0].id, "meeting-1");
+  assert.equal(goodPayload.meetings[0].title, "FCI TEST — DO NOT USE design review");
+  assert.equal(goodPayload.meetings[0].meetingType, "in-person");
+  assert.equal(good.headers.get("Cache-Control"), "no-store");
+
+  // Invalid projectId format → 400
+  const badFormat = await meetingsRoute.GET(
+    taskRequest("/api/v1/projects/!!!bad!!!format/meetings", "GET"),
+    { params: Promise.resolve({ projectId: "!!!bad!!!format" }) },
+  );
+  assert.equal(badFormat.status, 400);
+  assert.deepEqual(await badFormat.json(), { error: "Invalid project." });
+
+  // Valid but non-existent projectId → 404
+  const notFound = await meetingsRoute.GET(
+    taskRequest(`/api/v1/projects/${MISSING_PROJECT_ID}/meetings`, "GET"),
+    { params: Promise.resolve({ projectId: MISSING_PROJECT_ID }) },
+  );
+  assert.equal(notFound.status, 404);
+  assert.deepEqual(await notFound.json(), { error: "Project not found." });
+
+  // Unauthenticated request → rejected
+  const unauthReq = taskRequest(
+    `/api/v1/projects/${PROJECT_ID}/meetings`,
+    "GET",
+    undefined,
+    "", // no office email
+  );
+  const unauth = await meetingsRoute.GET(
+    unauthReq,
+    { params: Promise.resolve({ projectId: PROJECT_ID }) },
+  );
+  assert.equal(unauth.status, 401);
+});
+
 function pgResult(rows = [], rowCount = null) {
   return { rows, rowCount };
 }
@@ -1251,6 +1386,22 @@ function inboxReviewRow(overrides = {}) {
     failure_attempts: 2,
     error_code: "analysis_failed",
     updated_at: CREATED_AT,
+    ...overrides,
+  };
+}
+
+function googleConnectionRow(overrides = {}) {
+  return {
+    id: "google-connection-task-review",
+    connection_key: REVIEW_CONNECTION_KEY,
+    google_subject: "google-subject-task-review",
+    google_email: REVIEW_MAILBOX,
+    refresh_token_ciphertext: "encrypted-token",
+    key_version: "v1",
+    scopes_json: JSON.stringify([
+      "https://www.googleapis.com/auth/gmail.modify",
+    ]),
+    status: "connected",
     ...overrides,
   };
 }

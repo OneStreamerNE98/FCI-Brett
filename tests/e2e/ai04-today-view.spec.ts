@@ -275,6 +275,14 @@ test("task completion sends the exact PATCH, reloads on success, and preserves a
   });
   await page.route("**/api/v1/tasks/*", async (route) => {
     const request = route.request();
+    if (request.method() === "GET") {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Task not found." }),
+      });
+      return;
+    }
     patchCalls.push({
       url: new URL(request.url()).pathname,
       method: request.method(),

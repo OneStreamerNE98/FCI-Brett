@@ -13,6 +13,7 @@ import { MAIL_ITEM_REVIEW_ATTRIBUTION_SCHEMA_STATEMENTS } from "./mail-item-revi
 import { PROJECT_SEGMENT_SCHEMA_STATEMENTS } from "./project-segment-schema.ts";
 import { PRODUCTION_PERSISTENCE_STATEMENTS } from "./production-persistence-schema.ts";
 import { SETTINGS_PERSISTENCE_STATEMENTS } from "./settings-persistence-schema.ts";
+import { SHARED_MAILBOX_SCHEMA_STATEMENTS } from "./shared-mailboxes-schema.ts";
 import { TASK_SCHEMA_STATEMENTS } from "./task-schema.ts";
 
 export interface ProductionSchemaMigration {
@@ -494,6 +495,12 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "mail_item_review_attribution",
     checksum: "sha256:0c6b26c3d062766b6a4cb80dc9b38cedd708fee8ec77fc871fdc5673168495ad",
     statements: MAIL_ITEM_REVIEW_ATTRIBUTION_SCHEMA_STATEMENTS,
+  },
+  {
+    version: 17,
+    name: "shared_mailboxes",
+    checksum: "sha256:73916455770603037831724f36d146c984ba5adfe7dc056837a6d9c43576d26f",
+    statements: SHARED_MAILBOX_SCHEMA_STATEMENTS,
   },
 ];
 

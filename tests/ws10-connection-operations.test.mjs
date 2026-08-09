@@ -59,6 +59,7 @@ function fakeDatabase() {
   const now = Date.now();
   const state = {
     queries: [],
+    googleConnections: [],
     driveOperations: [
       {
         id: "drive-failed",
@@ -162,6 +163,26 @@ function fakeDatabase() {
         created_at: now + 1,
       },
     ],
+    addressReviewClaims: [
+      {
+        id: "address-review-stale",
+        actor_id: ADMIN_EMAIL,
+        entity_kind: "client",
+        target_id: "client-1",
+        input_address: "123 Test Street",
+        consumed_at: now - (2 * 60 * 60 * 1_000),
+        expires_at: now - (105 * 60 * 1_000),
+      },
+      {
+        id: "address-review-recent",
+        actor_id: ADMIN_EMAIL,
+        entity_kind: "lead",
+        target_id: "new",
+        input_address: "456 Test Avenue",
+        consumed_at: now - 30_000,
+        expires_at: now + 14 * 60 * 1_000,
+      },
+    ],
   };
 
   function applyCursor(rows, timestampKey, idKey, cursorValues, valuesStartIndex) {
@@ -185,6 +206,9 @@ function fakeDatabase() {
           return statement;
         },
         async all() {
+          if (/FROM google_connections/u.test(sql)) {
+            return { results: state.googleConnections };
+          }
           const connectionKey = query.values[0];
           if (/FROM google_drive_operations/u.test(sql)) {
             const checkedAt = query.values[1];
@@ -218,6 +242,16 @@ function fakeDatabase() {
               results = applyCursor(results, "created_at", "id", query.values.slice(1), 0);
             }
             return { results: results.sort((left, right) => right.created_at - left.created_at) };
+          }
+          if (/FROM address_validation_reviews/u.test(sql)) {
+            const staleBefore = query.values[0];
+            const limit = query.values[1];
+            return {
+              results: state.addressReviewClaims
+                .filter((row) => row.consumed_at !== null && row.consumed_at <= staleBefore)
+                .sort((left, right) => right.consumed_at - left.consumed_at)
+                .slice(0, limit),
+            };
           }
           throw new Error(`Unexpected operations query: ${sql}`);
         },
@@ -255,6 +289,16 @@ function simulationEnvironment(database) {
   });
 }
 
+function workspaceEnvironment(database) {
+  Object.assign(workerEnvironment, {
+    NODE_ENV: "development",
+    FCI_OFFICE_EMAILS: `${ADMIN_EMAIL},${OFFICE_EMAIL}`,
+    FCI_ADMIN_EMAILS: ADMIN_EMAIL,
+    GOOGLE_INTEGRATION_MODE: "workspace",
+    DB: database,
+  });
+}
+
 test("admin enumerates current-connection failures and activity in simulation without Google calls", async () => {
   const database = fakeDatabase();
   simulationEnvironment(database);
@@ -281,15 +325,265 @@ test("admin enumerates current-connection failures and activity in simulation wi
   );
   assert.deepEqual(body.failedArchives.items.map(({ id }) => id), ["archive-failed"]);
   assert.deepEqual(body.events.items.map(({ id }) => id), ["event-new", "event-old"]);
+  assert.deepEqual(body.addressReviewClaims.items.map(({ id }) => id), ["address-review-stale"]);
+  assert.equal(JSON.stringify(body.addressReviewClaims).includes("123 Test Street"), false);
   assert.equal(JSON.stringify(body).includes("must_not_leak"), false);
   assert.equal(providerCalls, 0);
-  assert.equal(database.state.queries.length, 3);
+  assert.equal(database.state.queries.length, 4);
   assert.equal(database.state.queries.every(({ sql }) => /^\s*SELECT\b/u.test(sql)), true);
-  assert.equal(database.state.queries.every(({ values }) => values[0] === "workspace-simulation"), true);
+  assert.equal(
+    database.state.queries
+      .filter(({ sql }) => !/FROM address_validation_reviews/u.test(sql))
+      .every(({ values }) => values[0] === "workspace-simulation"),
+    true,
+  );
   // No nextCursor when hasMore is false
   assert.equal(body.driveOperations.nextCursor, undefined);
   assert.equal(body.failedArchives.nextCursor, undefined);
   assert.equal(body.events.nextCursor, undefined);
+  assert.equal(body.addressReviewClaims.hasMore, false);
+});
+
+test("workspace operations aggregate Drive, archives, and events across stable and attached mailbox keys", async () => {
+  const database = fakeDatabase();
+  workspaceEnvironment(database);
+  database.state.googleConnections = [
+    {
+      id: "connection-a",
+      connection_key: "gmail_shared_a",
+      google_subject: "subject-a",
+      google_email: "shared-a@cherryhillfci.com",
+      refresh_token_ciphertext: "encrypted-a",
+      key_version: "v1",
+      scopes_json: "[]",
+      status: "connected",
+    },
+    {
+      id: "connection-b",
+      connection_key: "gmail_shared_b",
+      google_subject: "subject-b",
+      google_email: "shared-b@cherryhillfci.com",
+      refresh_token_ciphertext: "encrypted-b",
+      key_version: "v1",
+      scopes_json: "[]",
+      status: "connected",
+    },
+  ];
+  const now = Date.now();
+  database.state.driveOperations = [
+    {
+      id: "drive-stable",
+      connection_key: "google-workspace",
+      operation_key: "google-workspace:setup:drive-roots",
+      project_id: "project-stable",
+      status: "failed",
+      lease_expires_at: null,
+      last_error_code: "stable-drive-failure",
+      updated_at: now - 40,
+    },
+    {
+      id: "drive-mailbox-visible",
+      connection_key: "gmail_shared_a",
+      operation_key: "gmail_shared_a:file-gmail:message-a",
+      project_id: "project-mailbox",
+      status: "failed",
+      lease_expires_at: null,
+      last_error_code: "mailbox-drive-failure",
+      updated_at: now,
+    },
+  ];
+  database.state.archives = [
+    {
+      id: "archive-a",
+      connection_key: "gmail_shared_a",
+      gmail_message_id: "message-a",
+      project_id: "project-a",
+      status: "failed",
+      last_error_code: "archive-a-failed",
+      updated_at: now - 10,
+    },
+    {
+      id: "archive-b",
+      connection_key: "gmail_shared_b",
+      gmail_message_id: "message-b",
+      project_id: "project-b",
+      status: "failed",
+      last_error_code: "archive-b-failed",
+      updated_at: now - 5,
+    },
+    {
+      id: "archive-unknown",
+      connection_key: "gmail_not_attached",
+      gmail_message_id: "message-unknown",
+      project_id: "project-unknown",
+      status: "failed",
+      last_error_code: "must-not-leak",
+      updated_at: now,
+    },
+  ];
+  database.state.events = [
+    {
+      id: "event-stable",
+      connection_key: "google-workspace",
+      event_type: "drive.workspace_verified",
+      actor: ADMIN_EMAIL,
+      entity_type: "workspace",
+      entity_id: "stable",
+      detail: "stable event",
+      created_at: now - 30,
+    },
+    {
+      id: "event-a",
+      connection_key: "gmail_shared_a",
+      event_type: "gmail.archive_failed",
+      actor: ADMIN_EMAIL,
+      entity_type: "message",
+      entity_id: "message-a",
+      detail: "mailbox a event",
+      created_at: now - 20,
+    },
+    {
+      id: "event-b",
+      connection_key: "gmail_shared_b",
+      event_type: "gmail.archive_failed",
+      actor: ADMIN_EMAIL,
+      entity_type: "connection",
+      entity_id: "gmail_shared_b",
+      detail: "mailbox gmail_shared_b event",
+      created_at: now - 10,
+    },
+    {
+      id: "event-unknown",
+      connection_key: "gmail_not_attached",
+      event_type: "must.not.leak",
+      actor: ADMIN_EMAIL,
+      entity_type: null,
+      entity_id: null,
+      detail: "must-not-leak",
+      created_at: now,
+    },
+  ];
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("The operations reader must remain database-only.");
+  };
+
+  const response = await route.GET(routeRequest());
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.runtimeMode, "workspace");
+  assert.deepEqual(body.driveOperations.items.map(({ id }) => id), ["drive-mailbox-visible", "drive-stable"]);
+  assert.deepEqual(body.failedArchives.items.map(({ id }) => id), ["archive-b", "archive-a"]);
+  assert.deepEqual(body.events.items.map(({ id }) => id), ["event-b", "event-a", "event-stable"]);
+  assert.equal(
+    body.driveOperations.items.find(({ id }) => id === "drive-mailbox-visible").operationKey,
+    "shared-a@cherryhillfci.com:file-gmail:message-a",
+  );
+  assert.equal(
+    body.driveOperations.items.find(({ id }) => id === "drive-stable").operationKey,
+    "workspace:setup:drive-roots",
+  );
+  assert.equal(
+    body.events.items.find(({ id }) => id === "event-b").entityId,
+    "shared-b@cherryhillfci.com",
+  );
+  assert.equal(
+    body.events.items.find(({ id }) => id === "event-b").detail,
+    "mailbox shared-b@cherryhillfci.com event",
+  );
+  assert.equal(JSON.stringify(body).includes("gmail_shared"), false);
+  assert.equal(JSON.stringify(body).includes("google-workspace"), false);
+  assert.equal(JSON.stringify(body).includes("must-not-leak"), false);
+  assert.equal(providerCalls, 0);
+  const driveQueries = database.state.queries.filter(({ sql }) =>
+    /FROM google_drive_operations/u.test(sql)
+  );
+  assert.deepEqual(
+    driveQueries.map(({ values }) => values[0]).sort(),
+    ["gmail_shared_a", "gmail_shared_b", "google-workspace"],
+  );
+  assert.deepEqual(
+    database.state.queries
+      .filter(({ sql }) => /FROM gmail_file_archives/u.test(sql))
+      .map(({ values }) => values[0])
+      .sort(),
+    ["gmail_shared_a", "gmail_shared_b", "google-workspace"],
+  );
+});
+
+test("workspace Drive pagination preserves global order and hides unattached operation scopes", async () => {
+  const database = fakeDatabase();
+  workspaceEnvironment(database);
+  database.state.googleConnections = [
+    {
+      id: "connection-a",
+      connection_key: "gmail_shared_a",
+      google_subject: "subject-a",
+      google_email: "shared-a@cherryhillfci.com",
+      refresh_token_ciphertext: "encrypted-a",
+      key_version: "v1",
+      scopes_json: "[]",
+      status: "connected",
+    },
+    {
+      id: "connection-b",
+      connection_key: "gmail_shared_b",
+      google_subject: "subject-b",
+      google_email: "shared-b@cherryhillfci.com",
+      refresh_token_ciphertext: "encrypted-b",
+      key_version: "v1",
+      scopes_json: "[]",
+      status: "connected",
+    },
+  ];
+  const now = Date.now();
+  const visibleKeys = ["google-workspace", "gmail_shared_a", "gmail_shared_b"];
+  database.state.driveOperations = Array.from({ length: 60 }, (_, index) => ({
+    id: `drive-page-${String(index).padStart(2, "0")}`,
+    connection_key: visibleKeys[index % visibleKeys.length],
+    operation_key: `operation-${index}`,
+    project_id: `project-${index}`,
+    status: "failed",
+    lease_expires_at: null,
+    last_error_code: `failure-${index}`,
+    updated_at: now - index,
+  }));
+  database.state.driveOperations.push({
+    id: "drive-unattached",
+    connection_key: "gmail_not_attached",
+    operation_key: "operation-unattached",
+    project_id: "project-unattached",
+    status: "failed",
+    lease_expires_at: null,
+    last_error_code: "must-not-leak",
+    updated_at: now + 1,
+  });
+
+  const first = await route.GET(routeRequest(ADMIN_EMAIL, "?category=drive"));
+  const firstBody = await first.json();
+  assert.equal(first.status, 200);
+  assert.equal(firstBody.driveOperations.items.length, 50);
+  assert.equal(firstBody.driveOperations.hasMore, true);
+  assert.ok(firstBody.driveOperations.nextCursor);
+  const second = await route.GET(routeRequest(
+    ADMIN_EMAIL,
+    `?category=drive&cursor=${encodeURIComponent(firstBody.driveOperations.nextCursor)}`,
+  ));
+  const secondBody = await second.json();
+  assert.equal(second.status, 200);
+  assert.equal(secondBody.driveOperations.items.length, 10);
+  assert.equal(secondBody.driveOperations.hasMore, false);
+  const all = [...firstBody.driveOperations.items, ...secondBody.driveOperations.items];
+  assert.deepEqual(
+    all.map(({ id }) => id),
+    Array.from({ length: 60 }, (_, index) => `drive-page-${String(index).padStart(2, "0")}`),
+  );
+  assert.equal(new Set(all.map(({ id }) => id)).size, 60);
+  assert.equal(JSON.stringify(all).includes("drive-unattached"), false);
+  assert.equal(JSON.stringify(all).includes("gmail_shared"), false);
+  assert.equal(JSON.stringify(all).includes("must-not-leak"), false);
 });
 
 test("opaque cursor paginates events past 50 items", async () => {

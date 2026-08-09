@@ -9,6 +9,8 @@ import { registerSimulationResetRecovery } from "./simulation-workspace";
 const { markResetAttempted } = registerSimulationResetRecovery(test);
 
 const e2eOrigin = process.env.FCI_E2E_ORIGIN ?? "http://localhost:4173";
+const primaryMailbox = "operations@cherryhillfci.com";
+const simulationMailbox = "workspace-simulation@fci.example";
 
 type MirrorStatus = {
   configured: boolean;
@@ -41,6 +43,15 @@ type ConnectionHealthPayload = {
     grantedServices: Record<GoogleServiceKey, boolean> | null;
     requiresReauthorization: boolean;
   };
+  mailboxes?: Array<{
+    email: string;
+    status: string;
+    connected: boolean;
+    services: Record<GoogleServiceKey, boolean>;
+    grantedServices: Record<GoogleServiceKey, boolean> | null;
+    requiresReauthorization: boolean;
+    gmailReady?: boolean;
+  }>;
 };
 type WorkspaceResourcesPayload = {
   resources: Array<{
@@ -129,6 +140,7 @@ function unsyncedMirror(): MirrorStatus {
 }
 
 function connectedHealth(): ConnectionHealthPayload {
+  const services = { drive: true, gmail: true, calendar: true, sheets: true };
   return {
     runtimeMode: "workspace",
     simulation: false,
@@ -137,10 +149,19 @@ function connectedHealth(): ConnectionHealthPayload {
       connected: true,
       status: "connected",
       account: "op•••@cherryhillfci.com",
-      services: { drive: true, gmail: true, calendar: true, sheets: true },
-      grantedServices: { drive: true, gmail: true, calendar: true, sheets: true },
+      services,
+      grantedServices: services,
       requiresReauthorization: false,
     },
+    mailboxes: [{
+      email: primaryMailbox,
+      status: "connected",
+      connected: true,
+      services,
+      grantedServices: services,
+      requiresReauthorization: false,
+      gmailReady: true,
+    }],
   };
 }
 
@@ -234,7 +255,11 @@ async function mockStageFourVerificationStatus(
     calendarChecked: false,
   },
 ) {
-  await page.route("**/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status", async (route) => {
+  await page.route("**/api/v1/integrations/google/gmail/messages*", async (route) => {
+    const requestUrl = new URL(route.request().url());
+    expect(requestUrl.searchParams.get("label")).toBe("needs-review");
+    expect(requestUrl.searchParams.get("verification")).toBe("status");
+    expect(requestUrl.searchParams.get("mailbox")).toMatch(/@/);
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -1705,8 +1730,8 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   let resourcePayload = workspaceResources({ connectReady: true });
   let driveVerifyRequest: { method: string; body: string | null } | null = null;
   let driveAdoptRequest: { method: string; body: unknown } | null = null;
-  let gmailPrepareRequest: { method: string; body: string | null } | null = null;
-  let gmailSendRequest: { method: string; body: string | null } | null = null;
+  let gmailPrepareRequest: { method: string; body: string | null; mailbox: string | null } | null = null;
+  let gmailSendRequest: { method: string; body: string | null; mailbox: string | null } | null = null;
   let calendarReadRequest: { method: string; body: string | null } | null = null;
   let sheetsSyncRequest: { method: string; body: string | null } | null = null;
   let resourcesShouldFail = false;
@@ -1755,13 +1780,21 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
     };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ adopted: true, verified: true }) });
   });
-  await page.route("**/api/v1/integrations/google/gmail/labels/prepare", async (route) => {
-    gmailPrepareRequest = { method: route.request().method(), body: route.request().postData() };
+  await page.route("**/api/v1/integrations/google/gmail/labels/prepare*", async (route) => {
+    gmailPrepareRequest = {
+      method: route.request().method(),
+      body: route.request().postData(),
+      mailbox: new URL(route.request().url()).searchParams.get("mailbox"),
+    };
     stageFourVerificationStatus.labelReady = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ prepared: true }) });
   });
-  await page.route("**/api/v1/integrations/google/gmail/send-test", async (route) => {
-    gmailSendRequest = { method: route.request().method(), body: route.request().postData() };
+  await page.route("**/api/v1/integrations/google/gmail/send-test*", async (route) => {
+    gmailSendRequest = {
+      method: route.request().method(),
+      body: route.request().postData(),
+      mailbox: new URL(route.request().url()).searchParams.get("mailbox"),
+    };
     stageFourVerificationStatus.testEmailPassed = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sent: true }) });
   });
@@ -1788,8 +1821,8 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   await expect(page.getByText(missingInvariant, { exact: true })).toBeVisible();
   await setStageExpanded(page, 2, true);
   await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("IN PROGRESS");
-  await expect(setupStage(page, 2).getByRole("heading", { level: 3, name: "Company account authorization", exact: true })).toBeVisible();
-  await expect(setupStage(page, 2).getByRole("button", { name: "Connect Google Workspace" })).toBeEnabled();
+  await expect(setupStage(page, 2).getByRole("heading", { level: 3, name: "Company mailbox authorization", exact: true })).toBeVisible();
+  await expect(setupStage(page, 2).getByRole("button", { name: "Attach mailbox" })).toBeEnabled();
   await setStageExpanded(page, 3, true);
   await expect(creationRow(page, "shared-drive")).toHaveAttribute("data-workspace-creation-state", "FOUND — ADOPT");
   await expect(creationRow(page, "shared-drive")).toContainText("Unlocks after Connect.");
@@ -1814,13 +1847,14 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   await setStageExpanded(page, 4, true);
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("0 OF 3 VERIFIED");
   await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
+  await expect(verificationRow(page, "gmail").getByRole("combobox", { name: /^Mailbox for Gmail verification/ })).toHaveValue(primaryMailbox);
 
   await page.getByRole("button", { name: "Prepare FCI labels" }).click();
-  expect(gmailPrepareRequest).toEqual({ method: "POST", body: null });
+  expect(gmailPrepareRequest).toEqual({ method: "POST", body: null, mailbox: primaryMailbox });
   await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "TEST EMAIL NEEDED");
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("0 OF 3 VERIFIED");
   await page.getByRole("button", { name: "Send Workspace test" }).click();
-  expect(gmailSendRequest).toEqual({ method: "POST", body: "{}" });
+  expect(gmailSendRequest).toEqual({ method: "POST", body: "{}", mailbox: primaryMailbox });
   await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "VERIFIED");
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("1 OF 3 VERIFIED");
   await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
@@ -1864,6 +1898,9 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
     let calendarChecked = initial.calendarChecked ?? false;
     let gmailStatusFailure = false;
     let calendarStatusFailure = false;
+    let gmailVerificationReads = 0;
+    let gmailPrepareRequests = 0;
+    let gmailSendRequests = 0;
     const syncedAt = Date.now();
     let mirror: MirrorStatus = initial.sheetsSynced
       ? {
@@ -1885,7 +1922,10 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
       });
     });
     await page.route("**/api/v1/integrations/google/gmail/messages*", async (route) => {
-      const verificationOnly = new URL(route.request().url()).searchParams.get("verification") === "status";
+      const requestUrl = new URL(route.request().url());
+      const verificationOnly = requestUrl.searchParams.get("verification") === "status";
+      expect(requestUrl.searchParams.get("mailbox")).toBe(primaryMailbox);
+      if (verificationOnly) gmailVerificationReads += 1;
       if (verificationOnly && gmailStatusFailure) {
         await route.fulfill({
           status: 503,
@@ -1906,7 +1946,9 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
         }),
       });
     });
-    await page.route("**/api/v1/integrations/google/gmail/labels/prepare", async (route) => {
+    await page.route("**/api/v1/integrations/google/gmail/labels/prepare*", async (route) => {
+      expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(primaryMailbox);
+      gmailPrepareRequests += 1;
       labelReady = true;
       await route.fulfill({
         status: 200,
@@ -1914,7 +1956,9 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
         body: JSON.stringify({ prepared: true }),
       });
     });
-    await page.route("**/api/v1/integrations/google/gmail/send-test", async (route) => {
+    await page.route("**/api/v1/integrations/google/gmail/send-test*", async (route) => {
+      expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(primaryMailbox);
+      gmailSendRequests += 1;
       testEmailPassed = true;
       await route.fulfill({
         status: 200,
@@ -1977,6 +2021,9 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
         if (next.gmail !== undefined) gmailStatusFailure = next.gmail;
         if (next.calendar !== undefined) calendarStatusFailure = next.calendar;
       },
+      gmailVerificationReads: () => gmailVerificationReads,
+      gmailPrepareRequests: () => gmailPrepareRequests,
+      gmailSendRequests: () => gmailSendRequests,
     };
   }
 
@@ -1988,10 +2035,11 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
     await expect(verificationRow(page, "sheets")).toHaveAttribute("data-stage-four-state", "VERIFIED");
   }
 
-  test("rehydrates READY after reload and an in-app navigate-away-and-back", async ({ page }) => {
-    await mockDurableStageFourState(page);
+  test("keeps Gmail verification action-gated across reload while explicit mailbox actions restore READY", async ({ page }) => {
+    const durable = await mockDurableStageFourState(page);
     await page.goto("/settings?section=google-workspace#workspace-stage-4");
     await setStageExpanded(page, 4, true);
+    await expect(verificationRow(page, "gmail").getByRole("combobox", { name: /^Mailbox for Gmail verification/ })).toHaveValue(primaryMailbox);
 
     await verificationRow(page, "gmail").getByRole("button", { name: "Prepare FCI labels" }).click();
     await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "TEST EMAIL NEEDED");
@@ -2001,9 +2049,23 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
     await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "VERIFIED");
     await verificationRow(page, "sheets").getByRole("button", { name: "Sync now" }).click();
     await expectStageFourReady(page);
+    expect(durable.gmailVerificationReads()).toBe(0);
+    expect(durable.gmailPrepareRequests()).toBe(1);
+    expect(durable.gmailSendRequests()).toBe(1);
 
     await page.reload();
+    await setStageExpanded(page, 4, true);
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
+    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    await expect(verificationRow(page, "sheets")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("2 OF 3 VERIFIED");
+    expect(durable.gmailVerificationReads()).toBe(0);
+
+    await verificationRow(page, "gmail").getByRole("button", { name: "Prepare FCI labels" }).click();
+    await verificationRow(page, "gmail").getByRole("button", { name: "Send Workspace test" }).click();
     await expectStageFourReady(page);
+    expect(durable.gmailPrepareRequests()).toBe(2);
+    expect(durable.gmailSendRequests()).toBe(2);
 
     await page.locator(".settings-nav").getByRole("button", { name: "Calendar & appointments", exact: true }).click();
     await expect(page.getByRole("heading", { level: 2, name: "Calendar & appointments", exact: true })).toBeVisible();
@@ -2011,20 +2073,27 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
     await expectStageFourReady(page);
   });
 
-  test("reflects a server-ready Gmail label on the first render without inventing a test send", async ({ page }) => {
-    await mockDurableStageFourState(page, { labelReady: true });
+  test("keeps a server-ready Gmail label action-gated until the attached-mailbox action runs", async ({ page }) => {
+    const durable = await mockDurableStageFourState(page, { labelReady: true });
     await page.goto("/settings?section=google-workspace#workspace-stage-4");
     await setStageExpanded(page, 4, true);
 
     const gmail = verificationRow(page, "gmail");
-    await expect(gmail).toHaveAttribute("data-stage-four-state", "TEST EMAIL NEEDED");
-    await expect(gmail).not.toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
+    await expect(gmail.getByRole("combobox", { name: /^Mailbox for Gmail verification/ })).toHaveValue(primaryMailbox);
+    await expect(gmail).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
+    await expect(gmail).not.toHaveAttribute("data-stage-four-state", "TEST EMAIL NEEDED");
+    expect(durable.gmailVerificationReads()).toBe(0);
     await expect(gmail.getByRole("button", { name: "Prepare FCI labels" })).toBeVisible();
     await expect(gmail.getByRole("button", { name: "Refresh FCI labels" })).toHaveCount(0);
+    await gmail.getByRole("button", { name: "Prepare FCI labels" }).click();
+    await expect(gmail).toHaveAttribute("data-stage-four-state", "TEST EMAIL NEEDED");
+    expect(durable.gmailPrepareRequests()).toBe(1);
+    expect(durable.gmailSendRequests()).toBe(0);
+    expect(durable.gmailVerificationReads()).toBe(0);
     await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("0 OF 3 VERIFIED");
   });
 
-  test("retains stale verification on transient failures and reconciles exact recovered booleans", async ({ page }) => {
+  test("retains action-established Gmail verification through lifecycle refresh and resets it on reload", async ({ page }) => {
     const durable = await mockDurableStageFourState(page, {
       labelReady: true,
       testEmailPassed: true,
@@ -2032,9 +2101,14 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
       sheetsSynced: true,
     });
     await page.goto("/settings?section=google-workspace#workspace-stage-4");
+    await setStageExpanded(page, 4, true);
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
+    await verificationRow(page, "gmail").getByRole("button", { name: "Prepare FCI labels" }).click();
+    await verificationRow(page, "gmail").getByRole("button", { name: "Send Workspace test" }).click();
     await expectStageFourReady(page);
+    expect(durable.gmailVerificationReads()).toBe(0);
 
-    durable.setStatusFailures({ gmail: true, calendar: true });
+    durable.setStatusFailures({ calendar: true });
     await triggerAutomaticWorkspaceRefresh(page);
     await setStageExpanded(page, 4, true);
     await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("READY");
@@ -2043,8 +2117,9 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
     await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "VERIFIED");
     await expect(verificationRow(page, "gmail").getByRole("button", { name: "Prepare FCI labels" })).toBeVisible();
     await expect(verificationRow(page, "gmail").getByRole("button", { name: "Refresh FCI labels" })).toHaveCount(0);
+    expect(durable.gmailVerificationReads()).toBe(0);
 
-    durable.setStatusFailures({ gmail: false, calendar: false });
+    durable.setStatusFailures({ calendar: false });
     durable.setDurableState({
       labelReady: false,
       testEmailPassed: false,
@@ -2057,20 +2132,23 @@ test.describe("FIX-13 Stage 4 verification durability", () => {
     // deliberately not enrolled: /gmail/messages resolves a mailbox API client
     // and a live label lookup before it reads its `verification` parameter, so
     // enrolling it would cost an OAuth refresh-token grant and a mailbox round
-    // trip on every focus. It stays mount- and action-gated and keeps showing
+    // trip on every focus. It stays action-gated and keeps showing
     // its last read value — which is also why Calendar reads READY TO VERIFY
     // instead of WAITING here: its actions are still unblocked by a Gmail step
     // that has not been re-read yet.
     await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
     await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    expect(durable.gmailVerificationReads()).toBe(0);
 
-    // A fresh mount is how the panel asks for the Gmail verification read again.
+    // A fresh mount intentionally resets Gmail to the explicit-action state;
+    // no mailbox API request may happen merely because the panel mounted.
     await page.reload();
     await setStageExpanded(page, 4, true);
     await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("1 OF 3 VERIFIED");
     await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
     await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "WAITING");
     await expect(verificationRow(page, "sheets")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    expect(durable.gmailVerificationReads()).toBe(0);
   });
 
   test("keeps unavailable services waiting without making pre-connect verification reads", async ({ page }) => {
@@ -2688,6 +2766,7 @@ test.describe("SET-38 Stage 3 subsection disclosures", () => {
       runtimeMode: "simulation",
       simulation: true,
       connection: { ...connectedHealth().connection, account: "Local Workspace simulation", grantedServices: null },
+      mailboxes: undefined,
     };
     await mockConnectionHealth(page, simulationHealth);
     await page.route("**/api/v1/google-workspace", async (route) => {
@@ -3067,8 +3146,10 @@ test("OAuth callback state is removed only after an automatic forced readiness r
   await expect(page).toHaveURL(/\/settings\?section=google-workspace$/);
 });
 
-test("administrator connection health expander preserves account, permissions, warnings, and keyboard access without duplicate status", async ({ page }) => {
+test("administrator connection health expander preserves per-mailbox permissions, warnings, and keyboard access without duplicate status", async ({ page }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: e2eOrigin });
+  const reauthorizationMailbox = "detail@connection-detail.example";
+  const healthyMailbox = "archive@connection-detail.example";
   const health: ConnectionHealthPayload = {
     runtimeMode: "workspace",
     simulation: false,
@@ -3081,6 +3162,25 @@ test("administrator connection health expander preserves account, permissions, w
       grantedServices: { drive: true, gmail: false, calendar: true, sheets: false },
       requiresReauthorization: true,
     },
+    mailboxes: [
+      {
+        email: reauthorizationMailbox,
+        connected: false,
+        status: "reauthorization-required",
+        services: { drive: false, gmail: false, calendar: false, sheets: false },
+        grantedServices: { drive: true, gmail: false, calendar: true, sheets: false },
+        requiresReauthorization: true,
+      },
+      {
+        email: healthyMailbox,
+        connected: true,
+        status: "connected",
+        services: { drive: true, gmail: true, calendar: false, sheets: false },
+        grantedServices: { drive: true, gmail: true, calendar: false, sheets: false },
+        requiresReauthorization: false,
+        gmailReady: true,
+      },
+    ],
   };
   await mockConnectionHealth(page, health);
   await page.route("**/api/v1/google-workspace", async (route) => {
@@ -3108,51 +3208,57 @@ test("administrator connection health expander preserves account, permissions, w
   const card = stageTwo.locator("details.workspace-connection-health");
   const healthToggle = card.locator("summary");
   await expect(healthToggle.getByText("Connection health", { exact: true })).toBeVisible();
-  await expect(healthToggle).toContainText("Account and recorded service permissions");
+  await expect(healthToggle).toContainText("Attached mailboxes and recorded service permissions");
   await expect(card).not.toHaveAttribute("open", "");
-  await expect(card.getByText(health.connection.account!, { exact: true })).toBeHidden();
-  await expect(card.locator(".workspace-connection-service-table")).toBeHidden();
+  await expect(card.getByText(reauthorizationMailbox, { exact: true })).toBeHidden();
+  await expect(card.getByText(healthyMailbox, { exact: true })).toBeHidden();
+  await expect(card.locator(".workspace-connection-service-table")).toHaveCount(2);
+  await expect(card.locator(".workspace-connection-service-table").first()).toBeHidden();
 
   await healthToggle.focus();
   await expect(healthToggle).toBeFocused();
   await healthToggle.press("Enter");
   await expect(card).toHaveAttribute("open", "");
-  await expect(card).toContainText(health.connection.account!);
+  await expect(card).toContainText(reauthorizationMailbox);
+  await expect(card).toContainText(healthyMailbox);
   await expect(card).not.toContainText("summary-only@example.test");
   await expect(healthToggle).not.toContainText(/Workspace|Reauthorization Required|Connected/);
-  await expect(card.locator("dt")).toHaveCount(1);
-  await expect(card.locator("dt")).toHaveText("Account");
-  await expect(card.locator("dt")).not.toHaveText(/Mode|Status/);
-  await expect(card.getByText("Reauthorization required:", { exact: true })).toBeVisible();
-  await expect(card).toContainText("Disconnect this saved connection, then reconnect the exact approved account and approve every enabled service.");
+  const reauthorizationRegion = card.getByRole("region", { name: reauthorizationMailbox, exact: true });
+  const healthyRegion = card.getByRole("region", { name: healthyMailbox, exact: true });
+  await expect(reauthorizationRegion.getByText("Not connected", { exact: true })).toBeVisible();
+  await expect(healthyRegion.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(reauthorizationRegion.getByText("Reauthorization required:", { exact: true })).toBeVisible();
+  await expect(reauthorizationRegion).toContainText("Use Attach mailbox and sign in to this exact account again, approving every enabled service.");
 
   const expectedRows: Array<{ service: string; enabled: string; grant: string }> = [
-    { service: "Shared Drive", enabled: "Enabled", grant: "Granted" },
-    { service: "Gmail", enabled: "Enabled", grant: "Not granted" },
+    { service: "Shared Drive", enabled: "Unavailable", grant: "Granted" },
+    { service: "Gmail", enabled: "Unavailable", grant: "Not granted" },
     { service: "Calendar", enabled: "Not enabled", grant: "Granted" },
     { service: "Sheets", enabled: "Not enabled", grant: "Not granted" },
   ];
-  const rows = card.locator(".workspace-connection-service-table tbody tr");
-  await expect(rows).toHaveCount(Object.keys(health.connection.grantedServices!).length);
+  const rows = reauthorizationRegion.locator(".workspace-connection-service-table tbody tr");
+  await expect(rows).toHaveCount(Object.keys(health.mailboxes![0].grantedServices!).length);
   for (const expected of expectedRows) {
     const row = rows.filter({ hasText: expected.service });
     await expect(row.locator("td").nth(0)).toHaveText(expected.service);
     await expect(row.locator("td").nth(1)).toHaveText(expected.enabled);
     await expect(row.locator("td").nth(2)).toHaveText(expected.grant);
   }
+  await expect(healthyRegion.locator(".workspace-connection-service-table tbody tr")).toHaveCount(4);
   await expect(card).toContainText("It is not a live provider-health or freshness check.");
-  await expect(stageTwo.getByRole("button", { name: "Disconnect Workspace" })).toBeVisible();
-  await expect(stageTwo.getByRole("button", { name: "Reconnect Google Workspace" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Disconnect Workspace" })).toHaveCount(1);
-  await expect(card.getByRole("button", { name: "Disconnect Workspace" })).toHaveCount(0);
-  await expect(card.getByRole("button", { name: "Reconnect Google Workspace" })).toHaveCount(0);
+  await expect(stageTwo.getByRole("button", { name: `Disconnect ${reauthorizationMailbox}`, exact: true })).toBeVisible();
+  await expect(stageTwo.getByRole("button", { name: `Disconnect ${healthyMailbox}`, exact: true })).toBeVisible();
+  await expect(stageTwo.getByRole("button", { name: "Attach mailbox", exact: true })).toBeVisible();
+  await expect(stageTwo.getByRole("button", { name: /^Disconnect / })).toHaveCount(2);
+  await expect(card.getByRole("button", { name: /^Disconnect / })).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Attach mailbox", exact: true })).toHaveCount(0);
 
   const stageThree = setupStage(page, 3);
   const resourcesCard = creationCard(page);
   await setStageExpanded(page, 3, true);
   await expect(resourcesCard).toBeVisible();
   await expect(stageTwo.locator("details.workspace-connection-health")).toHaveCount(1);
-  await expect(stageTwo.getByRole("heading", { level: 3, name: "Company account authorization", exact: true })).toHaveCount(1);
+  await expect(stageTwo.getByRole("heading", { level: 3, name: "Company mailbox authorization", exact: true })).toHaveCount(1);
   await expect(creationCard(page)).toHaveCount(1);
   await expect(stageThree.locator(".workspace-blueprint-card")).toHaveCount(1);
   await expect(stageThree.locator(".workspace-setup-step")).toHaveCount(0);
@@ -3213,8 +3319,8 @@ test("administrator edits and saves a structured Workspace blueprint while syste
   const connectionHealth = setupStage(page, 2).locator("details.workspace-connection-health");
   await expect(connectionHealth.locator("summary")).toBeVisible();
   await expect(connectionHealth).not.toHaveAttribute("open", "");
-  await expect(page.getByRole("button", { name: "Disconnect Workspace" })).toHaveCount(1);
-  await expect(connectionHealth.getByRole("button", { name: "Disconnect Workspace" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: `Disconnect ${primaryMailbox}`, exact: true })).toHaveCount(1);
+  await expect(connectionHealth.getByRole("button", { name: /^Disconnect / })).toHaveCount(0);
   await expect(blueprintCard.getByLabel("holidays calendar display name", { exact: true })).toHaveValue("FCI Holidays");
 
   const correspondence = blueprintCard.getByLabel("05_Correspondence folder name", { exact: true });
@@ -3348,6 +3454,7 @@ test("simulation reset reloads the seed blueprint after deleting the saved simul
     runtimeMode: "simulation",
     simulation: true,
     connection: { ...connectedHealth().connection, account: "Local Workspace simulation", grantedServices: null },
+    mailboxes: undefined,
   };
   await mockConnectionHealth(page, simulationHealth);
   await page.route("**/api/v1/google-workspace", async (route) => {
@@ -3448,6 +3555,15 @@ test("simulation labels every OAuth permission not applicable instead of claimin
       grantedServices: null,
       requiresReauthorization: false,
     },
+    mailboxes: [{
+      email: simulationMailbox,
+      status: "connected",
+      connected: true,
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: null,
+      requiresReauthorization: false,
+      gmailReady: true,
+    }],
   };
   await page.unroute("**/api/v1/integrations/google/setup/resources");
   await mockWorkspaceResources(page, workspaceResources({
@@ -3484,15 +3600,16 @@ test("simulation labels every OAuth permission not applicable instead of claimin
   const healthToggle = card.locator("summary");
   await expect(healthToggle).toBeVisible();
   await expect(card).not.toHaveAttribute("open", "");
-  await expect(card.getByText("Local Workspace simulation", { exact: true })).toBeHidden();
+  await expect(card.getByText(simulationMailbox, { exact: true })).toBeHidden();
   await healthToggle.focus();
   await healthToggle.press("Enter");
   await expect(card).toHaveAttribute("open", "");
-  await expect(card).toContainText("Local Workspace simulation");
+  await expect(card).toContainText(simulationMailbox);
+  await expect(card).not.toContainText("Local Workspace simulation");
   await expect(card.locator(".workspace-connection-service-table tbody tr")).toHaveCount(4);
   await expect(card.getByText("Not applicable — simulated", { exact: true })).toHaveCount(4);
   await expect(card.getByText("Granted", { exact: true })).toHaveCount(0);
-  await expect(card.getByRole("button", { name: "Disconnect Workspace" })).toHaveCount(0);
+  await expect(card.getByRole("button", { name: /^Disconnect / })).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(card).toBeVisible();
@@ -3780,6 +3897,7 @@ test("simulation creation journey adopts Drive, ensures roots, spreadsheets, and
     runtimeMode: "simulation",
     simulation: true,
     connection: { ...connectedHealth().connection, account: "Local Workspace simulation", grantedServices: null },
+    mailboxes: undefined,
   };
   await mockConnectionHealth(page, health);
   await page.route("**/api/v1/google-workspace", async (route) => {

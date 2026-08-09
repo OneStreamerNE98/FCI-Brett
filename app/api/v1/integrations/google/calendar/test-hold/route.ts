@@ -4,6 +4,7 @@ import {
   acquireWorkspaceSetupLease,
   completeWorkspaceSetupLease,
   failWorkspaceSetupLease,
+  googleConnectionLeaseFence,
   type WorkspaceSetupLease,
 } from "../../../../../../adapters/d1/workspace-setup-leases";
 import { GoogleIntegrationError, getEffectiveGoogleRuntimeSetup, writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth-sites";
@@ -83,6 +84,7 @@ export async function POST(request: NextRequest) {
       scopeKey: "calendar-test-hold",
       actor: auth.user.email,
       now,
+      connectionFence: googleConnectionLeaseFence(config),
     });
     if (!lease) {
       return noStore({
