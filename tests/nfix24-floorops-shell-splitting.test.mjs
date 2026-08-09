@@ -60,7 +60,8 @@ test("NFIX-24 route loading and failure behavior stays accessible and honest", a
     ["AI Assistant", "Clients", "Inbox", "Leads", "Projects", "Schedule"],
     "all six route chunks must share the dynamic loading/error callback",
   );
-  assert.match(app, /function MajorViewLoading\(\{ view, error, isLoading = true, retry \}[\s\S]{0,180}if \(error \|\| isLoading === false\) \{[\s\S]{0,300}state="error"[\s\S]{0,300}onRetry=\{retry \?\? \(\(\) => window\.location\.reload\(\)\)\}[\s\S]{0,300}retryLabel="Try again"/u);
+  assert.match(app, /function retryMajorViewLoad\(retry\?: \(\) => void\) \{\s*retry\?\.\(\);\s*window\.location\.reload\(\);\s*\}/u);
+  assert.match(app, /function MajorViewLoading\(\{ view, error, isLoading = true, retry \}[\s\S]{0,180}if \(error \|\| isLoading === false\) \{[\s\S]{0,300}state="error"[\s\S]{0,300}onRetry=\{\(\) => retryMajorViewLoad\(retry\)\}[\s\S]{0,300}retryLabel="Try again"/u);
   assert.doesNotMatch(app, /\b(?:lazy|Suspense|loadMajorViewWithDeadline)\b/u);
   assert.doesNotMatch(app, /majorView[\s\S]{0,80}(?:setTimeout|setInterval)/iu);
   assert.match(app, /if \(preload\) void preload\(\)\.catch\(\(\) => undefined\)/u);

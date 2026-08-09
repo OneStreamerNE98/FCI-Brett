@@ -150,6 +150,11 @@ function createMajorViewLoading(view: OperationsView) {
   };
 }
 
+function retryMajorViewLoad(retry?: () => void) {
+  retry?.();
+  window.location.reload();
+}
+
 const LazyAssistantView = dynamic(() => loadAssistantView().then((module) => module.AssistantView), { ssr: false, loading: createMajorViewLoading("AI Assistant") });
 const LazyClientsView = dynamic(() => loadClientsView().then((module) => module.ClientsView), { ssr: false, loading: createMajorViewLoading("Clients") });
 const LazyInboxView = dynamic(() => loadInboxView().then((module) => module.InboxView), { ssr: false, loading: createMajorViewLoading("Inbox") });
@@ -1258,7 +1263,7 @@ function MajorViewLoading({ view, error, isLoading = true, retry }: MajorViewDyn
     return <ClientDataNotice
       state="error"
       error={`The ${view} workspace view could not be prepared. Try again.`}
-      onRetry={retry ?? (() => window.location.reload())}
+      onRetry={() => retryMajorViewLoad(retry)}
       errorTitle={`${view} could not be loaded`}
       retryLabel="Try again"
     />;

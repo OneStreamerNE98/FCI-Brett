@@ -15,19 +15,29 @@ test("a rejected lazy major-view loader shows an alert and retry instead of hang
     process.env.FCI_E2E_EXTERNAL_SERVER === "true",
     "The source-module rejection fixture requires the isolated local Vite runtime.",
   );
-  let rejectedInboxModule = false;
+  let inboxModuleRequests = 0;
   await page.route("**/app/inbox/components/InboxView.tsx*", async (route) => {
-    rejectedInboxModule = true;
-    await route.abort("failed");
+    inboxModuleRequests += 1;
+    if (inboxModuleRequests === 1) {
+      await route.abort("failed");
+      return;
+    }
+    await route.continue();
   });
 
   await page.goto("/inbox");
-  await expect.poll(() => rejectedInboxModule).toBe(true);
+  await expect.poll(() => inboxModuleRequests).toBe(1);
 
   const failure = page.getByRole("alert").filter({ hasText: "Inbox could not be loaded" });
   await expect(failure).toContainText("The Inbox workspace view could not be prepared. Try again.");
-  await expect(failure.getByRole("button", { name: "Try again" })).toBeVisible();
+  const retry = failure.getByRole("button", { name: "Try again" });
+  await expect(retry).toBeVisible();
+  await expect(retry).toBeEnabled();
   await expect(page.getByRole("status").filter({ hasText: "Loading Inbox" })).toHaveCount(0);
+
+  await retry.press("Enter");
+  await expect.poll(() => inboxModuleRequests).toBe(2);
+  await expect(page.getByRole("heading", { level: 1, name: "Gmail project inbox" })).toBeVisible();
 });
 
 test("a deliberate descendant render failure shows recovery instead of a blank page", async ({ page }) => {
