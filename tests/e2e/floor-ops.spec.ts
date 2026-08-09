@@ -528,6 +528,22 @@ test("inbox keeps one primary load action and exposes semantic status details", 
 });
 
 test("assistant exposes one visible project context and one suggested-question family", async ({ page }) => {
+  await page.route("**/api/v1/assistant", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        mode: "records-only",
+        answer: "FCI TEST — DO NOT USE — The selected project is ready for review.",
+        citations: [{
+          id: "project:test",
+          label: "Project record",
+          detail: "FCI TEST — DO NOT USE — Bounded project evidence.",
+        }],
+        missingEvidence: "No archived email evidence is attached yet.",
+      }),
+    });
+  });
   await page.goto("/assistant");
   await expect(page.getByRole("heading", { level: 1, name: "Ask FCI Assistant" })).toBeVisible();
   const askTab = page.getByRole("tab", { name: "Ask", exact: true });
@@ -555,6 +571,20 @@ test("assistant exposes one visible project context and one suggested-question f
     await expect(page.getByRole("button", { name: new RegExp(question.replace(/[?]/g, "\\?")) })).toHaveCount(1);
   }
   await expect(page.locator(".assistant-main").getByRole("button", { name: /current project status|primary contact|email archives|evidence has not/i })).toHaveCount(0);
+
+  const projectOption = projectContext.locator("option").filter({ hasText: projectName });
+  const projectId = await projectOption.getAttribute("value");
+  expect(projectId).toBeTruthy();
+  await projectContext.selectOption(projectId!);
+  await page.getByLabel("Ask FCI Assistant").fill("What is the current project status?");
+  await page.getByRole("button", { name: "Send question" }).click();
+
+  const answer = page.locator(".ai-answer");
+  await expect(answer).toContainText("The selected project is ready for review.");
+  const accessibility = await new AxeBuilder({ page }).include(".ai-answer").analyze();
+  expect(
+    accessibility.violations.filter(({ impact }) => impact === "serious" || impact === "critical"),
+  ).toEqual([]);
 });
 
 test("reports explain active project coverage and expose semantic lifecycle drill-through", async ({ page }) => {

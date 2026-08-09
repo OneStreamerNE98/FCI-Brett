@@ -122,20 +122,23 @@ agent ledger rather than duplicated here.
 3. **Feature-boundary track**
    - [x] PR #29 established shared operations boundaries; PRs #35/#37 extracted Settings surfaces; PRs #327/#328 extracted the four record views and modal/drawer cluster.
    - [x] Tests moved with those component boundaries while rendered behavior remained pinned.
+   - [ ] Consolidate duplicated Inbox and Settings Google workflows behind shared hooks/components. This unfinished criterion remains open in `docs/task-checklists/09-frontend-and-multi-user-hardening.md` and is assigned to the canonical NFIX-22/NFIX-23 sequence, which centralizes the neutral Gmail contracts before decomposing the Workspace state hooks. It is not dispatchable from this historical ledger.
    - [x] Further shell splitting is explicitly owned by NFIX-24 and does not remain as an unnamed item here.
 4. **Legacy CSS track**
    - [x] PRs #119/#208 removed audited dead rules, aliases, losing overrides, and redundant responsive declarations.
    - [x] PRs #126/#309 normalized surfaces and fixed control sizing, backed by the undersized-control and token-drift guards.
    - [x] PR #318 retired the remaining dead webfont load and inline-style island identified by the later audit.
 
-DES-09/PR #359 performs the final cross-ledger reconciliation; no Phase-3 item remains
-dispatchable from this document.
+DES-09/PR #359 performs the final cross-ledger reconciliation. Completed Phase-3 work
+closes here; the unfinished Google-workflow consolidation remains owned by NFIX-22/NFIX-23
+and the owner checklist until those canonical packet status lines are complete. No work is
+dispatchable from this historical document.
 
 ### Phase 4 — durable guardrails
 
 - [x] Axe serious/critical checks exist for the primary durable routes and run in CI.
 - [x] Add Schedule and 390 px coverage to the axe route matrix.
-- [x] Modal, drawer, search, Access boundary, Inbox connection/error, Assistant answer, and layout-editor states have focused axe coverage across their owning PRs; PR #359 adds the remaining notifications-popover assertion.
+- [x] Modal, drawer, search, Access boundary, Inbox connection/error, and layout-editor states have focused axe coverage across their owning PRs; PR #359 adds the remaining notifications-popover and rendered Assistant-answer assertions.
 - [x] Close the historical screenshot-tour item: the checked-in Playwright harness supplies configurable origin, deterministic server startup, and failure propagation; PR #359 captured the approved references after visible route identity and settled network activity. Reference capture is evidence, not a golden-image regression gate.
 - [x] Add a CSS regression guard for new sub-12 px declarations.
 - [x] Add a CSS regression guard for undersized fixed controls (PR #126; mutation-sensitive guard retained in `tests/rendered-html.test.mjs`).
@@ -143,7 +146,7 @@ dispatchable from this document.
 
 Phase 4 is closed by DES-09/PR #359. The typography guard has an empty
 `font-size:0` allowlist, the undersized-control guard is mutation-sensitive, and the
-frozen Overview and Reports hashes plus their three Node pinning suites remain unchanged.
+frozen Overview and Reports hashes plus their four Node pinning suites remain unchanged.
 
 ## Verification gates for this release
 
@@ -163,9 +166,11 @@ frozen Overview and Reports hashes plus their three Node pinning suites remain u
   1280×800 and 390×844 under `docs/design-baseline/2026-08-09/`.
 - `tests/e2e/frontend-correctness.spec.ts` now runs one serious/critical axe assertion
   against the open `#notifications-popover` state.
+- `tests/e2e/floor-ops.spec.ts` renders a bounded project-record answer and runs a
+  serious/critical axe assertion against the visible `.ai-answer` state.
 - The typography and undersized-control guards pass with the `font-size:0` allowlist
   empty and the control-size mutation probe intact.
-- The Overview and Reports golden constants and all three Node pinning suites are
+- The Overview and Reports golden constants and all four Node pinning suites are
   byte-identical to the branch base; DES-09 performs no golden regeneration.
 - The packet changes docs, tests, and reference screenshots only. It does not change
   application behavior, data, schema, migration, authorization, configuration, external
