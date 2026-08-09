@@ -14,6 +14,8 @@ import { projectCreationHttpResult } from "../../../lib/creation-http-result";
 import { getConnectionScope, getEffectiveGoogleRuntimeSetup } from "../../../lib/google-oauth-sites";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
+import { encodeCursor, decodeCursor, parsePaginationParams } from "../../../lib/list-cursor";
+import type { TimestampKeyset } from "../../../lib/list-cursor";
 import {
   releaseFailedAddressMutation,
   resolveAddressMutation,
@@ -28,30 +30,66 @@ function authorizedProjectManagerId(candidate: unknown, authenticatedActorId: st
   return officeIdentityForEmail(normalized.value)?.email ?? null;
 }
 
+function mapProjectRow(row: Record<string, unknown>, isAdmin: boolean) {
+  const projectManagerId = authorizedProjectManagerId(row.project_manager, "");
+  const { client_industry: clientIndustry, ...publicRecord } = row;
+  return {
+    ...publicRecord,
+    project_manager: projectManagerId,
+    project_manager_id: projectManagerId,
+    contract_value: isAdmin ? row.contract_value : null,
+    segment: resolveProjectSegment(row.segment, clientIndustry),
+  };
+}
+
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
   const config = getConnectionScope();
   const clientId = request.nextUrl.searchParams.get("clientId");
+
+  const params = parsePaginationParams(request.nextUrl.searchParams);
+  if (!params.ok) return NextResponse.json({ error: params.error }, { status: 400 });
+
+  let cursorTs: number | null = null;
+  let cursorId: string | null = null;
+  if (params.cursor) {
+    const decoded = decodeCursor(params.cursor);
+    if (!decoded.ok || !("updatedAt" in decoded.keyset)) {
+      return NextResponse.json({ error: "Invalid cursor." }, { status: 400 });
+    }
+    const keyset = decoded.keyset as TimestampKeyset;
+    cursorTs = keyset.updatedAt;
+    cursorId = keyset.id;
+  }
+
+  const queryLimit = params.limit + 1; // fetch one extra row to detect has-more
+
   // Resolve links only from the active provider. Simulation and the company
   // Shared Drive keep independent mappings for the same project.
-  const query = "SELECT p.id, p.project_number, p.client_id, p.name, p.status, p.site, p.latitude, p.longitude, p.address_validation_verdict, p.project_manager, p.estimated_value, p.flooring_category, p.square_feet, p.contract_value, p.segment, p.installation_started_at, p.installation_completed_at, p.had_callback, p.callback_note, p.created_by, p.created_at, p.updated_at, CAST(p.version AS TEXT) AS version, c.name AS client_name, c.client_code, c.industry AS client_industry, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url FROM projects p JOIN clients c ON c.id = p.client_id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'project' AND m.entity_id = p.id AND m.folder_key = 'project-root'" + (clientId ? " WHERE p.client_id = ?" : "") + " ORDER BY p.updated_at DESC";
-  const statement = env.DB.prepare(query);
-  const result = clientId ? await statement.bind(config.connectionKey, clientId).all() : await statement.bind(config.connectionKey).all();
-  const projects = result.results.map((row: unknown) => {
-    const record = row as Record<string, unknown>;
-    const projectManagerId = authorizedProjectManagerId(record.project_manager, auth.user.email);
-    const { client_industry: clientIndustry, ...publicRecord } = record;
-    return {
-      ...publicRecord,
-      project_manager: projectManagerId,
-      project_manager_id: projectManagerId,
-      contract_value: auth.user.isAdmin ? record.contract_value : null,
-      segment: resolveProjectSegment(record.segment, clientIndustry),
-    };
-  });
-  return NextResponse.json({ projects }, { headers: { "Cache-Control": "no-store" } });
+  const baseQuery =
+    "SELECT p.id, p.project_number, p.client_id, p.name, p.status, p.site, p.latitude, p.longitude, p.address_validation_verdict, p.project_manager, p.estimated_value, p.flooring_category, p.square_feet, p.contract_value, p.segment, p.installation_started_at, p.installation_completed_at, p.had_callback, p.callback_note, p.created_by, p.created_at, p.updated_at, CAST(p.version AS TEXT) AS version, c.name AS client_name, c.client_code, c.industry AS client_industry, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url FROM projects p JOIN clients c ON c.id = p.client_id LEFT JOIN drive_folder_mappings m ON m.connection_key = ?1 AND m.entity_type = 'project' AND m.entity_id = p.id AND m.folder_key = 'project-root'";
+
+  let query: string;
+  let result: { results: unknown[] };
+  if (clientId) {
+    query = `${baseQuery} WHERE p.client_id = ?2 AND (?3 IS NULL OR p.updated_at < ?3 OR (p.updated_at = ?3 AND p.id < ?4)) ORDER BY p.updated_at DESC, p.id DESC LIMIT ?5`;
+    result = await env.DB.prepare(query).bind(config.connectionKey, clientId, cursorTs, cursorId, queryLimit).all();
+  } else {
+    query = `${baseQuery} WHERE ?2 IS NULL OR p.updated_at < ?2 OR (p.updated_at = ?2 AND p.id < ?3) ORDER BY p.updated_at DESC, p.id DESC LIMIT ?4`;
+    result = await env.DB.prepare(query).bind(config.connectionKey, cursorTs, cursorId, queryLimit).all();
+  }
+
+  const rows = result.results as Record<string, unknown>[];
+  const hasMore = rows.length > params.limit;
+  const page = hasMore ? rows.slice(0, params.limit) : rows;
+  const projects = page.map((row) => mapProjectRow(row, auth.user.isAdmin));
+  const nextCursor = hasMore
+    ? encodeCursor({ updatedAt: page[page.length - 1].updated_at as number, id: page[page.length - 1].id as string })
+    : null;
+
+  return NextResponse.json({ projects, nextCursor }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest) {

@@ -98,9 +98,9 @@ function harness(options = {}) {
       timeline.push("capability-current");
       return options.capabilityCurrent ?? true;
     },
-    async listProjectsForScope() { throw new Error("not used"); },
+    async listProjectsForScope() { return { items: [], nextCursor: null }; },
     async getProjectForScope() { throw new Error("not used"); },
-    async listClientsForScope() { throw new Error("not used"); },
+    async listClientsForScope() { return { items: [], nextCursor: null }; },
     async searchProjectsForScope() { throw new Error("not used"); },
     async getDashboardForScope() { throw new Error("not used"); },
   };

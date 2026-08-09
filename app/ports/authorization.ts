@@ -76,6 +76,11 @@ export type AuthorizedDashboardSummary = Readonly<{
   estimatedValueTotal?: number;
 }>;
 
+export type PaginatedList<T> = Readonly<{
+  items: readonly T[];
+  nextCursor: string | null;
+}>;
+
 /**
  * Read-only authorization and scoped-record boundary. Callers supply only a
  * canonical SHA-256 digest, never a raw session credential. Every record query
@@ -107,7 +112,8 @@ export interface AuthorizationRepository {
     scope: AuthorizationRecordScope,
     now: number,
     limit: number,
-  ): Promise<readonly AuthorizedProjectSummary[]>;
+    cursor?: string | null,
+  ): Promise<PaginatedList<AuthorizedProjectSummary>>;
   getProjectForScope(
     scope: AuthorizationRecordScope,
     projectId: string,
@@ -117,7 +123,8 @@ export interface AuthorizationRepository {
     scope: AuthorizationRecordScope,
     now: number,
     limit: number,
-  ): Promise<readonly AuthorizedClientSummary[]>;
+    cursor?: string | null,
+  ): Promise<PaginatedList<AuthorizedClientSummary>>;
   searchProjectsForScope(
     scope: AuthorizationRecordScope,
     query: string,

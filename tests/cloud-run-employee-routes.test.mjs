@@ -357,11 +357,12 @@ async function startHarness(options = {}) {
       repositoryCalls.capabilityChecks.push({ scope, capabilityKey, projectId, checkedAt });
       return options.capabilityCurrent ?? true;
     },
-    async listProjectsForScope(scope, checkedAt, limit) {
-      repositoryCalls.projectLists.push({ scope, checkedAt, limit });
-      return PROJECT_FIXTURES
+    async listProjectsForScope(scope, checkedAt, limit, cursor) {
+      repositoryCalls.projectLists.push({ scope, checkedAt, limit, cursor });
+      const items = PROJECT_FIXTURES
         .filter(({ id }) => visibleProjectIds(scope).includes(id))
         .map((project) => projectForScope(scope, project));
+      return { items, nextCursor: null };
     },
     async getProjectForScope(scope, projectId, checkedAt) {
       repositoryCalls.projectReads.push({ scope, projectId, checkedAt });
@@ -369,14 +370,15 @@ async function startHarness(options = {}) {
       const project = PROJECT_FIXTURES.find(({ id }) => id === projectId);
       return project ? projectForScope(scope, project) : null;
     },
-    async listClientsForScope(scope, checkedAt, limit) {
-      repositoryCalls.clientLists.push({ scope, checkedAt, limit });
+    async listClientsForScope(scope, checkedAt, limit, cursor) {
+      repositoryCalls.clientLists.push({ scope, checkedAt, limit, cursor });
       const allowedClientIds = new Set(
         PROJECT_FIXTURES
           .filter(({ id }) => visibleProjectIds(scope).includes(id))
           .map(({ clientId }) => clientId),
       );
-      return CLIENT_FIXTURES.filter(({ id }) => allowedClientIds.has(id));
+      const items = CLIENT_FIXTURES.filter(({ id }) => allowedClientIds.has(id));
+      return { items, nextCursor: null };
     },
     async searchProjectsForScope(scope, query, checkedAt, limit) {
       repositoryCalls.searches.push({ scope, query, checkedAt, limit });
@@ -2386,7 +2388,8 @@ test("query, body, URL, and method bounds reject before protected callbacks", as
       assert.deepEqual(await json(response), { error: "invalid_query" });
     }
 
-    const unrelatedQuery = await running.request("/api/v1/projects?limit=10");
+    // limit and cursor are now valid query params on projects/clients (NFIX-13)
+    const unrelatedQuery = await running.request("/api/v1/projects?extra=value");
     assert.equal(unrelatedQuery.status, 400);
     assert.deepEqual(await json(unrelatedQuery), { error: "invalid_query" });
 

@@ -6,7 +6,10 @@ import type {
   AuthorizedClientSummary,
   AuthorizedDashboardSummary,
   AuthorizedProjectSummary,
+  PaginatedList,
 } from "../../ports/authorization";
+import { encodeCursor, decodeCursor } from "../../lib/list-cursor";
+import type { NameKeyset, TimestampKeyset } from "../../lib/list-cursor";
 import { withPostgresTransaction, type PostgresPool } from "./postgres-database";
 import {
   assertPersistenceHash,
@@ -438,6 +441,53 @@ export function createPostgresAuthorizationRepository(
     });
   }
 
+  async function readProjectsPaginated(
+    scope: AuthorizationRecordScope,
+    now: number,
+    limit: number,
+    cursor: string | null,
+  ): Promise<PaginatedList<AuthorizedProjectSummary>> {
+    const values = scopeValues(scope, now);
+    const boundedLimit = readLimit(limit);
+    const queryLimit = boundedLimit + 1;
+
+    let cursorTs: number | null = null;
+    let cursorId: string | null = null;
+    if (cursor) {
+      const decoded = decodeCursor(cursor);
+      if (!decoded.ok || !("updatedAt" in decoded.keyset)) {
+        throw new Error("Invalid list cursor");
+      }
+      const keyset = decoded.keyset as TimestampKeyset;
+      cursorTs = keyset.updatedAt;
+      cursorId = keyset.id;
+    }
+
+    return withPostgresTransaction(pool, transactionOptions, async (client) => {
+      const found = await client.query<ProjectRow>(
+        `SELECT ${projectProjection(scope.includeFinancial)}
+         FROM projects AS project
+         JOIN clients AS client ON client.id = project.client_id
+         WHERE ${activeScopePredicate("project", scope.includeFinancial)}
+           AND ($7::timestamptz IS NULL OR project.updated_at < $7::timestamptz
+                OR (project.updated_at = $7::timestamptz AND project.id < $8::uuid))
+         ORDER BY project.updated_at DESC, project.id
+         LIMIT $9`,
+        [values.userId, values.authorizationVersion, values.companyWide, values.now,
+          values.sessionId, values.sessionVersion, cursorTs, cursorId, queryLimit],
+      );
+      const rows = found.rows;
+      const hasMore = rows.length > boundedLimit;
+      const page = hasMore ? rows.slice(0, boundedLimit) : rows;
+      const items = Object.freeze(page.map((row) => projectFromRow(row, scope.includeFinancial)));
+      const last = page[page.length - 1];
+      const nextCursor = hasMore && last
+        ? encodeCursor({ updatedAt: parsePostgresTimestamp(last.updated_at), id: parsePostgresUuid(last.id) })
+        : null;
+      return { items, nextCursor };
+    });
+  }
+
   const repository: AuthorizationRepository = {
     async findSessionByTokenHash(tokenHash, now) {
       assertPersistenceHash(tokenHash, "Authorization session token hash");
@@ -591,8 +641,8 @@ export function createPostgresAuthorizationRepository(
       });
     },
 
-    listProjectsForScope(scope, now, limit) {
-      return readProjects(scope, now, limit, null);
+    listProjectsForScope(scope, now, limit, cursor) {
+      return readProjectsPaginated(scope, now, limit, cursor ?? null);
     },
 
     async getProjectForScope(scope, projectId, now) {
@@ -616,9 +666,23 @@ export function createPostgresAuthorizationRepository(
       });
     },
 
-    async listClientsForScope(scope, now, limit) {
+    async listClientsForScope(scope, now, limit, cursor) {
       const values = scopeValues(scope, now);
       const boundedLimit = readLimit(limit);
+      const queryLimit = boundedLimit + 1;
+
+      let cursorName: string | null = null;
+      let cursorId: string | null = null;
+      if (cursor) {
+        const decoded = decodeCursor(cursor);
+        if (!decoded.ok || !("name" in decoded.keyset)) {
+          throw new Error("Invalid list cursor");
+        }
+        const keyset = decoded.keyset as NameKeyset;
+        cursorName = keyset.name;
+        cursorId = keyset.id;
+      }
+
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
         const found = await client.query<ClientRow>(
           `SELECT client.id::text AS id, client.client_code,
@@ -635,12 +699,21 @@ export function createPostgresAuthorizationRepository(
              LIMIT 1
            ) AS primary_contact ON true
            WHERE ${activeClientScopePredicate()}
+             AND ($8 IS NULL OR client.name > $8 OR (client.name = $8 AND client.id::text > $9))
            ORDER BY client.name, client.id
-           LIMIT $7`,
+           LIMIT $10`,
           [values.userId, values.authorizationVersion, values.companyWide, values.now,
-            values.sessionId, values.sessionVersion, boundedLimit],
+            values.sessionId, values.sessionVersion, cursorName, cursorId, queryLimit],
         );
-        return Object.freeze(found.rows.map(clientFromRow));
+        const rows = found.rows;
+        const hasMore = rows.length > boundedLimit;
+        const page = hasMore ? rows.slice(0, boundedLimit) : rows;
+        const items = Object.freeze(page.map(clientFromRow));
+        const last = page[page.length - 1];
+        const nextCursor = hasMore && last
+          ? encodeCursor({ name: last.name as string, id: last.id as string })
+          : null;
+        return { items, nextCursor };
       });
     },
 

@@ -434,7 +434,7 @@ test("assigned-project list scopes in SQL before ordering and limiting and never
     step(/^COMMIT$/),
   ]);
 
-  const projects = await repository.listProjectsForScope(ASSIGNED_SCOPE, NOW, 25);
+  const { items: projects } = await repository.listProjectsForScope(ASSIGNED_SCOPE, NOW, 25);
   assert.equal(projects.length, 2);
   assert.equal(projects[1].projectNumber, "SENTINEL-NOT-POST-FILTERED");
   assert.deepEqual(projects.map(({ financialVisible }) => financialVisible), [false, false]);
@@ -538,7 +538,8 @@ test("assigned client list derives client visibility from active project members
     step(/^COMMIT$/),
   ]);
 
-  assert.deepEqual(await repository.listClientsForScope(ASSIGNED_SCOPE, NOW, 30), [{
+  const { items: assignedClients } = await repository.listClientsForScope(ASSIGNED_SCOPE, NOW, 30);
+  assert.deepEqual(assignedClients, [{
     id: CLIENT_ID,
     clientCode: "FCI-TEST-C001",
     name: "FCI TEST — DO NOT USE Client",
@@ -614,7 +615,7 @@ test("company financial scope is explicit in both project and dashboard SQL proj
     step(/^COMMIT$/),
   ]);
 
-  const projects = await projectRepository.repository.listProjectsForScope(
+  const { items: projects } = await projectRepository.repository.listProjectsForScope(
     COMPANY_FINANCIAL_SCOPE,
     NOW,
     20,

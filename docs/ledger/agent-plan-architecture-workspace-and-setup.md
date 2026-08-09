@@ -3844,7 +3844,7 @@ outcomes.
 **Effort:** small-medium. **Cost:** $0.
 
 ### NFIX-13 · Paginate the clients and projects list endpoints (medium)
-
+**Status:** In progress — `deepseek/nfix13-list-pagination`
 **Why:** filed August 6, 2026 from the review (B1/B2, both validator-confirmed against
 source). `GET /api/v1/clients` runs a five-correlated-subquery join with no `LIMIT`;
 `GET /api/v1/projects` returns the full table the same way. Growth makes response size
