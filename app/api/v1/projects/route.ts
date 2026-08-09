@@ -8,6 +8,7 @@ import { assignProjectManager, createProject } from "../../../application/create
 import { recordProjectOperation } from "../../../application/record-project-operation";
 import { normalizeProjectManagerId } from "../../../domain/project-creation";
 import { resolveProjectSegment } from "../../../domain/project-segment";
+import { noStoreJson } from "../../../lib/no-store-json";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { officeIdentityForEmail, requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { projectCreationHttpResult } from "../../../lib/creation-http-result";
@@ -89,7 +90,7 @@ export async function GET(request: NextRequest) {
     ? encodeCursor({ updatedAt: page[page.length - 1].updated_at as number, id: page[page.length - 1].id as string })
     : null;
 
-  return NextResponse.json({ projects, nextCursor }, { headers: { "Cache-Control": "no-store" } });
+  return noStoreJson({ projects, nextCursor });
 }
 
 export async function POST(request: NextRequest) {

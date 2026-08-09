@@ -699,9 +699,10 @@ export function createPostgresAuthorizationRepository(
              LIMIT 1
            ) AS primary_contact ON true
            WHERE ${activeClientScopePredicate()}
-             AND ($8 IS NULL OR client.name > $8 OR (client.name = $8 AND client.id::text > $9))
+             AND ($7::text IS NULL OR client.name > $7::text
+                  OR (client.name = $7::text AND client.id::text > $8::text))
            ORDER BY client.name, client.id
-           LIMIT $10`,
+           LIMIT $9`,
           [values.userId, values.authorizationVersion, values.companyWide, values.now,
             values.sessionId, values.sessionVersion, cursorName, cursorId, queryLimit],
         );

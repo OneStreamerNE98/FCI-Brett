@@ -418,7 +418,7 @@ test("assigned-project list scopes in SQL before ordering and limiting and never
       ({ sql, values }) => {
         assertActiveScopeSql(sql);
         assertScopeBefore(sql, /ORDER BY/);
-        assert.ok(sql.indexOf("ORDER BY") < sql.indexOf("LIMIT $7"));
+        assert.ok(sql.indexOf("ORDER BY") < sql.indexOf("LIMIT $9"), "ORDER BY before LIMIT");
         assert.doesNotMatch(sql, /project\.estimated_value/);
         assert.deepEqual(values, [
           USER_ID,
@@ -427,7 +427,9 @@ test("assigned-project list scopes in SQL before ordering and limiting and never
           new Date(NOW),
           SESSION_ID,
           "4",
-          25,
+          null,   // cursorTs
+          null,   // cursorId
+          26,     // boundedLimit + 1
         ]);
       },
     ),
@@ -531,7 +533,9 @@ test("assigned client list derives client visibility from active project members
           new Date(NOW),
           SESSION_ID,
           "4",
-          30,
+          null,   // cursorName
+          null,   // cursorId
+          31,     // boundedLimit + 1
         ]);
       },
     ),
@@ -608,7 +612,9 @@ test("company financial scope is explicit in both project and dashboard SQL proj
           new Date(NOW),
           SESSION_ID,
           "4",
-          20,
+          null,   // cursorTs
+          null,   // cursorId
+          21,     // boundedLimit + 1
         ]);
       },
     ),
