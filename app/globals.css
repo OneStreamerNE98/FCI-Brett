@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* DES-19: container-aware layout primitives (ship unused by pinned pages until DES-21). */
+@import "./responsive-primitives.css";
 
 :root {
   /* DES-13: restrained Apple-aligned neutrals with one application accent. */
