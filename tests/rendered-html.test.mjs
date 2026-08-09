@@ -17,6 +17,8 @@ function sourceSection(source, start, end, label) {
 
 const appSurfacePaths = [
   "app/FloorOpsApp.tsx",
+  "app/application/use-current-user-settings.ts",
+  "app/application/use-directory-data.ts",
   "app/assistant/components/AssistantHelpPanel.tsx",
   "app/assistant/components/TaskManagementPanel.tsx",
   "app/assistant/components/AssistantView.tsx",

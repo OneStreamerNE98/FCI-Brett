@@ -465,12 +465,13 @@ test("AI-04 route is office-gated, no-store, timezone-aware, and makes no provid
 });
 
 test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard refresh model", async () => {
-  const [routeSource, assembly, tools, assistantRoute, app, assistant, panel, panelStyles, goldens] = await Promise.all([
+  const [routeSource, assembly, tools, assistantRoute, app, directoryData, assistant, panel, panelStyles, goldens] = await Promise.all([
     read("app/api/v1/assistant/today/route.ts"),
     read("app/application/assistant/today.ts"),
     read("app/application/assistant/tools.ts"),
     read("app/api/v1/assistant/route.ts"),
     read("app/FloorOpsApp.tsx"),
+    read("app/application/use-directory-data.ts"),
     read("app/assistant/components/AssistantView.tsx"),
     read("app/assistant/components/TodayPanel.tsx"),
     read("app/assistant/components/TodayPanel.module.css"),
@@ -532,13 +533,13 @@ test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard 
   assert.match(panel, /href=\{today\.inbox\.href\}/u);
   assert.match(panel, /<label className=\{styles\.taskControl\}>[\s\S]*aria-label=\{`Complete task \$\{task\.title\}`\}/u);
   assert.match(panelStyles, /\.taskControl\s*\{[\s\S]*?min-width: 44px;[\s\S]*?min-height: 44px;[\s\S]*?\}/u);
-  assert.match(app, /const dashboardLoadId = \+\+dashboardRefreshLoadIdRef\.current/u);
-  assert.match(app, /const loadId = \+\+dashboardRefreshLoadIdRef\.current/u);
-  assert.match(app, /const dashboardAppliedLoadIdRef = useRef\(0\);/u);
-  assert.match(app, /if \(dashboardLoadId > dashboardAppliedLoadIdRef\.current\) \{\s*dashboardAppliedLoadIdRef\.current = dashboardLoadId;\s*setDashboard\(dashboardData as unknown as DashboardSummary\);\s*\}/u);
-  assert.match(app, /if \(loadId > dashboardAppliedLoadIdRef\.current\) \{\s*dashboardAppliedLoadIdRef\.current = loadId;\s*setDashboard\(data as unknown as DashboardSummary\);\s*\}/u);
-  assert.match(app, /localDayRolloverDelay\(Date\.now\(\), displayTimezone\)/u);
-  assert.match(app, /window\.clearTimeout\(timeoutId\)/u);
+  assert.match(directoryData, /const dashboardLoadId = \+\+dashboardRefreshLoadIdRef\.current/u);
+  assert.match(directoryData, /const loadId = \+\+dashboardRefreshLoadIdRef\.current/u);
+  assert.match(directoryData, /const dashboardAppliedLoadIdRef = useRef\(0\);/u);
+  assert.match(directoryData, /if \(dashboardLoadId > dashboardAppliedLoadIdRef\.current\) \{\s*dashboardAppliedLoadIdRef\.current = dashboardLoadId;\s*setDashboard\(dashboardData as unknown as DashboardSummary\);\s*\}/u);
+  assert.match(directoryData, /if \(loadId > dashboardAppliedLoadIdRef\.current\) \{\s*dashboardAppliedLoadIdRef\.current = loadId;\s*setDashboard\(data as unknown as DashboardSummary\);\s*\}/u);
+  assert.match(directoryData, /localDayRolloverDelay\(Date\.now\(\), displayTimezone\)/u);
+  assert.match(directoryData, /window\.clearTimeout\(timeoutId\)/u);
   assert.match(app, /onMeetingRecorded=\{\(\) => void refreshDashboardSnapshot\(\)/u);
   assert.match(panel, /const currentTimestamp = Date\.now\(\);[\s\S]*calendarDateRange\(\s*currentTimestamp,\s*today\.displayTimezone,\s*\)\.day === today\.day;[\s\S]*responseIsCurrent\s*\? localDayRolloverDelay\(currentTimestamp, today\.displayTimezone\)\s*: 0;[\s\S]*window\.setTimeout\(\s*\(\) => void load\(\{ force: true \}\),\s*Math\.max\(1_000, rolloverDelay\),?\s*\)/u);
   assert.match(goldens, /const OVERVIEW_LEGACY_SECTIONS_SHA256 = "4b2d9803d4d5d6e7d8fc7544ab7f862d87a076f4bfa0412ba498c66e8a12dd12";/u);
