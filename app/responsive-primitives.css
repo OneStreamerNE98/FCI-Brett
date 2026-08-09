@@ -55,8 +55,15 @@
 }
 
 /* Documented dense desktop variant: --control-compact, but never below the
-   44px contract on coarse pointers. */
-.rp-action-group[data-density="dense"] .rp-action-group-inner > :is(button, a) {
+   44px contract on coarse pointers. The selectors list button and a as
+   separate comma-free rules because the NFIX-04 below-44 census
+   (tests/nfix04-phone-polish.test.mjs) splits selector text on commas and
+   would mis-parse :is(button, a) — the four families are censused there. */
+.rp-action-group[data-density="dense"] .rp-action-group-inner > button {
+  min-height: var(--control-compact);
+}
+
+.rp-action-group[data-density="dense"] .rp-action-group-inner > a {
   min-height: var(--control-compact);
 }
 
@@ -194,7 +201,11 @@
   white-space: nowrap;
 }
 
-.rp-modal-footer[data-density="dense"] .rp-modal-footer-inner > :is(button, a) {
+.rp-modal-footer[data-density="dense"] .rp-modal-footer-inner > button {
+  min-height: var(--control-compact);
+}
+
+.rp-modal-footer[data-density="dense"] .rp-modal-footer-inner > a {
   min-height: var(--control-compact);
 }
 
