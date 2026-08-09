@@ -3725,6 +3725,7 @@ are pinned byte-for-byte by **four** suites, not three;
 this filing — see the FloorOpsApp claim-list tail).
 
 ### DES-26 · The vanishing retry: background revalidation unmounts an error notice mid-click (small-medium; after SET-42)
+**Status:** In progress — `deepseek/des26-stable-retry-affordance`
 
 **Why:** proven August 5, 2026 while fixing PR #319, not inferred. SET-42 gave settings panels
 two recovery paths: the explicit Retry button, and lifecycle revalidation. An instrumented probe

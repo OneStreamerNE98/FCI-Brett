@@ -155,6 +155,53 @@ test("settings never expose editable defaults after a failed load and support re
   await expect(page.getByRole("button", { name: "Save calendar plan" })).toBeEnabled();
 });
 
+test("DES-26 healing the endpoint while the pointer is over Retry does not detach the button", async ({ page }) => {
+  let failAccountSettings = true;
+  const accountReads = trackReads();
+  await page.route("**/api/v1/settings/me", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    accountReads.begin();
+    try {
+      if (failAccountSettings) {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Account settings unavailable" }) });
+        return;
+      }
+      await route.continue();
+    } finally {
+      accountReads.settle();
+    }
+  });
+
+  await openReadyApp(page);
+  await page.getByRole("button", { name: /account actions/i }).click();
+  await page.locator("#account-actions-popover").getByRole("button", { name: "My settings", exact: true }).click();
+  const accountError = page.getByRole("alert").filter({ hasText: "Saved settings could not be loaded" });
+  await expect(accountError).toBeVisible();
+  const retryButton = accountError.getByRole("button", { name: "Retry" });
+  await expect(retryButton).toBeVisible();
+
+  // Hover over the Retry button, then heal the endpoint — unlike the
+  // existing retry test, we do NOT wait for the read pipeline to go quiet
+  // first.  A background revalidation that succeeds can unmount the notice
+  // while the pointer is still over the button.  DES-26 guarantees the
+  // button survives this because onPointerDown captures the intent
+  // synchronously before the async unmount can land.
+  await retryButton.hover();
+  failAccountSettings = false;
+  // Give any in-flight background revalidation a chance to resolve and
+  // attempt to unmount the notice.  A hard sleep is intentional here:
+  // the race the packet describes is ~206 ms, and we want the background
+  // read to have genuinely finished before we assert.
+  await page.waitForTimeout(800);
+  await expect(retryButton).toBeAttached();
+
+  await retryButton.click();
+  await expect(page.getByRole("button", { name: "Save my settings" })).toBeEnabled();
+});
+
 test("Google OAuth query results are consumed in an effect without dropping other parameters", async ({ page }) => {
   await page.goto("/settings?section=google-workspace&google=connected&keep=1");
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
