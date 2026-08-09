@@ -1055,79 +1055,73 @@ export class GoogleDriveClient {
   }
 
   private async ensureProvisionedBlueprintFolder(input: {
-    parentId: string;
-    folder: WorkspaceBlueprintFolder;
-    entityProperty: "fciClientId" | "fciProjectId";
-    entityId: string;
-    folderKind: "client-profile" | "client-project-links" | "client-child" | "project-child";
-    blueprintFolderKeys: ReadonlySet<string>;
-  }) {
-    const identity = {
-      key: PROVISIONED_BLUEPRINT_FOLDER_IDENTITY,
-      value: input.folder.key,
-    } satisfies FolderIdentity;
-    const properties = normalizedAppProperties({
-      [PROVISIONED_BLUEPRINT_FOLDER_IDENTITY]: input.folder.key,
-      [input.entityProperty]: input.entityId,
-      fciFolderKind: input.folderKind,
-    });
-    const canonical = async (folder: DriveFile, adoptableByName = false) => {
-      const currentKey = folder.appProperties?.[PROVISIONED_BLUEPRINT_FOLDER_IDENTITY];
-      const currentEntity = folder.appProperties?.[input.entityProperty];
-      const currentKind = folder.appProperties?.fciFolderKind;
-      // A folder matched by NAME whose stamped key no longer appears anywhere in the saved
-      // blueprint is a leftover from an earlier blueprint version: the owner removed that key
-      // and re-added a folder of the same name under a new one. Without this the stale stamp is
-      // unreachable — it wins the identity comparison forever, so every later provisioning run
-      // 409s with no in-app way out. Re-stamping is a property UPDATE on the same folder; the
-      // folder is never moved, renamed, or deleted. A key that IS still in the blueprint stays a
-      // genuine conflict, because that other blueprint entry still owns this folder.
-      const staleStamp = adoptableByName
-        && typeof currentKey === "string"
-        && currentKey.length > 0
-        && !input.blueprintFolderKeys.has(currentKey);
-      if (
-        (currentKey && currentKey !== input.folder.key && !staleStamp)
-        || (currentEntity && currentEntity !== input.entityId)
-        || (currentKind && currentKind !== input.folderKind)
-      ) {
-        throw new GoogleIntegrationError(
-          "drive_folder_identity_conflict",
-          `The Google Drive folder named ${input.folder.name} already belongs to another managed blueprint item.`,
-          409,
-        );
-      }
-      return Object.entries(properties).some(([key, value]) => folder.appProperties?.[key] !== value)
-        ? this.stampFolder(folder, properties)
-        : folder;
-    };
-
-    await this.assertContained(input.parentId);
-    const managed = await this.childFoldersByIdentity(input.parentId, identity);
-    if (managed.length > 1) {
-      throw new GoogleIntegrationError("duplicate_drive_folder", `More than one managed Google Drive folder matched ${input.folder.name}.`, 409);
-    }
-    if (managed.length === 1) return canonical(managed[0]);
-
-    const named = await this.childFolders(input.parentId, input.folder.name);
-    if (named.length > 1) {
-      throw new GoogleIntegrationError("ambiguous_drive_folder", `More than one Google Drive folder is named ${input.folder.name}.`, 409);
-    }
-    if (named.length === 1) return canonical(named[0], true);
-
-    const created = await this.createFolder(input.parentId, input.folder.name, properties);
-    if (Object.entries(properties).some(([key, value]) => created.appProperties?.[key] !== value)) {
+  parentId: string;
+  folder: WorkspaceBlueprintFolder;
+  entityProperty: "fciClientId" | "fciProjectId";
+  entityId: string;
+  folderKind: "client-profile" | "client-project-links" | "client-child" | "project-child";
+}) {
+  const identity = {
+    key: PROVISIONED_BLUEPRINT_FOLDER_IDENTITY,
+    value: input.folder.key,
+  } satisfies FolderIdentity;
+  const properties = normalizedAppProperties({
+    [PROVISIONED_BLUEPRINT_FOLDER_IDENTITY]: input.folder.key,
+    [input.entityProperty]: input.entityId,
+    fciFolderKind: input.folderKind,
+  });
+  const canonical = async (folder: DriveFile) => {
+    const currentKey = folder.appProperties?.[PROVISIONED_BLUEPRINT_FOLDER_IDENTITY];
+    const currentEntity = folder.appProperties?.[input.entityProperty];
+    const currentKind = folder.appProperties?.fciFolderKind;
+    if (
+      currentKey !== input.folder.key
+      || (currentEntity && currentEntity !== input.entityId)
+      || (currentKind && currentKind !== input.folderKind)
+    ) {
       throw new GoogleIntegrationError(
-        "drive_create_invalid_response",
-        "Google Drive did not confirm the managed blueprint folder identity. Check Drive before retrying.",
-        503,
+        "drive_folder_identity_conflict",
+        `The Google Drive folder named ${input.folder.name} already belongs to another managed blueprint item.`,
+        409,
       );
     }
-    return created;
+    return Object.entries(properties).some(([key, value]) => folder.appProperties?.[key] !== value)
+      ? this.stampFolder(folder, properties)
+      : folder;
+  };
+
+  await this.assertContained(input.parentId);
+  const managed = await this.childFoldersByIdentity(input.parentId, identity);
+  if (managed.length > 1) {
+    throw new GoogleIntegrationError("duplicate_drive_folder", `More than one managed Google Drive folder matched ${input.folder.name}.`, 409);
+  }
+  if (managed.length === 1) return canonical(managed[0]);
+
+  const named = await this.childFolders(input.parentId, input.folder.name);
+  if (named.length > 1) {
+    throw new GoogleIntegrationError("ambiguous_drive_folder", `More than one Google Drive folder is named ${input.folder.name}.`, 409);
+  }
+  if (named.length === 1) {
+    throw new GoogleIntegrationError(
+      "drive_folder_identity_conflict",
+      `A Google Drive folder named ${input.folder.name} already exists without this blueprint identity. Rename or remove that folder before retrying.`,
+      409,
+    );
   }
 
-  /**
-   * Ensures one blueprint folder beneath an exact managed parent. A same-name
+  const created = await this.createFolder(input.parentId, input.folder.name, properties);
+  if (Object.entries(properties).some(([key, value]) => created.appProperties?.[key] !== value)) {
+    throw new GoogleIntegrationError(
+      "drive_create_invalid_response",
+      "Google Drive did not confirm the managed blueprint folder identity. Check Drive before retrying.",
+      503,
+    );
+  }
+  return created;
+}
+
+/**
+ * Ensures one blueprint folder beneath an exact managed parent. A same-name
    * manual folder is adopted only when unambiguous, then stamped with the stable
    * blueprint key so later setup runs are rename-safe and idempotent.
    */
@@ -1611,7 +1605,6 @@ export class GoogleDriveClient {
     // duplicate sibling name must 409 here rather than be adopted by name downstream.
     const provisionableBlueprint = assertProvisionableWorkspaceBlueprint(input.blueprint);
     const blueprintPlan = buildProjectDriveBlueprintPlan(provisionableBlueprint);
-    const blueprintFolderKeys = workspaceBlueprintFolderKeys(provisionableBlueprint);
     const folderNames = resolveWorkspaceBlueprintFolderNames(provisionableBlueprint, {
       clientCode: input.client.code,
       clientName: input.client.name,
@@ -1658,7 +1651,6 @@ export class GoogleDriveClient {
           entityProperty,
           entityId,
           folderKind,
-          blueprintFolderKeys,
         });
         await ensureTree(child.id, folder.children, entityProperty, entityId);
       }

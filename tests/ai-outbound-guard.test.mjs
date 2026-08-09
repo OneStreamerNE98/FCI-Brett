@@ -467,17 +467,15 @@ test("AI-09 documentation has one source-verified account, explicit Tier-2 gates
   assert.match(meetings, /Assistant\s+and\s+automation\s+boundary\s+\(reconciled\s+\w+\s+\d{1,2},\s+\d{4}\)/u);
   assert.match(meetings, /proposals are not task\s+rows until an office user presses \*\*Accept\*\*/u);
 
-  for (let index = 1; index <= 10; index += 1) {
+  for (let index = 1; index <= 11; index += 1) {
     const id = `AI-${String(index).padStart(2, "0")}`;
     const packet = sectionFromHeading(plan, `### ${id} ·`, /^### /mu);
     assert.match(packet, /\*\*Status:\*\* Complete — PR #/u, `${id} must remain Complete`);
   }
-  // AI-10 joined the loop on July 30, 2026, when its last sub-PR (f) merged —
-  // the re-point this pin's own note prescribed. AI-11 is the packet that is now
-  // filed but unmerged; it carries no status line at all, so there is nothing
-  // premature to guard. Extend the loop again when AI-11 legitimately merges.
-  const ai11 = sectionFromHeading(plan, "### AI-11 ·", /^### /mu);
-  assert.doesNotMatch(ai11, /\*\*Status:\*\* Complete/u);
+  // AI-10 joined the loop on July 30, 2026, when its last sub-PR (f) merged.
+  // AI-11 joined on August 9, 2026, when (d) — its last claimable sub-scope —
+  // merged as PR #340 and the packet's no-status-line sub-scope convention
+  // retired with it. Extend the loop again when AI-12 legitimately merges.
   assert.match(
     rateLimitGuide,
     /\/assistant\/triage`, `\/assistant\/reply-draft`/u,
