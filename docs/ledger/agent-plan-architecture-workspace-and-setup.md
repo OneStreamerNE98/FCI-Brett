@@ -4918,7 +4918,7 @@ Also: archived/terminal-status records are excluded from AI candidate queries an
 surfaces as a suggestion — shared with EDIT-05/06.
 
 ### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
-**Status:** Complete — PR #255 + PR #277 + PR #300 + PR #340, August 9, 2026. All four sub-scopes shipped, source-only and undeployed: (a) PR #255, July 31, 2026; (b) PR #277, August 3, 2026; (c) PR #300, August 4, 2026; (d) review activity attribution — the L1–L4a write spine plus the activity read and settings view — PR #340, August 9, 2026.
+**Status:** Complete — PR #255 + PR #277 + PR #300 + PR #340, August 9, 2026. All four sub-scopes shipped: (a) PR #255, July 31, 2026; (b) PR #277, August 3, 2026; (c) PR #300, August 4, 2026; (d) review activity attribution — the L1–L4a write spine plus the activity read and settings view — PR #340, August 9, 2026.
 **ALL SUB-SCOPES (a)–(d) ARE COMPLETE.** This packet ran a no-status-line convention while
 sub-scopes were open — a status line would have made the dispatch law read open sub-scopes as
 unavailable. With (d) merged, no sub-scope remains claimable, so the packet now carries an
