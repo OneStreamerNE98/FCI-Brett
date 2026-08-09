@@ -854,6 +854,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     isCurrent: () => boolean = () => true,
     preserveRuntimeDraft = false,
   ) => {
+    setIntakeMailboxError(null);
     try {
       const settingsData = await cachedGetJson<WorkspaceSettingsPayload>("/api/v1/settings/workspace", { force });
       if (!isCurrent()) return;
@@ -1350,6 +1351,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
 
   async function refreshSheetsStatus() {
     setSheetsWorking(true);
+    setSheetsStatusError(null);
     try {
       const data = await cachedGetJson<{ mirror?: SheetMirrorStatus }>("/api/v1/integrations/google/sheets/status", { force: true });
       const mirror = data.mirror ?? null;
