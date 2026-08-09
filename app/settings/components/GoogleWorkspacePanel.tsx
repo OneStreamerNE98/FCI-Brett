@@ -1592,11 +1592,20 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const calendarReady = connected && workspace?.calendarEnabled === true && workspace?.calendarConnected === true;
   const sheetsReady = connected && workspace?.sheetsEnabled === true && workspace?.sheetsConnected === true && workspace?.clientDirectorySheetConfigured === true;
   const gmailVerificationPassed = gmailLabelsReady && gmailTestEmailPassed;
-  const sharedDriveReadyForGmail = driveVerified || workspaceCreationProgress.sharedDriveComplete;
-  const gmailStepStatus = stepStatus({ simulation, previousComplete: sharedDriveReadyForGmail, prerequisitesReady: gmailReady, complete: gmailLabelsReady });
+  const driveStepStatus = stepStatus({
+    simulation,
+    previousComplete: connectComplete,
+    prerequisitesReady: driveReady,
+    complete: driveVerified || workspaceCreationProgress.sharedDriveComplete,
+  });
+  const alternateMailboxPreservesDriveStep = workspace?.connectionStatus !== "connected"
+    && workspaceCreationProgress.sharedDriveComplete
+    && mailboxGmailReady(selectedMailboxConnection);
+  const gmailPriorStepComplete = driveStepStatus === "Complete" || alternateMailboxPreservesDriveStep;
+  const gmailStepStatus = stepStatus({ simulation, previousComplete: gmailPriorStepComplete, prerequisitesReady: gmailReady, complete: gmailLabelsReady });
   const calendarStepStatus = stepStatus({ simulation, previousComplete: gmailStepStatus === "Complete", prerequisitesReady: calendarReady, complete: calendarChecked });
   const sharedDriveDomainUsersOnly = resourceRows.find((resource) => resource.key === "primary")?.restrictions?.domainUsersOnly ?? null;
-  const gmailActionsEnabled = simulation || (sharedDriveReadyForGmail && gmailReady);
+  const gmailActionsEnabled = simulation || (gmailPriorStepComplete && gmailReady);
   const calendarActionsEnabled = simulation || (gmailStepStatus === "Complete" && calendarReady);
   const sheetsActionsEnabled = simulation || (calendarStepStatus === "Complete" && sheetsReady);
   const statusSourcesLoading = checking

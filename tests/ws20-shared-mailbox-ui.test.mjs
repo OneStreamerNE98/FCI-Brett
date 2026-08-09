@@ -61,7 +61,7 @@ test("WS-20 Settings attaches globally and disconnects only the named mailbox", 
   );
   assert.match(
     settings,
-    /gmailActionsEnabled = simulation \|\| \(sharedDriveReadyForGmail && gmailReady\)/u,
+    /alternateMailboxPreservesDriveStep = workspace\?\.connectionStatus !== "connected"[\s\S]+workspaceCreationProgress\.sharedDriveComplete[\s\S]+mailboxGmailReady\(selectedMailboxConnection\)[\s\S]+gmailActionsEnabled = simulation \|\| \(gmailPriorStepComplete && gmailReady\)/u,
     "a healthy selected mailbox must stay actionable after the default mailbox disconnects",
   );
   assert.match(settings, /setGmailWorking\(false\)/u);
