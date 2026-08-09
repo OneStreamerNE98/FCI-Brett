@@ -327,7 +327,10 @@ test("existing Gmail and Calendar reads expose only secret-free verification boo
   const calendarOrdinary = calendarRoute.slice(calendarOrdinaryStart, calendarCatch);
   assert.doesNotMatch(calendarOrdinary, /readGoogleIntegrationVerification|verificationPassed/);
   assert.match(calendarOrdinary, /return noStore\(result\)/);
-  assert.match(calendarOrdinary, /return noStore\(await listWorkspaceCalendarEvents\(config, auth\.user\.email\)\)/);
+  assert.match(
+    calendarOrdinary,
+    /const result = await listWorkspaceCalendarEvents\(config, auth\.user\.email\);[\s\S]+await completeWorkspaceSetupLease\(database, lease, Date\.now\(\)\);[\s\S]+return noStore\(result\)/,
+  );
 
   assert.match(
     panel,
@@ -339,7 +342,7 @@ test("existing Gmail and Calendar reads expose only secret-free verification boo
   );
   assert.match(
     panel,
-    /const \[data, sheetsResult\] = await Promise\.all[\s\S]+const gmailVerificationEligible = isAdmin && stageFourServiceEligible\(nextWorkspace, "gmail"\)[\s\S]+const calendarVerificationEligible = isAdmin && stageFourServiceEligible\(nextWorkspace, "calendar"\)[\s\S]+gmailVerificationEligible[\s\S]+readStageFourVerification[\s\S]+calendarVerificationEligible[\s\S]+readStageFourVerification/,
+    /const \[data, sheetsResult\] = await Promise\.all[\s\S]+const gmailVerificationMailbox = selectedGmailMailboxRef\.current[\s\S]+const gmailVerificationEligible = Boolean\([\s\S]+stageFourServiceEligible\(nextWorkspace, "gmail"\)[\s\S]+const calendarVerificationEligible = isAdmin && stageFourServiceEligible\(nextWorkspace, "calendar"\)[\s\S]+gmailVerificationEligible[\s\S]+readStageFourVerification[\s\S]+gmailVerificationMailbox[\s\S]+calendarVerificationEligible[\s\S]+readStageFourVerification/,
   );
   assert.match(
     panel,

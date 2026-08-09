@@ -47,6 +47,7 @@ function createBehaviorDatabase() {
       drive_url: `https://fci.example.test/?workspace-simulation=project&project=${PROJECT_ID}`,
     }],
     operations: [],
+    removeConnectionBeforeLease: false,
     projects: [{
       id: PROJECT_ID,
       project_number: "FCI2026-001",
@@ -89,7 +90,14 @@ function createBehaviorDatabase() {
           return structuredClone(state.blueprints.find((row) => row.connection_key === query.values[0]) ?? null);
         }
         if (/FROM google_connections WHERE connection_key = \?/u.test(sql)) {
-          return structuredClone(state.connection);
+          return state.connection?.connection_key === query.values[0]
+            ? structuredClone(state.connection)
+            : null;
+        }
+        if (/FROM google_connections WHERE lower\(google_email\) = \?/u.test(sql)) {
+          return state.connection?.google_email.toLowerCase() === query.values[0]
+            ? structuredClone(state.connection)
+            : null;
         }
         if (/FROM workspace_simulation_state WHERE id = \?/u.test(sql)) {
           return state.simulationState?.id === query.values[0]
@@ -143,9 +151,26 @@ function createBehaviorDatabase() {
         }
 
         if (/^INSERT INTO google_drive_operations/u.test(sql)) {
+          if (state.removeConnectionBeforeLease) {
+            state.connection = null;
+            state.removeConnectionBeforeLease = false;
+          }
+          const bypassConnectionFence = values[8] === 1;
+          if (!bypassConnectionFence) {
+            const connection = state.connection;
+            if (
+              !connection
+              || connection.id !== values[9]
+              || connection.connection_key !== values[10]
+              || connection.google_email.toLowerCase() !== values[11]
+              || connection.status !== "connected"
+            ) {
+              return changes(0);
+            }
+          }
           const operationKey = values[2];
           const existing = state.operations.find((row) => row.operation_key === operationKey);
-          const retryFence = values[8];
+          const retryFence = values.at(-1);
           if (existing && existing.status === "in-progress" && existing.lease_expires_at >= retryFence) {
             return changes(0);
           }
@@ -489,7 +514,9 @@ function configureSimulation(databaseFixture) {
   globalThis.fetch = simulationFetch;
 }
 
-async function configureLive(databaseFixture) {
+async function configureLive(databaseFixture, options = {}) {
+  const mailboxEmail = options.mailboxEmail ?? "operations@cherryhillfci.com";
+  const mailboxConnectionKey = options.mailboxConnectionKey ?? LIVE_CONNECTION;
   const encryptionKey = Buffer.alloc(32, 0x46).toString("base64url");
   for (const key of Object.keys(workerEnvironment)) delete workerEnvironment[key];
   Object.assign(workerEnvironment, {
@@ -503,19 +530,21 @@ async function configureLive(databaseFixture) {
     GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI: "https://fci.example.test/api/v1/integrations/google/callback",
     GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY: encryptionKey,
     GOOGLE_WORKSPACE_ALLOWED_DOMAINS: "cherryhillfci.com",
-    GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: "operations@cherryhillfci.com",
-    GOOGLE_WORKSPACE_INTAKE_MAILBOX: "operations@cherryhillfci.com",
+    GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: mailboxEmail,
+    GOOGLE_WORKSPACE_INTAKE_MAILBOX: mailboxEmail,
     GOOGLE_WORKSPACE_SHARED_DRIVE_ID: "live-drive-root",
     DB: databaseFixture,
   });
   const config = oauthSites.getGoogleRuntimeConfig();
   databaseFixture.state.connection = {
     id: "live-connection",
-    google_email: "operations@cherryhillfci.com",
+    connection_key: mailboxConnectionKey,
+    google_subject: "live-google-subject",
+    google_email: mailboxEmail,
     refresh_token_ciphertext: await oauthSites.encryptGoogleSecret(
       "FCI_TEST_REFRESH_TOKEN",
       encryptionKey,
-      `google-connection:${config.connectionKey}:refresh`,
+      `google-connection:${mailboxConnectionKey}:refresh`,
     ),
     key_version: config.tokenEncryptionKeyVersion,
     scopes_json: JSON.stringify(config.enabledServices.map((service) => config.serviceScopes[service])),
@@ -609,6 +638,7 @@ function installLiveFilingProvider(messageId, options = {}) {
         ] });
       }
       if (url.pathname.endsWith(`/messages/${messageId}/modify`) && method === "POST") {
+        options.writeCalls?.push(`${method} ${url.pathname}`);
         return Response.json({ id: messageId, threadId: "live-thread", labelIds: ["INBOX", "FCI_FILED"] });
       }
     }
@@ -636,6 +666,7 @@ function installLiveFilingProvider(messageId, options = {}) {
       }] : [] });
     }
     if (url.hostname === "www.googleapis.com" && url.pathname === "/upload/drive/v3/files" && method === "POST") {
+      options.writeCalls?.push(`${method} ${url.pathname}`);
       const multipart = await init.body.text();
       const metadataJson = multipart.match(/Content-Type: application\/json; charset=UTF-8\r\n\r\n(\{[^\r]+\})\r\n--/u)?.[1];
       if (!metadataJson) throw new Error("Live filing fixture could not read Drive upload metadata.");
@@ -1105,6 +1136,82 @@ test("live and simulation Gmail filing emit the same durable event-row shape", a
     );
     assert.ok(liveDatabase.state.integrationEvents.every((event) => event.connection_key === LIVE_CONNECTION));
     assert.ok(simulationDatabase.state.integrationEvents.every((event) => event.connection_key === SIMULATION_CONNECTION));
+  } finally {
+    configureSimulation(database);
+  }
+});
+
+test("mailbox-scoped Gmail filing keeps archive identity separate while Drive lease health uses the workspace scope", async () => {
+  const liveDatabase = createBehaviorDatabase();
+  const mailboxConnectionKey = "gmail_fci_test_operations";
+  const liveMessageId = "live-msg-mailbox-drive-scope";
+  liveDatabase.state.mappings = [{
+    id: "live-project-mapping",
+    connection_key: LIVE_CONNECTION,
+    entity_type: "project",
+    entity_id: PROJECT_ID,
+    folder_key: "project-root",
+    drive_file_id: "live-project-root",
+    drive_url: "https://drive.google.test/live-project-root",
+  }];
+
+  try {
+    await configureLive(liveDatabase, { mailboxConnectionKey });
+    installLiveFilingProvider(liveMessageId);
+    const response = await gmailFileRoute.POST(
+      routeRequest(`/api/v1/integrations/google/gmail/messages/${liveMessageId}/file`, "POST", { projectId: PROJECT_ID }),
+      { params: Promise.resolve({ messageId: liveMessageId }) },
+    );
+    assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+    assert.equal(liveDatabase.state.operations.length, 1);
+    assert.equal(liveDatabase.state.operations[0].connection_key, LIVE_CONNECTION);
+    assert.equal(
+      liveDatabase.state.operations[0].operation_key,
+      `${mailboxConnectionKey}:file-gmail:${liveMessageId}`,
+    );
+    assert.equal(liveDatabase.state.archives.length, 1);
+    assert.equal(liveDatabase.state.archives[0].connection_key, mailboxConnectionKey);
+    const mailItemUpdate = liveDatabase.state.queries.find((query) => (
+      query.sql.startsWith("UPDATE mail_items SET status = 'accepted'")
+    ));
+    assert.equal(mailItemUpdate.values[5], mailboxConnectionKey);
+  } finally {
+    configureSimulation(database);
+  }
+});
+
+test("a tenant reset that wins before mailbox lease acquisition prevents every filing write", async () => {
+  const liveDatabase = createBehaviorDatabase();
+  const mailboxConnectionKey = "gmail_reset_wins_fixture";
+  const liveMessageId = "live-msg-reset-wins";
+  const writeCalls = [];
+  liveDatabase.state.mappings = [{
+    id: "live-project-mapping",
+    connection_key: LIVE_CONNECTION,
+    entity_type: "project",
+    entity_id: PROJECT_ID,
+    folder_key: "project-root",
+    drive_file_id: "live-project-root",
+    drive_url: "https://drive.google.test/live-project-root",
+  }];
+
+  try {
+    await configureLive(liveDatabase, { mailboxConnectionKey });
+    installLiveFilingProvider(liveMessageId, { writeCalls });
+    // Simulate the atomic tenant reset after the route cached its read context
+    // but immediately before its first durable lease write.
+    liveDatabase.state.removeConnectionBeforeLease = true;
+    const response = await gmailFileRoute.POST(
+      routeRequest(`/api/v1/integrations/google/gmail/messages/${liveMessageId}/file`, "POST", { projectId: PROJECT_ID }),
+      { params: Promise.resolve({ messageId: liveMessageId }) },
+    );
+    assert.equal(response.status, 409);
+    assert.equal(liveDatabase.state.operations.length, 0);
+    assert.equal(liveDatabase.state.archives.length, 0);
+    assert.equal(liveDatabase.state.artifacts.length, 0);
+    assert.equal(liveDatabase.state.integrationEvents.length, 0);
+    assert.equal(liveDatabase.state.activities.length, 0);
+    assert.deepEqual(writeCalls, []);
   } finally {
     configureSimulation(database);
   }

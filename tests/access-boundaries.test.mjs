@@ -45,16 +45,16 @@ test("enforces the office allowlist before rendering the operational app shell",
   assert.match(auth, /hostname !== "localhost"/);
 });
 
-test("requires and revalidates the explicitly approved Workspace connection account", async () => {
+test("validates the account allowlist at consent and uses selected-mailbox equality at runtime", async () => {
   const [oauth, d1] = await Promise.all([
     read("app/lib/google-oauth.ts"),
     read("app/adapters/d1/google-oauth-persistence.ts"),
   ]);
 
   assert.match(oauth, /approved Google Workspace connection account/);
-  assert.match(oauth, /googleAccountIsAllowed\(config, connection\.googleEmail\)/);
-  assert.match(d1, /account_no_longer_allowed/);
-  assert.match(d1, /status = 'reauthorization-required'/);
+  assert.match(oauth, /assertExpectedGoogleAccount[\s\S]+googleAccountIsAllowed\(config, profile\.email\)/);
+  assert.match(oauth, /selectedMailboxMatches\(config, connection\.googleEmail\)/);
+  assert.doesNotMatch(d1, /account_no_longer_allowed/);
 });
 
 test("counts filed emails across the business rather than one Google connection", async () => {
