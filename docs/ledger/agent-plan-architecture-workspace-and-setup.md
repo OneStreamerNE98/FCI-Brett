@@ -4015,6 +4015,7 @@ outcomes.
 **Effort:** medium. **Cost:** $0.
 
 ### NFIX-21 · Worker-isolate rate limiter is a per-isolate limit (small; hardening)
+**Status:** In progress — `codex/nfix21-isolate-rate-limiter`
 
 **Why:** filed August 6, 2026 from the review (S1, confirmed with the validator's
 scoping). The development limiter (`app/lib/development-request-rate-limit.ts`) keeps
