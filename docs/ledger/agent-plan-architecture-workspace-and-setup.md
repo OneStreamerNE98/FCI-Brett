@@ -3393,6 +3393,7 @@ layouts unaffected).
 **Effort:** small each; a-T2 small-medium. **Cost:** $0.
 
 ### DES-09 · Guardrail wrap-up + ledger closure (small; tests/docs only, last)
+**Status:** In progress — `codex/des09-guardrail-wrapup`
 **Why:** close the design-critique ledger's Phase-3/4 open items this series
 executes, and leave one truth.
 **Do (narrowed August 3, 2026 — two sub-items struck as already delivered: the
