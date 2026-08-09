@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 47 not started · 2 in progress · 2 blocked · 133 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 43 not started · 5 in progress · 1 in review · 2 blocked · 133 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -44,8 +44,8 @@ row holds the full text. Packets without a status line are not started.
 | DES-05 | Interactive vs static card grammar + FIX-08 absorption (medium; FloorOpsApp queue, after DES-06; GOLDEN REGEN 1 of 2) | Complete — PR #149, July 23, 2026. | agent-plan |
 | DES-06 | Layout-editor polish: icon-only Edit, honest Hidden-sections row, unified title-actions (small; FIRST DES packet in the FloorOpsApp queue; no golden regen) | Complete — PR #143, July 23, 2026. | agent-plan |
 | DES-07 | Primitive unification: KpiMetric→Metric, empty-state primitive, pill base (medium; FloorOpsApp queue after DES-04; GOLDEN REGEN 2 of 2, Reports hash only) | Complete — PR #165, July 24, 2026. | agent-plan |
-| DES-08 | Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue) | Blocked — sub-scope c only, deferred by owner decision (July 24, 2026) until the AI wave lands a truthful attention signal (revisit after AI-02/AI-04). | agent-plan |
-| DES-09 | Guardrail wrap-up + ledger closure (small; tests/docs only, last) | — | agent-plan |
+| DES-08 | Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue) | Blocked — sub-scope c only, awaiting an owner decision to lift the July 24 deferral now that its truthful AI-10 needs-review signal dependency is complete in… | agent-plan |
+| DES-09 | Guardrail wrap-up + ledger closure (small; tests/docs only, last) | In review — PR #359 | agent-plan |
 | DES-10 | Brand-mark presentation refinement (small; NOT priority — after the current DES queue; SVG work parallel-safe, the `.brand` edit takes the globals lock briefly) | — | agent-plan |
 | DES-11 | Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026) | Complete — PR #252 + PR #261, July 31, 2026. | agent-plan |
 | DES-12 | Layout editor: snap-in-place drag, touch support, and uniform card rhythm (medium) | — | agent-plan |
@@ -56,7 +56,7 @@ row holds the full text. Packets without a status line are not started.
 | DES-16 | Flow honesty: the phone-call lead path, the Schedule phantoms, and a role-gated nav (small-medium) — ADOPTION FLAGSHIP | Complete — PR #306, August 4, 2026. | agent-plan |
 | DES-17 | The failure surface: error boundary, toast queue with next steps, empty-state actions (medium) | Complete — PR #332, August 7, 2026. | agent-plan |
 | DES-18 | Findability and the filing prefill (small-medium, after AI-11(c) merges — inbox cluster) | — | agent-plan |
-| DES-19 | Responsive layout primitives and the dynamic-state guard (medium-large; after DES-13 and DES-14) | — | agent-plan |
+| DES-19 | Responsive layout primitives and the dynamic-state guard (medium-large; after DES-13 and DES-14) | In progress — `kimi/des19-responsive-primitives` | agent-plan |
 | DES-20 | Settings navigation architecture: the phone index and the tablet double-rail (medium; after DES-19) | — | agent-plan |
 | DES-21 | Conditional-action migrations to the primitives (medium-large; after DES-19; FloorOpsApp queue) | — | agent-plan |
 | DES-22 | Overlay scroll ownership (small-medium; after DES-17) | — | agent-plan |
@@ -132,7 +132,7 @@ row holds the full text. Packets without a status line are not started.
 | NFIX-15 | Upload boundary and stored-byte round-trip coverage (small) | — | agent-plan |
 | NFIX-16 | E2E hygiene batch: assertions that cannot fail, waits that lie, and the missing golden path (medium) | — | agent-plan |
 | NFIX-17 | Atomic D1 task-reference guards; defer the foreign-key rebuild (small-medium) | — | agent-plan |
-| NFIX-18 | Address review release is best-effort with no compensation (small-medium) | — | agent-plan |
+| NFIX-18 | Address review release is best-effort with no compensation (small-medium) | In progress — `codex/nfix18-address-review-compensation` | agent-plan |
 | NFIX-19 | FIX-09 stage-4 verification race (resolved) | Resolved in PR #330 | agent-plan |
 | NFIX-20 | DevOps hygiene batch (medium) | — | agent-plan |
 | NFIX-21 | Worker-isolate rate limiter is a per-isolate limit (small; hardening) | — | agent-plan |
@@ -203,5 +203,5 @@ row holds the full text. Packets without a status line are not started.
 | WS-17 | Google credential severance on employee disable/offboarding (small-medium) | Complete — PR #241, July 30, 2026. | agent-plan |
 | WS-18 | Decouple filed-email evidence reads from the connection key (small-medium) | Complete — PR #246, July 30, 2026. | agent-plan |
 | WS-19 | Tenant cutover — make a Workspace switch survivable (medium) | Complete — PR #288, August 4, 2026. | agent-plan |
-| WS-20 | Attach additional shared mailboxes to the workspace (medium-large) | — | agent-plan |
+| WS-20 | Attach additional shared mailboxes to the workspace (medium-large) | In progress — `codex/ws20-shared-mailboxes` | agent-plan |
 | WS-21 | Per-person shared-inbox access grants (small-medium, after WS-20) | — | agent-plan |

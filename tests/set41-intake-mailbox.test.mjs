@@ -8,8 +8,6 @@ import { createServer } from "vite";
 const ADMIN_EMAIL = "admin@example.test";
 const OFFICE_EMAIL = "office@example.test";
 const PRIMARY_MAILBOX = "operations@example.test";
-/** The masked form GET /api/v1/google-workspace already uses for `connection.account`. */
-const PRIMARY_MAILBOX_MASKED = "op•••@example.test";
 const SECONDARY_MAILBOX = "dispatch@example.test";
 const workerEnvironment = {};
 globalThis.__FCI_TEST_CLOUDFLARE_ENV__ = workerEnvironment;
@@ -114,7 +112,8 @@ class TestDatabase {
         refresh_token_ciphertext TEXT NOT NULL,
         key_version TEXT NOT NULL,
         scopes_json TEXT NOT NULL,
-        status TEXT NOT NULL
+        status TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
       );
     `);
     this.database.prepare(`INSERT INTO workspace_settings (
@@ -124,8 +123,8 @@ class TestDatabase {
       .run(JSON.stringify({ timezone: "America/Chicago", siblingOwner: { preserve: true } }));
     this.database.prepare(`INSERT INTO google_connections (
       id, connection_key, google_subject, google_email, refresh_token_ciphertext,
-      key_version, scopes_json, status
-    ) VALUES ('connection', 'google-workspace', 'subject', ?, 'ciphertext', '1', '[]', 'connected')`)
+      key_version, scopes_json, status, updated_at
+    ) VALUES ('connection', 'google-workspace', 'subject', ?, 'ciphertext', '1', '[]', 'connected', 1)`)
       .run(PRIMARY_MAILBOX);
   }
 
@@ -225,12 +224,12 @@ test("Settings exposes authorized mailbox choices and atomically saves a selecte
     assert.equal(effective.effectiveSources.intakeMailbox, "app");
     assert.equal(effective.oauthReady, false);
     assert.equal(effective.connectReady, true);
-    // The connected address is masked: this label travels in `missing`/`missingDetails`,
-    // which GET /api/v1/google-workspace returns to every office user, not just admins.
     assert.equal(effective.missingDetails.at(-1).label,
-      `Google Workspace intake mailbox ${SECONDARY_MAILBOX} matching connected account ${PRIMARY_MAILBOX_MASKED}`);
+      "Google Workspace intake mailbox di•••@example.test attached to this workspace");
+    assert.equal(JSON.stringify(effective.missingDetails).includes(SECONDARY_MAILBOX), false,
+      "the selected mailbox stays masked in office-visible readiness details");
     assert.equal(JSON.stringify(effective.missingDetails).includes(PRIMARY_MAILBOX), false,
-      "the unmasked connected account must not appear anywhere in the readiness details");
+      "an unrelated connected mailbox must not appear anywhere in the readiness details");
     assert.equal(effective.missing.join(" ").includes(PRIMARY_MAILBOX), false,
       "nor in the flattened `missing` list built from those labels");
 

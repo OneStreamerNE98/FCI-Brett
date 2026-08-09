@@ -274,6 +274,7 @@ export function invalidateWorkspaceOperationsReadCache() {
 /** Review mutations change both the pending queue and the human outcome history. */
 export function invalidateInboxAnalysisReadCaches(options: { notify?: boolean } = {}) {
   invalidateCachedGet("/api/v1/inbox-analysis", options);
+  invalidateCachedGetPrefix("/api/v1/inbox-analysis?", options);
   invalidateCachedGet("/api/v1/inbox-analysis/activity", options);
 }
 
