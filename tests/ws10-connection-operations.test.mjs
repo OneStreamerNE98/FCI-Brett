@@ -163,6 +163,26 @@ function fakeDatabase() {
         created_at: now + 1,
       },
     ],
+    addressReviewClaims: [
+      {
+        id: "address-review-stale",
+        actor_id: ADMIN_EMAIL,
+        entity_kind: "client",
+        target_id: "client-1",
+        input_address: "123 Test Street",
+        consumed_at: now - (2 * 60 * 60 * 1_000),
+        expires_at: now - (105 * 60 * 1_000),
+      },
+      {
+        id: "address-review-recent",
+        actor_id: ADMIN_EMAIL,
+        entity_kind: "lead",
+        target_id: "new",
+        input_address: "456 Test Avenue",
+        consumed_at: now - 30_000,
+        expires_at: now + 14 * 60 * 1_000,
+      },
+    ],
   };
 
   function applyCursor(rows, timestampKey, idKey, cursorValues, valuesStartIndex) {
@@ -222,6 +242,16 @@ function fakeDatabase() {
               results = applyCursor(results, "created_at", "id", query.values.slice(1), 0);
             }
             return { results: results.sort((left, right) => right.created_at - left.created_at) };
+          }
+          if (/FROM address_validation_reviews/u.test(sql)) {
+            const staleBefore = query.values[0];
+            const limit = query.values[1];
+            return {
+              results: state.addressReviewClaims
+                .filter((row) => row.consumed_at !== null && row.consumed_at <= staleBefore)
+                .sort((left, right) => right.consumed_at - left.consumed_at)
+                .slice(0, limit),
+            };
           }
           throw new Error(`Unexpected operations query: ${sql}`);
         },
@@ -295,15 +325,23 @@ test("admin enumerates current-connection failures and activity in simulation wi
   );
   assert.deepEqual(body.failedArchives.items.map(({ id }) => id), ["archive-failed"]);
   assert.deepEqual(body.events.items.map(({ id }) => id), ["event-new", "event-old"]);
+  assert.deepEqual(body.addressReviewClaims.items.map(({ id }) => id), ["address-review-stale"]);
+  assert.equal(JSON.stringify(body.addressReviewClaims).includes("123 Test Street"), false);
   assert.equal(JSON.stringify(body).includes("must_not_leak"), false);
   assert.equal(providerCalls, 0);
-  assert.equal(database.state.queries.length, 3);
+  assert.equal(database.state.queries.length, 4);
   assert.equal(database.state.queries.every(({ sql }) => /^\s*SELECT\b/u.test(sql)), true);
-  assert.equal(database.state.queries.every(({ values }) => values[0] === "workspace-simulation"), true);
+  assert.equal(
+    database.state.queries
+      .filter(({ sql }) => !/FROM address_validation_reviews/u.test(sql))
+      .every(({ values }) => values[0] === "workspace-simulation"),
+    true,
+  );
   // No nextCursor when hasMore is false
   assert.equal(body.driveOperations.nextCursor, undefined);
   assert.equal(body.failedArchives.nextCursor, undefined);
   assert.equal(body.events.nextCursor, undefined);
+  assert.equal(body.addressReviewClaims.hasMore, false);
 });
 
 test("workspace operations aggregate Drive, archives, and events across stable and attached mailbox keys", async () => {
