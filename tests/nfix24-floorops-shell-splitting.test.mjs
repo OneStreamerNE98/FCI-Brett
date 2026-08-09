@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
+import { loadMajorViewWithDeadline } from "../app/application/load-major-view.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -44,20 +45,31 @@ test("NFIX-24 emits route views as independent client chunks", async () => {
 });
 
 test("NFIX-24 route loading and failure behavior stays accessible and honest", async () => {
-  const [app, boundary, notice] = await Promise.all([
+  const [app, boundary, notice, loader] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
     read("app/components/AppErrorBoundary.tsx"),
     read("app/components/ClientDataNotice.tsx"),
+    read("app/application/load-major-view.ts"),
   ]);
 
   assert.match(app, /<AppErrorBoundary key=\{view\}>[\s\S]{0,800}<Suspense fallback=\{<MajorViewLoading view=\{view\} \/>\}>/u);
   assert.match(app, /loadingTitle=\{`Loading \$\{view\}`\}[\s\S]{0,120}loadingDetail="Preparing this workspace view\."/u);
-  assert.match(app, /const MAJOR_VIEW_LOAD_TIMEOUT_MS = 15_000/u);
-  assert.match(app, /loadMajorViewWithDeadline<T>\(view: OperationsView, importer: \(\) => Promise<T>\)/u);
-  assert.match(app, /could not be loaded within 15 seconds\. Reload the page to try again\./u);
+  assert.match(app, /import \{ loadMajorViewWithDeadline \} from "\.\/application\/load-major-view"/u);
+  assert.match(loader, /const MAJOR_VIEW_LOAD_TIMEOUT_MS = 15_000/u);
+  assert.match(loader, /globalThis\.setTimeout\(\(\) => \{/u);
+  assert.match(loader, /globalThis\.clearTimeout\(timeout\)/u);
+  assert.doesNotMatch(loader, /\bwindow\./u);
+  assert.match(loader, /could not be loaded within 15 seconds\. Reload the page to try again\./u);
   assert.match(app, /if \(preload\) void preload\(\)\.catch\(\(\) => undefined\)/u);
   assert.match(notice, /role=\{failed \? "alert" : "status"\}/u);
   assert.match(notice, /aria-live=\{failed \? "assertive" : "polite"\}/u);
   assert.match(boundary, /return <AppFailureSurface onReload=\{\(\) => window\.location\.reload\(\)\} \/>/u);
   assert.match(app, /onMouseEnter=\{\(\) => preloadMajorView\(label\)\} onFocus=\{\(\) => preloadMajorView\(label\)\}/u);
+});
+
+test("NFIX-24 bounds a never-settling view import during server rendering", async () => {
+  await assert.rejects(
+    loadMajorViewWithDeadline("Inbox", () => new Promise(() => {}), 5),
+    /Inbox could not be loaded within 15 seconds\. Reload the page to try again\./u,
+  );
 });

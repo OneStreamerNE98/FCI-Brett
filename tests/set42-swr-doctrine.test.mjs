@@ -421,6 +421,9 @@ test("the scheduler law is enforced across every client-reachable module, not ju
   assert.deepEqual(
     sites,
     [
+      // One-shot lazy-import deadline: rejects a route load into the error
+      // boundary; it schedules no refresh and issues no repeated request.
+      { label: "app/application/load-major-view.ts", functionName: "loadMajorViewWithDeadline", timer: "setTimeout" },
       // Day-rollover refresh for the dashboard snapshot; same ruling as below.
       { label: "app/application/use-directory-data.ts", functionName: "schedule", timer: "setTimeout" },
       // Day-rollover refresh. ADJUDICATED August 4, 2026: this stays. The
@@ -434,9 +437,6 @@ test("the scheduler law is enforced across every client-reachable module, not ju
       { label: "app/components/AppNotifications.tsx", functionName: "useNotificationQueue", timer: "setTimeout" },
       // Typeahead debounce: delays a keystroke-driven request the user started.
       { label: "app/features/address-validation/AddressValidationField.tsx", functionName: "AddressValidationField", timer: "setTimeout" },
-      // One-shot lazy-import deadline: rejects a route load into the error
-      // boundary; it schedules no refresh and issues no repeated request.
-      { label: "app/FloorOpsApp.tsx", functionName: "loadMajorViewWithDeadline", timer: "setTimeout" },
       // Wall-clock display tick: re-renders a shown time, issues no request.
       { label: "app/FloorOpsApp.tsx", functionName: "Overview", timer: "setInterval" },
       // Hydration and focus deferrals to the next task; none of them fetch.

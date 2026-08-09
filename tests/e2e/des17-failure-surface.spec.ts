@@ -1,5 +1,15 @@
 import { expect, test } from "@playwright/test";
 
+test("a lazy major view server-renders and hydrates without a browser-only loader crash", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.goto("/inbox");
+  await expect(page.getByRole("heading", { level: 1, name: "Gmail project inbox" })).toBeVisible();
+  await expect(page.getByTestId("vinext-dev-error-overlay")).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});
+
 test("a deliberate descendant render failure shows recovery instead of a blank page", async ({ page }) => {
   test.skip(
     process.env.FCI_E2E_EXTERNAL_SERVER === "true",

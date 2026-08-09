@@ -18,6 +18,7 @@ import { ProjectDrawer } from "./projects/components/ProjectDrawer";
 import { NewProjectModal, ProjectEditConflictError, optionalFlooringCategory, projectManagerLabel } from "./projects/components/ProjectModals";
 import { invalidateDirectoryGets, mapLeadRecord, optionalProjectTimestamp, optionalRecordNumber, useDirectoryData } from "./application/use-directory-data";
 import { type CurrentUserSettingsPayload, useCurrentUserSettings } from "./application/use-current-user-settings";
+import { loadMajorViewWithDeadline } from "./application/load-major-view";
 import type { InboxLeadProposal } from "./inbox/components/InboxView";
 import { DEFAULT_FILING_RULES, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
@@ -129,17 +130,6 @@ const managementNavItems: { label: OperationsView; icon: typeof LayoutDashboard 
   { label: "Reports", icon: Activity },
   { label: "Settings", icon: Settings },
 ];
-
-const MAJOR_VIEW_LOAD_TIMEOUT_MS = 15_000;
-
-function loadMajorViewWithDeadline<T>(view: OperationsView, importer: () => Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      reject(new Error(`${view} could not be loaded within 15 seconds. Reload the page to try again.`));
-    }, MAJOR_VIEW_LOAD_TIMEOUT_MS);
-    void importer().then(resolve, reject).finally(() => window.clearTimeout(timeout));
-  });
-}
 
 const loadAssistantView = () => loadMajorViewWithDeadline("AI Assistant", () => import("./assistant/components/AssistantView"));
 const loadClientsView = () => loadMajorViewWithDeadline("Clients", () => import("./clients/components/ClientsView"));
