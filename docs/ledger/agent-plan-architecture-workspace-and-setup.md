@@ -4076,7 +4076,7 @@ apart from path-only source pins; golden hashes byte-identical; `npm test`,
 **Effort:** medium-large. **Cost:** $0.
 
 ### NFIX-24 · FloorOps shell state ownership and major-view code splitting (large; FloorOpsApp queue)
-**Status:** In progress — `codex/nfix24-floorops-shell-splitting`
+**Status:** In review — PR #357
 
 **Why:** filed August 7, 2026 from the August 6 review (F5/F6), after DES-14 and DES-14b
 moved the record views and overlay cluster out. The remaining file is 108,430 bytes / 1,810
