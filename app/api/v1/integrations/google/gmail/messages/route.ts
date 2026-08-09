@@ -11,7 +11,9 @@ export async function GET(request: NextRequest) {
   if ("response" in auth) return auth.response;
 
   try {
-    const { config, client } = await getWorkspaceGmailClient();
+    const { config, client } = await getWorkspaceGmailClient(
+      request.nextUrl.searchParams.get("mailbox"),
+    );
     const bucket = normalizeGmailBucket(request.nextUrl.searchParams.get("label"));
     const search = normalizeGmailSearch(request.nextUrl.searchParams.get("q"));
     const labelId = await client.labelIdForBucket(bucket);

@@ -25,6 +25,7 @@ test("Inbox rules use a responsive semantic table and retain keyboard actions", 
   const browserIssues: string[] = [];
   let patchBody: unknown;
   let deleteRequests = 0;
+  let ruleReads = 0;
 
   page.on("console", (message) => {
     const detail = message.text();
@@ -37,6 +38,7 @@ test("Inbox rules use a responsive semantic table and retain keyboard actions", 
     const pathname = new URL(request.url()).pathname;
 
     if (pathname === "/api/v1/filing-rules" && request.method() === "GET") {
+      ruleReads += 1;
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [builtInRuleFixture, ruleFixture] }) });
       return;
     }
@@ -57,6 +59,8 @@ test("Inbox rules use a responsive semantic table and retain keyboard actions", 
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/settings?section=inbox-rules");
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  await expect(page.getByText("Loading live records", { exact: true })).toHaveCount(0, { timeout: 30_000 });
+  await expect.poll(() => ruleReads).toBeGreaterThan(0);
 
   const table = page.getByRole("table", { name: "Inbox & file rules" });
   await expect(table).toBeVisible();

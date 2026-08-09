@@ -5,6 +5,13 @@ import type { D1Database } from "../../../../../../adapters/d1/d1-database";
 import { createD1FirstRunImportRepository } from "../../../../../../adapters/d1/first-run-import-repository";
 import { createD1GoogleFormLeadIntakeRepository } from "../../../../../../adapters/d1/google-form-lead-intake-repository";
 import {
+  acquireWorkspaceSetupLease,
+  completeWorkspaceSetupLease,
+  failWorkspaceSetupLease,
+  googleConnectionLeaseFence,
+  type WorkspaceSetupLease,
+} from "../../../../../../adapters/d1/workspace-setup-leases";
+import {
   assertGoogleFormLeadHeaders,
   googleFormLeadSubmissionKey,
   GOOGLE_FORM_LEAD_MAX_ROWS,
@@ -199,6 +206,8 @@ export async function POST(request: NextRequest) {
   );
   if (rateLimitResponse) return noStoreResponse(rateLimitResponse);
 
+  const database = env.DB as unknown as D1Database;
+  let lease: WorkspaceSetupLease | null = null;
   try {
     const setup = await getEffectiveGoogleRuntimeSetup();
     const resolvedSheet = setup.effectiveResources.leadFormResponseSheet;
@@ -208,7 +217,7 @@ export async function POST(request: NextRequest) {
     );
     if (!intake.spreadsheetId) return configurationError(intake.invalid);
     const repository = createD1GoogleFormLeadIntakeRepository(
-      env.DB as unknown as D1Database,
+      database,
     );
     const watermark = await repository.getWatermark(
       setup.config.connectionKey,
@@ -315,6 +324,27 @@ export async function POST(request: NextRequest) {
       }, 409);
     }
 
+    // Provider reads and no-op validation finish before the lease so a slow
+    // Sheets request cannot hold tenant reset open. The exact credential-
+    // generation fence prevents a reset that wins that race from being
+    // followed by stale-tenant writes; once acquired, WS-19 blocks reset until
+    // this bounded save is terminal.
+    lease = await acquireWorkspaceSetupLease(database, {
+      id: crypto.randomUUID(),
+      connectionKey: setup.config.workspaceConnectionKey,
+      action: "google-form-lead-intake",
+      scopeKey: "google-form-lead-intake",
+      actor: auth.user.email,
+      now: Date.now(),
+      connectionFence: googleConnectionLeaseFence(setup.config),
+    });
+    if (!lease) {
+      return noStoreJson({
+        error: "Another response check is in progress or the Google connection changed. Try again.",
+        code: "form_lead_check_in_progress",
+      }, 409);
+    }
+
     const saved = await repository.saveBatch({
       connectionKey: setup.config.connectionKey,
       spreadsheetId: intake.spreadsheetId,
@@ -328,6 +358,9 @@ export async function POST(request: NextRequest) {
       processedAt,
       actor: auth.user.email,
     });
+    const queue = await publicQueue(repository, setup.config.connectionKey);
+    await completeWorkspaceSetupLease(database, lease, Date.now());
+    lease = null;
     return noStoreJson({
       processed: drafts.length,
       inserted: saved.inserted,
@@ -338,9 +371,17 @@ export async function POST(request: NextRequest) {
         lastProcessedRow: saved.watermark.lastProcessedRow,
         lastProcessedAt: saved.watermark.lastProcessedAt,
       },
-      queue: await publicQueue(repository, setup.config.connectionKey),
+      queue,
     });
   } catch (error) {
+    if (lease) {
+      await failWorkspaceSetupLease(
+        database,
+        lease,
+        "google_form_lead_intake_failed",
+        Date.now(),
+      );
+    }
     return errorResponse(error);
   }
 }

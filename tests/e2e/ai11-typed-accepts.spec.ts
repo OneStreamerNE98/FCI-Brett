@@ -39,12 +39,47 @@ const reviewRow = {
     estimatedValue: null,
   },
 };
+const mailboxEmail = "workspace-simulation@fci.example";
 
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     status,
     contentType: "application/json",
     body: JSON.stringify(body),
+  });
+}
+
+function connectedMailboxPayload() {
+  return {
+    runtimeMode: "simulation",
+    simulation: true,
+    enabledServices: ["drive", "gmail", "calendar", "sheets"],
+    connection: {
+      connected: true,
+      status: "connected",
+      account: mailboxEmail,
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: { drive: true, gmail: true, calendar: true, sheets: true },
+      requiresReauthorization: false,
+    },
+    mailboxes: [{
+      email: mailboxEmail,
+      status: "connected",
+      connected: true,
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: { drive: true, gmail: true, calendar: true, sheets: true },
+      requiresReauthorization: false,
+    }],
+  };
+}
+
+async function routeInboxAnalysis(
+  page: Page,
+  handler: (route: Route) => Promise<void> | void,
+) {
+  await page.route("**/api/v1/inbox-analysis?*", async (route) => {
+    expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(mailboxEmail);
+    await handler(route);
   });
 }
 
@@ -83,6 +118,8 @@ async function mockInboxFoundation(page: Page) {
       simulation: true,
     },
   }));
+  await page.route("**/api/v1/integrations/google/connection", (route) =>
+    fulfillJson(route, connectedMailboxPayload()));
   await page.route("**/api/v1/leads", (route) => fulfillJson(route, { leads: [] }));
   await page.route("**/api/v1/clients", (route) => fulfillJson(route, {
     clients: [{
@@ -129,7 +166,7 @@ async function mockReviewQueue(
   currentRows: () => unknown[],
   patches: unknown[],
 ) {
-  await page.route("**/api/v1/inbox-analysis", async (route) => {
+  await routeInboxAnalysis(page, async (route) => {
     const method = route.request().method();
     if (method === "POST") {
       await fulfillJson(route, {
@@ -157,6 +194,7 @@ test("one multi-intent row exposes every typed action and project-update reuses 
   await page.route(
     `**/api/v1/integrations/google/gmail/messages/${reviewRow.analysis.gmailMessageId}/file*`,
     async (route) => {
+      expect(new URL(route.request().url()).searchParams.get("mailbox")).toBe(mailboxEmail);
       if (route.request().method() === "GET") previewCalls += 1;
       else filingCalls += 1;
       await fulfillJson(route, { error: "not_expected_before_human_review" }, 500);
@@ -252,6 +290,7 @@ test("schedule accept posts once to the task route and its atomic 201 retires th
     sourceRef: reviewRow.analysis.gmailMessageId,
     inboxReviewId: reviewRow.id,
     inboxReviewIntent: "schedule",
+    inboxReviewMailbox: mailboxEmail,
   }]);
   expect(patches).toEqual([]);
 });
@@ -302,6 +341,7 @@ test("a failed warranty accept keeps both the proposal and review row visible wi
     sourceRef: reviewRow.analysis.gmailMessageId,
     inboxReviewId: reviewRow.id,
     inboxReviewIntent: "warranty",
+    inboxReviewMailbox: mailboxEmail,
   }]);
   expect(patches).toEqual([]);
 });

@@ -5,6 +5,7 @@ import {
   acquireWorkspaceSetupLease,
   completeWorkspaceSetupLease,
   failWorkspaceSetupLease,
+  googleConnectionLeaseFence,
 } from "../adapters/d1/workspace-setup-leases";
 import {
   getGoogleSheetMirrorStatus as getGoogleSheetMirrorStatusCore,
@@ -24,7 +25,15 @@ const dependencies = Object.freeze({
   fetch: (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init),
   now: Date.now,
   getAccessToken: getGoogleAccessToken,
-  acquireSyncLease: ({ connectionKey, actor, now }: Readonly<{ connectionKey: string; actor: string; now: number }>) => (
+  acquireSyncLease: ({ connectionKey, authConnectionId, authConnectionKey, authConnectionEmail, authConnectionRefreshTokenCiphertext, actor, now }: Readonly<{
+    connectionKey: string;
+    authConnectionId?: string;
+    authConnectionKey: string;
+    authConnectionEmail?: string;
+    authConnectionRefreshTokenCiphertext?: string;
+    actor: string;
+    now: number;
+  }>) => (
     acquireWorkspaceSetupLease(env.DB, {
       id: crypto.randomUUID(),
       connectionKey,
@@ -32,6 +41,13 @@ const dependencies = Object.freeze({
       scopeKey: "sheets-directory-sync",
       actor,
       now,
+      connectionFence: googleConnectionLeaseFence({
+        simulation: false,
+        authConnectionId,
+        authConnectionKey,
+        authConnectionEmail,
+        authConnectionRefreshTokenCiphertext,
+      }),
     })
   ),
   completeSyncLease: completeWorkspaceSetupLease.bind(null, env.DB),

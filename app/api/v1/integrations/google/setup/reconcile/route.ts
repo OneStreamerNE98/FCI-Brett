@@ -1,5 +1,14 @@
+import { env } from "cloudflare:workers";
 import { NextRequest } from "next/server";
 
+import type { D1Database } from "../../../../../../adapters/d1/d1-database";
+import {
+  acquireWorkspaceSetupLease,
+  completeWorkspaceSetupLease,
+  failWorkspaceSetupLease,
+  googleConnectionLeaseFence,
+  type WorkspaceSetupLease,
+} from "../../../../../../adapters/d1/workspace-setup-leases";
 import { parseBoundedJsonObject } from "../../../../../../lib/api-json-body";
 import { GoogleCalendarClient } from "../../../../../../lib/google-calendar-client";
 import { GoogleDriveClient } from "../../../../../../lib/google-drive";
@@ -41,6 +50,8 @@ export async function POST(request: NextRequest) {
 
   const setup = await getEffectiveGoogleRuntimeSetup();
   const { config, blueprint, blueprintVersion, resources, effectiveResources } = setup;
+  const database = env.DB as unknown as D1Database;
+  let lease: WorkspaceSetupLease | null = null;
   const sharedDrive = resources.find((resource) => (
     resource.resourceType === "drive.shared-drive" && resource.resourceKey === "primary"
   ));
@@ -112,6 +123,23 @@ export async function POST(request: NextRequest) {
     const desired = workspaceReconcileDesiredResources(blueprint, desiredCalendarKeys);
     const result = deriveWorkspaceReconcileDrift(desired, actual);
     const event = setupReconcileRunIntegrationEvent(config.connectionKey, result.counts);
+    if (!config.simulation) {
+      lease = await acquireWorkspaceSetupLease(database, {
+        id: crypto.randomUUID(),
+        connectionKey: config.workspaceConnectionKey,
+        action: "setup-reconcile",
+        scopeKey: "setup-reconcile",
+        actor: auth.user.email,
+        now: Date.now(),
+        connectionFence: googleConnectionLeaseFence(config),
+      });
+      if (!lease) {
+        return response({
+          error: "The Google connection changed or Workspace drift is already being checked. Try again.",
+          code: "workspace_reconcile_in_progress",
+        }, 409);
+      }
+    }
     await writeGoogleIntegrationEvent(
       config,
       event.eventType,
@@ -120,6 +148,10 @@ export async function POST(request: NextRequest) {
       event.entityId,
       event.detail,
     );
+    if (lease) {
+      await completeWorkspaceSetupLease(database, lease, Date.now());
+      lease = null;
+    }
     return response({
       reconciled: true,
       simulated: config.simulation,
@@ -129,6 +161,9 @@ export async function POST(request: NextRequest) {
       drift: result.drift,
     });
   } catch (error) {
+    if (lease) {
+      await failWorkspaceSetupLease(database, lease, "workspace_reconcile_failed", Date.now());
+    }
     return noStoreResponse(googleIntegrationErrorResponse(
       error,
       "Workspace drift could not be checked. No Google resource was changed.",

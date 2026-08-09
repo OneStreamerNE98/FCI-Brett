@@ -553,7 +553,7 @@ test("mutation invalidations refresh dependent projections and explicit retries 
   assert.match(activity, /invalidateCachedGetPrefix\("\/api\/v1\/admin\/audit\?", \{ notify: false \}\)/u);
 
   assert.match(cache, /function invalidateWorkspaceOperationsReadCache\(\) \{\s*invalidateCachedGet\("\/api\/v1\/integrations\/google\/operations"\);\s*\}/u);
-  assert.match(cache, /function invalidateInboxAnalysisReadCaches\([^)]+\) \{\s*invalidateCachedGet\("\/api\/v1\/inbox-analysis", options\);\s*invalidateCachedGet\("\/api\/v1\/inbox-analysis\/activity", options\);\s*\}/u);
+  assert.match(cache, /function invalidateInboxAnalysisReadCaches\([^)]+\) \{\s*invalidateCachedGet\("\/api\/v1\/inbox-analysis", options\);\s*invalidateCachedGetPrefix\("\/api\/v1\/inbox-analysis\?", options\);\s*invalidateCachedGet\("\/api\/v1\/inbox-analysis\/activity", options\);\s*\}/u);
   assert.match(cache, /function invalidateGmailFilingReadCaches\([^)]+\) \{\s*invalidateCachedGet\("\/api\/v1\/dashboard"\);\s*invalidateInboxAnalysisReadCaches\(\);\s*if \(options\.includeOperations !== false\) invalidateWorkspaceOperationsReadCache\(\);\s*\}/u);
   assert.equal((inbox.match(/invalidateInboxAnalysisReadCaches\(\{ notify: false \}\)/gu) ?? []).length, 4);
   assert.equal((`${inbox}\n${google}`.match(/invalidateGmailFilingReadCaches\(\{ includeOperations: false \}\)/gu) ?? []).length, 2);

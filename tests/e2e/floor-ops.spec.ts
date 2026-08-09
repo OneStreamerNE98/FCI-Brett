@@ -500,7 +500,7 @@ test("inbox keeps one primary load action and exposes semantic status details", 
 
   const titleActions = page.locator(".page-heading .title-actions");
   const titleActionButtons = titleActions.locator(":scope > button");
-  await expect(titleActionButtons).toHaveCount(2);
+  await expect(titleActionButtons).toHaveCount(1);
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     // Reflow after a viewport change is asynchronous, so a one-shot geometry

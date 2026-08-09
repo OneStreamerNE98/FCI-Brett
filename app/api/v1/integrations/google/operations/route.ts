@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest } from "next/server";
 
-import { getConnectionScope } from "../../../../../lib/google-oauth-sites";
+import { getConnectionScope, getGoogleConnectionScopes } from "../../../../../lib/google-oauth-sites";
 import { noStoreJson, noStoreResponse } from "../../../../../lib/no-store-json";
 import { requireOfficeUser } from "../../../../../lib/workspace-auth";
 
@@ -70,9 +70,30 @@ type IntegrationEventRow = Readonly<{
   created_at: number;
 }>;
 
+type MailboxIdentityRow = Readonly<{
+  connection_key: string;
+  google_email: string;
+}>;
+
+const SYNTHETIC_MAILBOX_KEY = /gmail_[a-f0-9]{64}/gu;
+
 function boundedText(value: string | null, maximumLength: number) {
   if (value === null) return null;
   return value.slice(0, maximumLength);
+}
+
+function publicRecordText(
+  value: string | null,
+  mailboxEmailByKey: ReadonlyMap<string, string>,
+  workspaceConnectionKey: string,
+  maximumLength: number,
+) {
+  if (value === null) return null;
+  let publicValue = value.split(workspaceConnectionKey).join("workspace");
+  for (const [connectionKey, googleEmail] of mailboxEmailByKey) {
+    publicValue = publicValue.split(connectionKey).join(googleEmail);
+  }
+  return publicValue.replace(SYNTHETIC_MAILBOX_KEY, "attached-mailbox").slice(0, maximumLength);
 }
 
 function boundedRows<T>(rows: readonly T[]) {
@@ -80,6 +101,17 @@ function boundedRows<T>(rows: readonly T[]) {
     rows: rows.slice(0, RESULT_LIMIT),
     hasMore: rows.length > RESULT_LIMIT,
   };
+}
+
+function newestRows<T extends { id: string }>(
+  rows: readonly T[],
+  timestamp: (row: T) => number,
+) {
+  return [...rows]
+    .sort((left, right) =>
+      timestamp(right) - timestamp(left) || right.id.localeCompare(left.id)
+    )
+    .slice(0, QUERY_LIMIT);
 }
 
 function cursorClause(
@@ -139,6 +171,23 @@ export async function GET(request: NextRequest) {
   const includeEvents = categories.includes("events");
 
   const config = getConnectionScope();
+  const scopes = await getGoogleConnectionScopes();
+  const mailboxIdentities = scopes.simulation
+    ? { results: [] as MailboxIdentityRow[] }
+    : await env.DB.prepare(
+        `SELECT connection_key, google_email
+           FROM google_connections
+          ORDER BY lower(google_email), connection_key`,
+      ).all<MailboxIdentityRow>();
+  const mailboxScopeKeys = new Set(scopes.mailboxConnectionKeys);
+  const mailboxEmailByKey = new Map(
+    mailboxIdentities.results
+      .filter((row) => (
+        row.connection_key !== scopes.workspaceConnectionKey
+        && mailboxScopeKeys.has(row.connection_key)
+      ))
+      .map((row) => [row.connection_key, row.google_email] as const),
+  );
   const checkedAt = Date.now();
 
   const driveCursor = cursor.d;
@@ -150,7 +199,7 @@ export async function GET(request: NextRequest) {
 
   const [driveResult, archiveResult, eventResult] = await Promise.all([
     includeDrive
-      ? env.DB.prepare(
+      ? Promise.all(scopes.mailboxConnectionKeys.map((connectionKey) => env.DB.prepare(
           `SELECT id, operation_key, project_id, status, lease_expires_at, last_error_code, updated_at
            FROM google_drive_operations
            WHERE connection_key = ?
@@ -164,32 +213,58 @@ export async function GET(request: NextRequest) {
              )${driveWhere.sql}
            ORDER BY updated_at DESC, id DESC
            LIMIT ${QUERY_LIMIT}`,
-        ).bind(config.connectionKey, checkedAt, ...driveWhere.values).all<DriveOperationRow>()
+        ).bind(connectionKey, checkedAt, ...driveWhere.values).all<DriveOperationRow>())).then(
+          (results) => ({
+            results: newestRows(
+              results.flatMap((result) => result.results),
+              (row) => row.updated_at,
+            ),
+          }),
+        )
       : Promise.resolve({ results: [] as DriveOperationRow[] }),
     includeArchive
-      ? env.DB.prepare(
+      ? Promise.all(scopes.mailboxConnectionKeys.map((connectionKey) => env.DB.prepare(
           `SELECT id, gmail_message_id, project_id, status, last_error_code, updated_at
            FROM gmail_file_archives
            WHERE connection_key = ? AND status = 'failed'${archiveWhere.sql}
            ORDER BY updated_at DESC, id DESC
            LIMIT ${QUERY_LIMIT}`,
-        ).bind(config.connectionKey, ...archiveWhere.values).all<FailedArchiveRow>()
+        ).bind(connectionKey, ...archiveWhere.values).all<FailedArchiveRow>())).then(
+          (results) => ({
+            results: newestRows(
+              results.flatMap((result) => result.results),
+              (row) => row.updated_at,
+            ),
+          }),
+        )
       : Promise.resolve({ results: [] as FailedArchiveRow[] }),
     includeEvents
-      ? env.DB.prepare(
+      ? Promise.all(scopes.mailboxConnectionKeys.map((connectionKey) => env.DB.prepare(
           `SELECT id, event_type, actor, entity_type, entity_id, detail, created_at
            FROM google_integration_events
            WHERE connection_key = ?${eventWhere.sql}
            ORDER BY created_at DESC, id DESC
            LIMIT ${QUERY_LIMIT}`,
-        ).bind(config.connectionKey, ...eventWhere.values).all<IntegrationEventRow>()
+        ).bind(connectionKey, ...eventWhere.values).all<IntegrationEventRow>())).then(
+          (results) => ({
+            results: newestRows(
+              results.flatMap((result) => result.results),
+              (row) => row.created_at,
+            ),
+          }),
+        )
       : Promise.resolve({ results: [] as IntegrationEventRow[] }),
   ]);
 
   const driveBounded = boundedRows(driveResult.results);
   const driveOperations = driveBounded.rows.map((row) => ({
     id: boundedText(row.id, 200),
-    operationKey: boundedText(row.operation_key, 300),
+    operationKey: publicRecordText(
+      row.operation_key,
+      mailboxEmailByKey,
+      scopes.workspaceConnectionKey,
+      300,
+    ),
     projectId: boundedText(row.project_id, 200),
     condition: row.status === "failed" ? "failed" as const : "stuck" as const,
     status: boundedText(row.status, 80),
@@ -212,8 +287,18 @@ export async function GET(request: NextRequest) {
     eventType: boundedText(row.event_type, 200),
     actor: boundedText(row.actor, 254),
     entityType: boundedText(row.entity_type, 100),
-    entityId: boundedText(row.entity_id, 200),
-    detail: boundedText(row.detail, 1_000),
+    entityId: publicRecordText(
+      row.entity_id,
+      mailboxEmailByKey,
+      scopes.workspaceConnectionKey,
+      200,
+    ),
+    detail: publicRecordText(
+      row.detail,
+      mailboxEmailByKey,
+      scopes.workspaceConnectionKey,
+      1_000,
+    ),
     createdAt: row.created_at,
   }));
 
