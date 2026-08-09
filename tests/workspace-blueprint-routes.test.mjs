@@ -841,9 +841,15 @@ test("blueprint reconcile source re-reads exact folder, sheet, and template iden
   assert.match(providerFence, /reviewedResource\.name !== review\.expectedActualName/u);
 
   const reviewCall = blueprintRouteSource.indexOf("await assertLiveReconcileReview(");
-  const saveCall = blueprintRouteSource.indexOf("const result = await saveWorkspaceBlueprint");
+  const leaseCall = blueprintRouteSource.indexOf("lease = await acquireWorkspaceSetupLease", reviewCall);
+  const saveCall = blueprintRouteSource.indexOf("result = await saveWorkspaceBlueprint");
   assert.ok(reviewCall > 0);
-  assert.ok(saveCall > reviewCall, "provider review must finish immediately before the version-CAS save");
+  assert.ok(leaseCall > reviewCall, "provider review must finish before the exact connection-generation lease");
+  assert.ok(saveCall > leaseCall, "the exact connection-generation lease must guard the version-CAS save");
+  assert.match(
+    blueprintRouteSource.slice(leaseCall, saveCall),
+    /connectionFence: googleConnectionLeaseFence\(setup\.config\)/u,
+  );
 });
 
 test("blueprint PUT returns exact sanitizer paths and rejects oversized or cross-origin bodies", async () => {

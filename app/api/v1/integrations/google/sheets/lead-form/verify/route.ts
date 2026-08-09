@@ -2,6 +2,14 @@ import { env } from "cloudflare:workers";
 import { NextRequest } from "next/server";
 
 import { upsertWorkspaceResource } from "../../../../../../../adapters/d1/workspace-resources";
+import type { D1Database } from "../../../../../../../adapters/d1/d1-database";
+import {
+  acquireWorkspaceSetupLease,
+  completeWorkspaceSetupLease,
+  failWorkspaceSetupLease,
+  googleConnectionLeaseFence,
+  type WorkspaceSetupLease,
+} from "../../../../../../../adapters/d1/workspace-setup-leases";
 import { parseBoundedJsonObject } from "../../../../../../../lib/api-json-body";
 import { googleIntegrationErrorResponse } from "../../../../../../../lib/google-integration-error";
 import {
@@ -56,12 +64,29 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  const database = env.DB as unknown as D1Database;
+  let lease: WorkspaceSetupLease | null = null;
   try {
     await new GoogleSheetsClient(
       await getGoogleAccessToken(config, "sheets"),
       externalId,
     ).metadata();
     const now = Date.now();
+    lease = await acquireWorkspaceSetupLease(database, {
+      id: crypto.randomUUID(),
+      connectionKey: config.workspaceConnectionKey,
+      action: "sheets-lead-form-verify",
+      scopeKey: "sheets-lead-form-verify",
+      actor: auth.user.email,
+      now,
+      connectionFence: googleConnectionLeaseFence(config),
+    });
+    if (!lease) {
+      return json({
+        error: "The Google connection changed or this spreadsheet is already being verified. Try again.",
+        code: "sheets_verify_in_progress",
+      }, 409);
+    }
     const existing = setup.resources.find((resource) => (
       resource.resourceType === "sheets.spreadsheet"
       && resource.resourceKey === "lead-form-responses"
@@ -79,6 +104,8 @@ export async function POST(request: NextRequest) {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     });
+    await completeWorkspaceSetupLease(database, lease, Date.now());
+    lease = null;
     return json({
       verified: true,
       simulated: false,
@@ -88,6 +115,9 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (lease) {
+      await failWorkspaceSetupLease(database, lease, "sheets_verify_failed", Date.now());
+    }
     return noStoreResponse(googleIntegrationErrorResponse(
       error,
       "The lead-form response spreadsheet could not be verified. Try again.",

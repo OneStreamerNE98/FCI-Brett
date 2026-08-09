@@ -14,6 +14,30 @@ export type WorkspaceSetupLease = Readonly<{
   leaseExpiresAt: number;
 }>;
 
+export type WorkspaceSetupConnectionFence = Readonly<{
+  simulation: boolean;
+  connectionId?: string;
+  connectionKey: string;
+  googleEmail?: string;
+  refreshTokenCiphertext?: string;
+}>;
+
+export function googleConnectionLeaseFence(config: Readonly<{
+  simulation: boolean;
+  authConnectionId?: string;
+  authConnectionKey: string;
+  authConnectionEmail?: string;
+  authConnectionRefreshTokenCiphertext?: string;
+}>): WorkspaceSetupConnectionFence {
+  return Object.freeze({
+    simulation: config.simulation,
+    connectionId: config.authConnectionId,
+    connectionKey: config.authConnectionKey,
+    googleEmail: config.authConnectionEmail,
+    refreshTokenCiphertext: config.authConnectionRefreshTokenCiphertext,
+  });
+}
+
 const LEASE_DURATION_MS = 5 * 60 * 1_000;
 
 /** Uses the established Drive-operation row as a five-minute setup lease. */
@@ -26,12 +50,16 @@ export async function acquireWorkspaceSetupLease(
     scopeKey: string;
     actor: string;
     now: number;
+    /** Omit only for deliberately local flows that do not use Google credentials. */
+    connectionFence?: WorkspaceSetupConnectionFence;
   }>,
 ): Promise<WorkspaceSetupLease | null> {
   const operationKey = `${input.connectionKey}:setup:${input.action}`;
   const leaseExpiresAt = input.now + LEASE_DURATION_MS;
+  const fence = input.connectionFence;
+  const bypassConnectionFence = !fence || fence.simulation ? 1 : 0;
   const result = await database.prepare(
-    "INSERT INTO google_drive_operations (id, connection_key, operation_key, project_id, status, lease_expires_at, last_error_code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, 'in-progress', ?, NULL, ?, ?, ?) ON CONFLICT(operation_key) DO UPDATE SET status = 'in-progress', lease_expires_at = excluded.lease_expires_at, last_error_code = NULL, created_by = excluded.created_by, updated_at = excluded.updated_at WHERE google_drive_operations.status != 'in-progress' OR google_drive_operations.lease_expires_at < ?",
+    "INSERT INTO google_drive_operations (id, connection_key, operation_key, project_id, status, lease_expires_at, last_error_code, created_by, created_at, updated_at) SELECT ?, ?, ?, ?, 'in-progress', ?, NULL, ?, ?, ? WHERE (? = 1 OR EXISTS (SELECT 1 FROM google_connections WHERE id = ? AND connection_key = ? AND lower(google_email) = ? AND refresh_token_ciphertext = ? AND status = 'connected')) ON CONFLICT(operation_key) DO UPDATE SET status = 'in-progress', lease_expires_at = excluded.lease_expires_at, last_error_code = NULL, created_by = excluded.created_by, updated_at = excluded.updated_at WHERE google_drive_operations.status != 'in-progress' OR google_drive_operations.lease_expires_at < ?",
   ).bind(
     input.id,
     input.connectionKey,
@@ -41,6 +69,11 @@ export async function acquireWorkspaceSetupLease(
     input.actor,
     input.now,
     input.now,
+    bypassConnectionFence,
+    fence?.connectionId ?? "",
+    fence?.connectionKey ?? "",
+    fence?.googleEmail ?? "",
+    fence?.refreshTokenCiphertext ?? "",
     input.now,
   ).run();
   if (result.meta?.changes !== 1) return null;

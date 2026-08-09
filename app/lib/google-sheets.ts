@@ -163,6 +163,10 @@ export type GoogleSheetsOperationsDependencies = Readonly<{
   getAccessToken(config: GoogleRuntimeConfig, service: "sheets"): Promise<string>;
   acquireSyncLease(input: Readonly<{
     connectionKey: string;
+    authConnectionId?: string;
+    authConnectionKey: string;
+    authConnectionEmail?: string;
+    authConnectionRefreshTokenCiphertext?: string;
     actor: string;
     now: number;
   }>): Promise<GoogleSheetSyncLease | null>;
@@ -694,6 +698,10 @@ export async function syncGoogleDirectory(
     ? null
     : await dependencies.acquireSyncLease({
       connectionKey: config.connectionKey,
+      authConnectionId: config.authConnectionId,
+      authConnectionKey: config.authConnectionKey,
+      authConnectionEmail: config.authConnectionEmail,
+      authConnectionRefreshTokenCiphertext: config.authConnectionRefreshTokenCiphertext,
       actor,
       now: dependencies.now(),
     });

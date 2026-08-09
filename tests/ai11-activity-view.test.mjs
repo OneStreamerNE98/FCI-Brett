@@ -106,6 +106,49 @@ class ActivityDatabase {
       );
       CREATE UNIQUE INDEX mail_items_profile_message_unique
         ON mail_items (connection_key, gmail_message_id);
+      CREATE TABLE google_connections (
+        id TEXT PRIMARY KEY,
+        connection_key TEXT NOT NULL UNIQUE,
+        google_subject TEXT NOT NULL,
+        google_email TEXT NOT NULL,
+        refresh_token_ciphertext TEXT NOT NULL,
+        key_version TEXT NOT NULL,
+        scopes_json TEXT,
+        status TEXT NOT NULL
+      );
+      CREATE TABLE workspace_resources (
+        id TEXT PRIMARY KEY,
+        connection_key TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_key TEXT NOT NULL,
+        external_id TEXT NOT NULL,
+        parent_external_id TEXT,
+        external_url TEXT,
+        origin TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE workspace_blueprints (
+        id TEXT PRIMARY KEY,
+        connection_key TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        blueprint_json TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_by TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE workspace_settings (
+        id TEXT PRIMARY KEY,
+        shared_drive_id TEXT,
+        client_directory_sheet_id TEXT,
+        intake_mailbox TEXT,
+        settings_json TEXT NOT NULL,
+        updated_by TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
       CREATE TABLE assistant_label_definitions (
         slug TEXT PRIMARY KEY,
         description TEXT NOT NULL,
@@ -114,6 +157,10 @@ class ActivityDatabase {
         updated_at INTEGER NOT NULL
       );
     `);
+    this.insertConnection({
+      connectionKey: CONNECTION_KEY,
+      email: "legacy-intake@cherryhillfci.com",
+    });
     const insertLabel = this.database.prepare(
       "INSERT INTO assistant_label_definitions (slug, description, retired, created_at, updated_at) VALUES (?, ?, ?, 1, 1)",
     );
@@ -144,6 +191,7 @@ class ActivityDatabase {
     matchReason = "The saved message was reviewed by a person.",
     labelDefinitionVersion = "earlier-label-set",
     updatedAt = reviewedAt ?? 1_775_000_000_000,
+    connectionKey = CONNECTION_KEY,
   }) {
     this.database.prepare(`INSERT INTO mail_items (
       id, connection_key, gmail_message_id, gmail_thread_id, client_id,
@@ -156,7 +204,7 @@ class ActivityDatabase {
       ?, NULL, ?, ?, ?, 0, NULL, 0, ?, ?, ?, ?, ?)`)
       .run(
         id,
-        CONNECTION_KEY,
+        connectionKey,
         `gmail-${id}`,
         status,
         matchReason,
@@ -171,6 +219,20 @@ class ActivityDatabase {
         acceptedIntent,
         updatedAt - 2_000,
         updatedAt,
+      );
+  }
+
+  insertConnection({ connectionKey, email, status = "connected" }) {
+    this.database.prepare(`INSERT INTO google_connections (
+      id, connection_key, google_subject, google_email,
+      refresh_token_ciphertext, key_version, scopes_json, status
+    ) VALUES (?, ?, ?, ?, 'encrypted-token', 'v1', '[]', ?)`)
+      .run(
+        `connection-${connectionKey}`,
+        connectionKey,
+        `subject-${connectionKey}`,
+        email,
+        status,
       );
   }
 
@@ -320,6 +382,81 @@ test("activity GET counts the chosen accepted category and each distinct dismiss
     });
     assert.equal(counts["project-update"].acceptedCount, 0);
     assert.equal(counts.historic_custom.acceptedCount, 0);
+  } finally {
+    workerEnvironment.DB = originalDatabase;
+    globalThis.fetch = originalFetch;
+    database.close();
+  }
+});
+
+test("activity GET aggregates attached mailbox histories without exposing or reading an unknown mailbox scope", async () => {
+  const database = new ActivityDatabase();
+  const originalDatabase = workerEnvironment.DB;
+  const originalFetch = globalThis.fetch;
+  let providerCalls = 0;
+  workerEnvironment.DB = database;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("Activity aggregation must stay database-only.");
+  };
+  database.insertConnection({
+    connectionKey: "gmail_shared_a",
+    email: "shared-a@cherryhillfci.com",
+  });
+  database.insertConnection({
+    connectionKey: "gmail_shared_b",
+    email: "shared-b@cherryhillfci.com",
+  });
+  database.insertActivity({
+    id: "legacy-stable",
+    connectionKey: CONNECTION_KEY,
+    acceptedIntent: "lead",
+    updatedAt: 1_775_200_001_000,
+  });
+  database.insertActivity({
+    id: "mailbox-a",
+    connectionKey: "gmail_shared_a",
+    acceptedIntent: "lead",
+    updatedAt: 1_775_200_002_000,
+  });
+  database.insertActivity({
+    id: "mailbox-b",
+    connectionKey: "gmail_shared_b",
+    status: "dismissed",
+    intents: ["lead", "schedule"],
+    acceptedIntent: null,
+    updatedAt: 1_775_200_003_000,
+  });
+  database.insertActivity({
+    id: "unknown-mailbox",
+    connectionKey: "gmail_not_attached",
+    acceptedIntent: "lead",
+    updatedAt: 1_775_200_004_000,
+  });
+
+  try {
+    const response = await activityRoute.GET(request());
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.totalCount, 3);
+    assert.deepEqual(payload.rows.map(({ id }) => id), [
+      "mailbox-b",
+      "mailbox-a",
+      "legacy-stable",
+    ]);
+    const counts = Object.fromEntries(payload.counts.map((count) => [count.slug, count]));
+    assert.deepEqual(counts.lead, {
+      slug: "lead",
+      acceptedCount: 2,
+      dismissedCount: 1,
+    });
+    assert.deepEqual(counts.schedule, {
+      slug: "schedule",
+      acceptedCount: 0,
+      dismissedCount: 1,
+    });
+    assert.equal(JSON.stringify(payload).includes("gmail_shared"), false);
+    assert.equal(providerCalls, 0);
   } finally {
     workerEnvironment.DB = originalDatabase;
     globalThis.fetch = originalFetch;

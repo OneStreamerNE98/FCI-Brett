@@ -34,6 +34,7 @@ import {
 } from "../../domain/assistant-label-definition";
 import {
   cachedGetJson,
+  invalidateCachedGet,
   invalidateGmailFilingReadCaches,
   invalidateInboxAnalysisReadCaches,
   invalidateTaskReadCaches,
@@ -84,6 +85,38 @@ type GmailWorkspaceStatus = {
   runtimeMode?: "simulation" | "workspace";
   simulation?: boolean;
 };
+type GmailMailboxConnection = Readonly<{
+  email: string;
+  status: string;
+  connected: boolean;
+  services: Readonly<Record<string, boolean>>;
+  grantedServices?: Readonly<Record<string, boolean>> | null;
+  requiresReauthorization: boolean;
+  gmailReady?: boolean;
+}>;
+type GmailMailboxConnectionsPayload = Readonly<{
+  simulation?: boolean;
+  mailboxes?: readonly GmailMailboxConnection[];
+  enabledServices?: readonly string[];
+  connection?: Readonly<{
+    status?: string;
+    account?: string | null;
+    grantedServices?: Readonly<Record<string, boolean>> | null;
+    requiresReauthorization?: boolean;
+  }>;
+}>;
+type GmailFilingResult = {
+  filed?: boolean;
+  alreadyFiled?: boolean;
+  archive?: { attachmentCount?: number };
+  error?: string;
+};
+
+function gmailFilingSuccessMessage(result: GmailFilingResult, preview: GmailFilingPreview) {
+  return result.alreadyFiled
+    ? "This email was already filed to the selected project. Your inbox was left intact."
+    : `Email and ${result.archive?.attachmentCount ?? preview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`;
+}
 type AssistantTriageConfiguration = {
   keyState: "Configured" | "Missing";
   features: { triage: boolean; inboxAnalysis: boolean };
@@ -176,6 +209,50 @@ const inboxBucketLabels: Record<InboxBucket, string> = {
   "needs-review": "FCI/Needs Review",
   filed: "FCI/Filed",
 };
+
+const GOOGLE_CONNECTION_URL = "/api/v1/integrations/google/connection";
+
+function mailboxScopedUrl(path: string, mailbox: string) {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}mailbox=${encodeURIComponent(mailbox)}`;
+}
+
+function isMailboxGmailReady(mailbox: GmailMailboxConnection | null | undefined) {
+  if (!mailbox || !mailbox.connected || mailbox.status !== "connected") return false;
+  if (typeof mailbox.gmailReady === "boolean") return mailbox.gmailReady;
+  return mailbox.services.gmail === true;
+}
+
+function safeMailboxConnections(payload: GmailMailboxConnectionsPayload) {
+  if (payload.mailboxes === undefined) {
+    const legacyEmail = payload.simulation
+      ? "workspace-simulation@fci.example"
+      : payload.connection?.account?.trim() ?? "";
+    if (!legacyEmail.includes("@")) return [];
+    const connected = payload.connection?.status === "connected";
+    return [Object.freeze({
+      email: legacyEmail,
+      status: payload.connection?.status ?? "not-connected",
+      connected,
+      services: Object.freeze({
+        gmail: connected
+          && payload.enabledServices?.includes("gmail") === true
+          && (payload.simulation || payload.connection?.grantedServices?.gmail === true),
+      }),
+      grantedServices: payload.connection?.grantedServices ?? null,
+      requiresReauthorization: payload.connection?.requiresReauthorization === true,
+    })];
+  }
+  return payload.mailboxes.filter((mailbox) => (
+    typeof mailbox.email === "string"
+    && mailbox.email.includes("@")
+    && typeof mailbox.status === "string"
+    && typeof mailbox.connected === "boolean"
+    && typeof mailbox.services === "object"
+    && mailbox.services !== null
+    && typeof mailbox.requiresReauthorization === "boolean"
+  ));
+}
 
 const DEFAULT_INBOX_REVIEW_LABELS: ReadonlyMap<string, InboxReviewLabel> = new Map(
   DEFAULT_ASSISTANT_LABEL_DEFINITIONS.map(({ slug, description }) => [
@@ -625,6 +702,10 @@ export function InboxView({
   onCreateLead,
 }: InboxViewProps) {
   const [workspace, setWorkspace] = useState<GmailWorkspaceStatus | null>(null);
+  const [mailboxConnections, setMailboxConnections] = useState<readonly GmailMailboxConnection[]>([]);
+  const [selectedMailboxEmail, setSelectedMailboxEmail] = useState("");
+  const [mailboxConnectionsSettled, setMailboxConnectionsSettled] = useState(false);
+  const [mailboxConnectionsError, setMailboxConnectionsError] = useState<string | null>(null);
   const [messages, setMessages] = useState<WorkspaceMessage[]>([]);
   const [loadedBucket, setLoadedBucket] = useState<InboxBucket | null>(null);
   const [search, setSearch] = useState("");
@@ -647,6 +728,9 @@ export function InboxView({
   const [triageSuggestions, setTriageSuggestions] = useState<Record<string, AssistantTriageSuggestion>>({});
   const [triageLoading, setTriageLoading] = useState(false);
   const triageRequestIdRef = useRef(0);
+  const mailboxGenerationRef = useRef(0);
+  const selectedMailboxEmailRef = useRef("");
+  const messageRequestIdRef = useRef(0);
   const [analysisCoverage, setAnalysisCoverage] = useState<InboxAnalysisCoverage | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [reviewRows, setReviewRows] = useState<readonly InboxReviewQueueRow[]>([]);
@@ -694,6 +778,64 @@ export function InboxView({
     triageRequestIdRef.current += 1;
     setTriageSuggestions({});
     setTriageLoading(false);
+  }
+
+  const clearMailboxScopedState = useCallback(() => {
+    mailboxGenerationRef.current += 1;
+    messageRequestIdRef.current += 1;
+    triageRequestIdRef.current += 1;
+    reviewQueueRequestIdRef.current += 1;
+    analysisAutoStartedRef.current = false;
+    analysisInFlightRef.current = null;
+    reviewQueueAutoLoadedRef.current = false;
+    reviewQueueRefreshInFlightRef.current = null;
+    markReviewedInFlightRef.current = false;
+    restoreEmptyQueueFocusRef.current = false;
+    setMessages([]);
+    setLoadedBucket(null);
+    setLoading(false);
+    setLabelReady(null);
+    setError(null);
+    setFilingMessage(null);
+    setFilingProjectId("");
+    setFilingPreview(null);
+    setFilingLoading(false);
+    setFilingSubmitting(false);
+    setReplyMessage(null);
+    setReplyBody("");
+    setReplySaving(false);
+    setTriageSuggestions({});
+    setTriageLoading(false);
+    setAnalysisCoverage(null);
+    setAnalysisLoading(false);
+    setAnalysisFailed(false);
+    setReviewRows([]);
+    setReviewLabels(DEFAULT_INBOX_REVIEW_LABELS);
+    setReviewTotalCount(0);
+    setFailedAnalysisSummary(null);
+    setRetryingFailedAnalyses(false);
+    setReviewQueueState("idle");
+    setMarkingReviewId(null);
+    setLeadRetirementErrorIds(new Set<string>());
+    setTaskProposal(null);
+    setTaskSaving(false);
+    setTaskError("");
+    setFocusReviewRowId(null);
+  }, []);
+
+  const selectMailbox = useCallback((email: string) => {
+    if (selectedMailboxEmailRef.current === email) return;
+    selectedMailboxEmailRef.current = email;
+    clearMailboxScopedState();
+    setSelectedMailboxEmail(email);
+  }, [clearMailboxScopedState]);
+
+  function runRetryForMailbox(mailbox: string, action: () => void) {
+    if (selectedMailboxEmailRef.current !== mailbox) {
+      notify(`Switch back to ${mailbox} before retrying that mailbox action.`, "warning");
+      return;
+    }
+    action();
   }
 
   const checkGmailConnection = useCallback((force = false, silent = false) => {
@@ -788,6 +930,55 @@ export function InboxView({
     () => void loadAccountConfiguration(),
   );
 
+  const loadMailboxConnections = useCallback(async (force = false, silent = false) => {
+    if (!isAdmin) return;
+    try {
+      const payload = await cachedGetJson<GmailMailboxConnectionsPayload>(GOOGLE_CONNECTION_URL, { force });
+      const nextConnections = safeMailboxConnections(payload);
+      setMailboxConnections(nextConnections);
+      setMailboxConnectionsError(null);
+      setMailboxConnectionsSettled(true);
+      const currentEmail = selectedMailboxEmailRef.current;
+      if (currentEmail && nextConnections.some((mailbox) => mailbox.email === currentEmail)) return;
+      const nextSelection = nextConnections.find((mailbox) => mailbox.connected)?.email
+        ?? nextConnections[0]?.email
+        ?? "";
+      selectMailbox(nextSelection);
+    } catch (connectionError) {
+      if (silent && !isTerminalCachedGetError(connectionError)) return;
+      if (isTerminalCachedGetError(connectionError)) {
+        setMailboxConnections([]);
+        selectMailbox("");
+      }
+      setMailboxConnectionsSettled(true);
+      setMailboxConnectionsError(
+        connectionError instanceof Error
+          ? connectionError.message
+          : "Attached Gmail mailboxes could not be loaded.",
+      );
+    }
+  }, [isAdmin, selectMailbox]);
+
+  useEffect(() => {
+    if (!accountSettled) return;
+    if (!isAdmin) {
+      void Promise.resolve().then(() => {
+        setMailboxConnections([]);
+        setMailboxConnectionsError(null);
+        setMailboxConnectionsSettled(true);
+        selectMailbox("");
+      });
+      return;
+    }
+    void Promise.resolve().then(() => loadMailboxConnections());
+  }, [accountSettled, isAdmin, loadMailboxConnections, selectMailbox]);
+
+  useCachedGetSubscription(
+    ["/api/v1/integrations/google/connection"],
+    () => void loadMailboxConnections(false, true),
+    accountSettled && isAdmin,
+  );
+
   useEffect(() => {
     analysisMountedRef.current = true;
     return () => {
@@ -795,7 +986,16 @@ export function InboxView({
     };
   }, []);
 
-  const gmailReady = workspace?.connectionStatus === "connected" && workspace.gmailEnabled === true && workspace.gmailConnected === true;
+  const selectedMailbox = mailboxConnections.find((mailbox) => mailbox.email === selectedMailboxEmail) ?? null;
+  const gmailReady = Boolean(
+    isAdmin
+    && selectedMailboxEmail
+    && isMailboxGmailReady(selectedMailbox)
+    && workspace?.gmailEnabled === true,
+  );
+  const inboxAnalysisUrl = selectedMailboxEmail
+    ? mailboxScopedUrl("/api/v1/inbox-analysis", selectedMailboxEmail)
+    : "";
   const visibleMessages = loadedBucket === bucket && bucket !== "needs-review" ? messages : [];
   const visibleReviewRows = loadedBucket === bucket && bucket === "needs-review"
     ? reviewRows
@@ -812,12 +1012,13 @@ export function InboxView({
   );
 
   const runInboxAnalysis = useCallback((pageToken?: string) => {
-    if (!inboxAnalysisReady) return Promise.resolve(null);
+    if (!inboxAnalysisReady || !inboxAnalysisUrl) return Promise.resolve(null);
     if (analysisInFlightRef.current) return analysisInFlightRef.current;
+    const generation = mailboxGenerationRef.current;
     const request = (async () => {
-      if (analysisMountedRef.current) setAnalysisLoading(true);
+      if (analysisMountedRef.current && generation === mailboxGenerationRef.current) setAnalysisLoading(true);
       try {
-        const response = await fetch("/api/v1/inbox-analysis", {
+        const response = await fetch(inboxAnalysisUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(pageToken ? { pageToken } : {}),
@@ -830,14 +1031,15 @@ export function InboxView({
         if (!coverage) {
           throw new Error("Inbox analysis returned an invalid coverage result.");
         }
-        if (analysisMountedRef.current) {
+        if (analysisMountedRef.current && generation === mailboxGenerationRef.current) {
           setAnalysisCoverage(coverage);
           setAnalysisFailed(false);
         }
+        invalidateCachedGet(inboxAnalysisUrl, { notify: false });
         invalidateInboxAnalysisReadCaches({ notify: false });
         return coverage;
       } catch {
-        if (analysisMountedRef.current) {
+        if (analysisMountedRef.current && generation === mailboxGenerationRef.current) {
           setAnalysisCoverage(null);
           // The queue read that follows can still succeed, so without a durable
           // flag an empty stored queue would render "No messages need review" —
@@ -847,7 +1049,7 @@ export function InboxView({
         }
         return null;
       } finally {
-        if (analysisMountedRef.current) setAnalysisLoading(false);
+        if (analysisMountedRef.current && generation === mailboxGenerationRef.current) setAnalysisLoading(false);
       }
     })();
     analysisInFlightRef.current = request;
@@ -857,21 +1059,26 @@ export function InboxView({
       }
     });
     return request;
-  }, [inboxAnalysisReady, notify]);
+  }, [inboxAnalysisReady, inboxAnalysisUrl, notify]);
 
   const loadReviewQueue = useCallback(async (force = false, silent = false) => {
+    if (!inboxAnalysisUrl) return null;
     const requestId = ++reviewQueueRequestIdRef.current;
+    const generation = mailboxGenerationRef.current;
     if (!silent) {
       setReviewQueueState("loading");
       setError(null);
     }
     try {
-      const body = await cachedGetJson<unknown>("/api/v1/inbox-analysis", { force });
+      const body = await cachedGetJson<unknown>(inboxAnalysisUrl, { force });
       const queue = inboxReviewQueue(body);
       if (!queue) {
         throw new Error("The inbox review queue returned an invalid result.");
       }
-      if (requestId !== reviewQueueRequestIdRef.current) return null;
+      if (
+        requestId !== reviewQueueRequestIdRef.current
+        || generation !== mailboxGenerationRef.current
+      ) return null;
       setReviewLabels(queue.labels);
       setReviewRows(queue.rows);
       setReviewTotalCount(queue.totalCount);
@@ -888,7 +1095,10 @@ export function InboxView({
       setError(null);
       return queue;
     } catch (queueError) {
-      if (requestId !== reviewQueueRequestIdRef.current) return null;
+      if (
+        requestId !== reviewQueueRequestIdRef.current
+        || generation !== mailboxGenerationRef.current
+      ) return null;
       if (silent && !isTerminalCachedGetError(queueError)) return null;
       if (isTerminalCachedGetError(queueError)) {
         setReviewLabels([]);
@@ -905,12 +1115,12 @@ export function InboxView({
       );
       return null;
     }
-  }, []);
+  }, [inboxAnalysisUrl]);
 
   useCachedGetSubscription(
-    ["/api/v1/inbox-analysis"],
+    inboxAnalysisUrl ? [inboxAnalysisUrl] : [],
     () => void loadReviewQueue(false, true),
-    bucket === "needs-review",
+    bucket === "needs-review" && isAdmin && Boolean(inboxAnalysisUrl),
   );
 
   const refreshReviewQueue = useCallback((pageToken?: string) => {
@@ -943,7 +1153,13 @@ export function InboxView({
       reviewQueueRefreshInFlightRef.current = null;
     }
     if (bucket === "needs-review") {
-      if (!accountSettled || !workspaceSettled || !isAdmin) return;
+      if (
+        !accountSettled
+        || !workspaceSettled
+        || !mailboxConnectionsSettled
+        || !isAdmin
+        || !selectedMailboxEmail
+      ) return;
       if (!reviewQueueAutoLoadedRef.current) {
         reviewQueueAutoLoadedRef.current = true;
         if (gmailReady && inboxAnalysisReady) {
@@ -974,12 +1190,18 @@ export function InboxView({
     inboxAnalysisReady,
     isAdmin,
     loadReviewQueue,
+    mailboxConnectionsSettled,
     refreshReviewQueue,
     runInboxAnalysis,
+    selectedMailboxEmail,
     workspaceSettled,
   ]);
 
   async function loadMessages() {
+    if (!selectedMailboxEmail) return;
+    const mailbox = selectedMailboxEmail;
+    const generation = mailboxGenerationRef.current;
+    const requestId = ++messageRequestIdRef.current;
     clearTriageSuggestions();
     setLoading(true);
     setError(null);
@@ -994,25 +1216,36 @@ export function InboxView({
         }
         return;
       }
-      const parameters = new URLSearchParams({ label: bucket });
+      const parameters = new URLSearchParams({ label: bucket, mailbox });
       if (search.trim()) parameters.set("q", search.trim());
       // SET42_ACTION_GATED_GMAIL_GET: mailbox contents load only after the user
       // presses Load messages. Focus, visibility, and navigation never subscribe.
       const response = await fetch(`/api/v1/integrations/google/gmail/messages?${parameters.toString()}`);
       const data = await response.json().catch(() => ({})) as { messages?: WorkspaceMessage[]; labelReady?: boolean; error?: string };
       if (!response.ok) throw new Error(data.error ?? "Your Gmail messages could not be loaded.");
+      if (
+        generation !== mailboxGenerationRef.current
+        || requestId !== messageRequestIdRef.current
+      ) return;
       setMessages(data.messages ?? []);
       setLoadedBucket(bucket);
       setLabelReady(Boolean(data.labelReady));
       notify(`Loaded ${data.messages?.length ?? 0} message${(data.messages?.length ?? 0) === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.`, "info");
       if (inboxAnalysisReady) void runInboxAnalysis();
     } catch (loadError) {
+      if (
+        generation !== mailboxGenerationRef.current
+        || requestId !== messageRequestIdRef.current
+      ) return;
       setMessages([]);
       setLoadedBucket(bucket);
       setError(loadError instanceof Error ? loadError.message : "Your Gmail messages could not be loaded.");
-      await checkGmailConnection(true);
+      await Promise.all([checkGmailConnection(true), loadMailboxConnections(true)]);
     } finally {
-      setLoading(false);
+      if (
+        generation === mailboxGenerationRef.current
+        && requestId === messageRequestIdRef.current
+      ) setLoading(false);
     }
   }
 
@@ -1024,12 +1257,15 @@ export function InboxView({
       || !isAdmin
       || !gmailReady
       || !inboxAnalysisReady
+      || !inboxAnalysisUrl
     ) {
       return;
     }
+    const mailbox = selectedMailboxEmail;
+    const generation = mailboxGenerationRef.current;
     setRetryingFailedAnalyses(true);
     try {
-      const response = await fetch("/api/v1/inbox-analysis", {
+      const response = await fetch(inboxAnalysisUrl, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "retry-failed-analyses" }),
@@ -1050,7 +1286,9 @@ export function InboxView({
             : "Failed inbox analyses could not be retried.",
         );
       }
+      if (generation !== mailboxGenerationRef.current) return;
       const retriedCount = Number(body.retriedCount);
+      invalidateCachedGet(inboxAnalysisUrl, { notify: false });
       invalidateInboxAnalysisReadCaches({ notify: false });
       if (retriedCount === 0) {
         await loadReviewQueue();
@@ -1074,13 +1312,17 @@ export function InboxView({
         queue ? "success" : "warning",
       );
     } catch (retryError) {
+      if (generation !== mailboxGenerationRef.current) return;
       notifyError(notify, {
         message: "Failed inbox analyses could not be retried.",
         cause: retryError,
-        action: { label: "Try again", run: () => void retryFailedAnalyses() },
+        action: {
+          label: "Try again",
+          run: () => runRetryForMailbox(mailbox, () => void retryFailedAnalyses()),
+        },
       });
     } finally {
-      setRetryingFailedAnalyses(false);
+      if (generation === mailboxGenerationRef.current) setRetryingFailedAnalyses(false);
     }
   }
 
@@ -1105,7 +1347,9 @@ export function InboxView({
     row: InboxReviewQueueRow,
     reason: ReviewRetirementReason = "manual",
   ) {
-    if (markReviewedInFlightRef.current) return false;
+    if (markReviewedInFlightRef.current || !inboxAnalysisUrl) return false;
+    const mailbox = selectedMailboxEmail;
+    const generation = mailboxGenerationRef.current;
     markReviewedInFlightRef.current = true;
     const requestId = ++reviewQueueRequestIdRef.current;
     setMarkingReviewId(row.id);
@@ -1116,7 +1360,7 @@ export function InboxView({
       return next;
     });
     try {
-      const response = await fetch("/api/v1/inbox-analysis", {
+      const response = await fetch(inboxAnalysisUrl, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         // A lead accept retires the row as "accepted"; a hand dismissal as "dismissed".
@@ -1133,8 +1377,12 @@ export function InboxView({
       if (!response.ok) {
         throw new Error(body.error ?? "The message could not be marked reviewed.");
       }
+      invalidateCachedGet(inboxAnalysisUrl, { notify: false });
       invalidateInboxAnalysisReadCaches({ notify: false });
-      if (requestId !== reviewQueueRequestIdRef.current) return false;
+      if (
+        requestId !== reviewQueueRequestIdRef.current
+        || generation !== mailboxGenerationRef.current
+      ) return false;
       removeReviewRow(row);
       setLeadRetirementErrorIds((current) => {
         if (!current.has(row.id)) return current;
@@ -1151,7 +1399,10 @@ export function InboxView({
       await loadReviewQueue();
       return true;
     } catch (reviewError) {
-      if (requestId !== reviewQueueRequestIdRef.current) return false;
+      if (
+        requestId !== reviewQueueRequestIdRef.current
+        || generation !== mailboxGenerationRef.current
+      ) return false;
       if (reason === "lead-created") {
         setLeadRetirementErrorIds((current) => {
           if (current.has(row.id)) return current;
@@ -1160,7 +1411,10 @@ export function InboxView({
         notifyError(notify, {
           message: "The lead was created, but this message is still in review because it could not be marked reviewed.",
           cause: reviewError,
-          action: { label: "Mark reviewed", run: () => void markReviewed(row, "lead-created") },
+          action: {
+            label: "Mark reviewed",
+            run: () => runRetryForMailbox(mailbox, () => void markReviewed(row, "lead-created")),
+          },
         });
         // The modal returned focus to the Create lead button, which this error
         // state removes; without naming a target focus lands on <body>. Send it
@@ -1171,7 +1425,10 @@ export function InboxView({
         notifyError(notify, {
           message: "The message could not be marked reviewed.",
           cause: reviewError,
-          action: { label: "Try again", run: () => void markReviewed(row, reason) },
+          action: {
+            label: "Try again",
+            run: () => runRetryForMailbox(mailbox, () => void markReviewed(row, reason)),
+          },
         });
       }
       // This click bumped the request id and so invalidated any refresh already
@@ -1181,29 +1438,42 @@ export function InboxView({
       await loadReviewQueue();
       return false;
     } finally {
-      markReviewedInFlightRef.current = false;
-      setMarkingReviewId(null);
+      if (generation === mailboxGenerationRef.current) {
+        markReviewedInFlightRef.current = false;
+        setMarkingReviewId(null);
+      }
     }
   }
 
   async function prepareLabels() {
+    if (!selectedMailboxEmail) return;
+    const mailbox = selectedMailboxEmail;
+    const generation = mailboxGenerationRef.current;
     setLoading(true);
     try {
-      const response = await fetch("/api/v1/integrations/google/gmail/labels/prepare", { method: "POST" });
+      const response = await fetch(
+        mailboxScopedUrl("/api/v1/integrations/google/gmail/labels/prepare", mailbox),
+        { method: "POST" },
+      );
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "FCI Gmail labels could not be prepared.");
+      if (generation !== mailboxGenerationRef.current) return;
       setLabelReady(true);
       notify("FCI Gmail labels are ready. No messages were moved or archived.", "success");
       await loadMessages();
     } catch (prepareError) {
+      if (generation !== mailboxGenerationRef.current) return;
       setError("FCI Gmail labels could not be prepared.");
       notifyError(notify, {
         message: "FCI Gmail labels could not be prepared.",
         cause: prepareError,
-        action: { label: "Try again", run: () => void prepareLabels() },
+        action: {
+          label: "Try again",
+          run: () => runRetryForMailbox(mailbox, () => void prepareLabels()),
+        },
       });
     } finally {
-      setLoading(false);
+      if (generation === mailboxGenerationRef.current) setLoading(false);
     }
   }
 
@@ -1283,6 +1553,7 @@ export function InboxView({
       return;
     }
     const proposal = taskProposal;
+    const generation = mailboxGenerationRef.current;
     setTaskSaving(true);
     setTaskError("");
     try {
@@ -1299,6 +1570,7 @@ export function InboxView({
           sourceRef: proposal.row.analysis.gmailMessageId,
           inboxReviewId: proposal.row.id,
           inboxReviewIntent: proposal.kind,
+          inboxReviewMailbox: selectedMailboxEmail,
         }),
       });
       const data = await response.json().catch(() => ({})) as {
@@ -1316,6 +1588,7 @@ export function InboxView({
       ) {
         throw new Error(data.error ?? "The task could not be created.");
       }
+      if (generation !== mailboxGenerationRef.current) return;
       invalidateInboxAnalysisReadCaches({ notify: false });
       invalidateTaskReadCaches();
       setTaskProposal(null);
@@ -1328,13 +1601,14 @@ export function InboxView({
       );
       await loadReviewQueue();
     } catch (taskCreationError) {
+      if (generation !== mailboxGenerationRef.current) return;
       setTaskError(
         taskCreationError instanceof Error
           ? taskCreationError.message
           : "The task could not be created.",
       );
     } finally {
-      setTaskSaving(false);
+      if (generation === mailboxGenerationRef.current) setTaskSaving(false);
     }
   }
 
@@ -1355,25 +1629,34 @@ export function InboxView({
       || triageConfiguration?.keyState !== "Configured"
       || triageConfiguration.features.triage !== true
       || !isAdmin
+      || !selectedMailboxEmail
     ) {
       return;
     }
+    const mailbox = selectedMailboxEmail;
     const requestId = ++triageRequestIdRef.current;
+    const generation = mailboxGenerationRef.current;
     setTriageLoading(true);
     setTriageSuggestions({});
     try {
-      const response = await fetch("/api/v1/assistant/triage", {
+      const response = await fetch(
+        mailboxScopedUrl("/api/v1/assistant/triage", mailbox),
+        {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messageIds: visibleMessages.slice(0, 20).map((message) => message.id),
         }),
-      });
+        },
+      );
       const data = await response.json().catch(() => ({})) as {
         suggestions?: AssistantTriageSuggestion[];
         error?: string;
       };
-      if (requestId !== triageRequestIdRef.current) return;
+      if (
+        requestId !== triageRequestIdRef.current
+        || generation !== mailboxGenerationRef.current
+      ) return;
       if (!response.ok) {
         throw new Error(data.error ?? "AI filing suggestions could not be prepared.");
       }
@@ -1395,14 +1678,23 @@ export function InboxView({
         "info",
       );
     } catch (triageError) {
-      if (requestId !== triageRequestIdRef.current) return;
+      if (
+        requestId !== triageRequestIdRef.current
+        || generation !== mailboxGenerationRef.current
+      ) return;
       notifyError(notify, {
         message: "AI filing suggestions could not be prepared.",
         cause: triageError,
-        action: { label: "Try again", run: () => void suggestWithAi() },
+        action: {
+          label: "Try again",
+          run: () => runRetryForMailbox(mailbox, () => void suggestWithAi()),
+        },
       });
     } finally {
-      if (requestId === triageRequestIdRef.current) setTriageLoading(false);
+      if (
+        requestId === triageRequestIdRef.current
+        && generation === mailboxGenerationRef.current
+      ) setTriageLoading(false);
     }
   }
 
@@ -1414,24 +1706,35 @@ export function InboxView({
   }
 
   async function previewGmailFiling() {
-    if (!filingMessage || !filingProjectId) {
+    if (!filingMessage || !filingProjectId || !selectedMailboxEmail) {
       notify("Choose the exact independent project before reviewing this email filing.", "warning");
       return;
     }
+    const mailbox = selectedMailboxEmail;
+    const generation = mailboxGenerationRef.current;
     setFilingLoading(true);
     try {
       // SET42_ACTION_GATED_GMAIL_GET: filing preview is a direct review action,
       // not a subscribed data read.
-      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?projectId=${encodeURIComponent(filingProjectId)}`);
+      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?projectId=${encodeURIComponent(filingProjectId)}&mailbox=${encodeURIComponent(mailbox)}`);
       const data = await response.json().catch(() => ({})) as GmailFilingPreview & { error?: string };
       if (!response.ok) throw new Error(data.error ?? "The Gmail filing preview could not be loaded.");
+      if (generation !== mailboxGenerationRef.current) return;
       setFilingPreview(data);
       notify(`Review the Drive filing for ${data.project.number}. Nothing has been copied yet.`, "info");
     } catch (previewError) {
+      if (generation !== mailboxGenerationRef.current) return;
       setFilingPreview(null);
-      notifyError(notify, { message: "The Gmail filing preview could not be loaded.", cause: previewError, action: { label: "Try preview again", run: () => void previewGmailFiling() } });
+      notifyError(notify, {
+        message: "The Gmail filing preview could not be loaded.",
+        cause: previewError,
+        action: {
+          label: "Try preview again",
+          run: () => runRetryForMailbox(mailbox, () => void previewGmailFiling()),
+        },
+      });
     } finally {
-      setFilingLoading(false);
+      if (generation === mailboxGenerationRef.current) setFilingLoading(false);
     }
   }
 
@@ -1439,35 +1742,42 @@ export function InboxView({
     const reviewedMessage = filingMessage;
     const reviewedProjectId = filingProjectId;
     const reviewedPreview = filingPreview;
-    if (!reviewedMessage || !reviewedProjectId || !reviewedPreview) return;
+    const mailbox = selectedMailboxEmail;
+    if (!reviewedMessage || !reviewedProjectId || !reviewedPreview || !mailbox) return;
+    const generation = mailboxGenerationRef.current;
     setFilingSubmitting(true);
     try {
-      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(reviewedMessage.id)}/file`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: reviewedProjectId }) });
-      const data = await response.json().catch(() => ({})) as { filed?: boolean; alreadyFiled?: boolean; archive?: { attachmentCount?: number }; error?: string };
+      const response = await fetch(
+        mailboxScopedUrl(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(reviewedMessage.id)}/file`, mailbox),
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: reviewedProjectId }) },
+      );
+      const data = await response.json().catch(() => ({})) as GmailFilingResult;
       if (!response.ok) throw new Error(data.error ?? "The Gmail filing could not be completed.");
-      notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? reviewedPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`, data.alreadyFiled ? "info" : "success");
+      if (generation !== mailboxGenerationRef.current) return;
+      notify(gmailFilingSuccessMessage(data, reviewedPreview), data.alreadyFiled ? "info" : "success");
       setFilingMessage(null);
       setFilingProjectId("");
       setFilingPreview(null);
       invalidateGmailFilingReadCaches({ includeOperations: false });
       await loadMessages();
     } catch (filingError) {
+      if (generation !== mailboxGenerationRef.current) return;
       notifyError(notify, {
         message: "The Gmail filing could not be completed. Review the message and project before trying again.",
         cause: filingError,
         action: {
           label: "Review filing",
-          run: () => {
+          run: () => runRetryForMailbox(mailbox, () => {
             setFilingMessage(reviewedMessage);
             setFilingProjectId(reviewedProjectId);
             setFilingPreview(null);
-          },
+          }),
         },
       });
     } finally {
       // The route can persist an operations failure even when filing returns non-2xx.
       invalidateWorkspaceOperationsReadCache();
-      setFilingSubmitting(false);
+      if (generation === mailboxGenerationRef.current) setFilingSubmitting(false);
     }
   }
 
@@ -1483,26 +1793,32 @@ export function InboxView({
   }
 
   async function saveReplyDraft() {
-    if (!replyMessage || !replyBody.trim()) {
+    if (!replyMessage || !replyBody.trim() || !selectedMailboxEmail) {
       notify("Write a reply before saving a Gmail draft.", "warning");
       return;
     }
+    const generation = mailboxGenerationRef.current;
     setReplySaving(true);
     try {
-      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(replyMessage.id)}/reply-draft`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: replyBody }) });
+      const response = await fetch(
+        mailboxScopedUrl(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(replyMessage.id)}/reply-draft`, selectedMailboxEmail),
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: replyBody }) },
+      );
       const data = await response.json().catch(() => ({})) as { draftSaved?: boolean; recipient?: string; error?: string };
       if (!response.ok || !data.draftSaved) throw new Error(data.error ?? "Gmail draft could not be saved.");
+      if (generation !== mailboxGenerationRef.current) return;
       notify(`Reply draft saved in Gmail for ${data.recipient ?? "the original sender"}. It was not sent.`, "success");
       setReplyMessage(null);
       setReplyBody("");
     } catch (replyError) {
+      if (generation !== mailboxGenerationRef.current) return;
       notifyError(notify, {
         message: "Gmail draft could not be saved. The composer remains open so you can review it before trying again.",
         cause: replyError,
         actionlessReason: "Replaying a draft save from a toast can create a duplicate Gmail draft.",
       });
     } finally {
-      setReplySaving(false);
+      if (generation === mailboxGenerationRef.current) setReplySaving(false);
     }
   }
 
@@ -1510,11 +1826,13 @@ export function InboxView({
   const connectionText = workspace?.simulation
     ? "Local Workspace simulation is ready"
     : gmailReady
-      ? `Connected Workspace Gmail: ${workspace?.connectionAccount ?? "company mailbox"}`
-      : workspace?.requiresReauthorization
-        ? "Google Workspace needs to be reconnected to approve Gmail access."
-        : "Connect the company Google Workspace account to load messages.";
-  const canLoadMessages = gmailReady;
+      ? `Connected Workspace Gmail: ${selectedMailboxEmail}`
+      : selectedMailbox?.requiresReauthorization
+        ? `${selectedMailboxEmail} needs to be reconnected to approve Gmail access.`
+        : selectedMailboxEmail
+          ? `${selectedMailboxEmail} is not ready for Gmail.`
+          : "Attach a company Google Workspace mailbox to load messages.";
+  const canLoadMessages = isAdmin && gmailReady;
   const queueReadInFlight =
     reviewQueueSelected && reviewQueueState === "loading";
 
@@ -1530,7 +1848,7 @@ export function InboxView({
         <button className="soft-button" onClick={onRules}>
           <ListFilter size={15} /> Inbox & file rules
         </button>
-        {!reviewQueueSelected && !canLoadMessages && <button className="primary-button" onClick={onGoogleSetup}>
+        {!reviewQueueSelected && isAdmin && !canLoadMessages && <button className="primary-button" onClick={onGoogleSetup}>
           <Building2 size={15} /> Google setup
         </button>}
       </>}
@@ -1561,6 +1879,16 @@ export function InboxView({
         <button className="soft-button" onClick={onRules}>Manage rules</button>
       </div>
     </section>
+    {mailboxConnectionsError && isAdmin && <ClientDataNotice
+      state="error"
+      error={mailboxConnectionsError}
+      errorTitle="Attached mailboxes are unavailable"
+      retryLabel="Retry mailboxes"
+      loadingTitle="Checking attached mailboxes…"
+      loadingDetail="Reading mailbox addresses and saved connection status without loading Gmail messages."
+      titleLevel={2}
+      onRetry={() => void loadMailboxConnections(true)}
+    />}
     {error && <ClientDataNotice
       state={checking ? "loading" : "error"}
       error={error}
@@ -1575,6 +1903,24 @@ export function InboxView({
       <section className="panel message-list">
         <header className="live-inbox-toolbar">
           <div>
+            {isAdmin && <label>
+              Connected mailbox
+              <select
+                value={selectedMailboxEmail}
+                onChange={(event) => selectMailbox(event.target.value)}
+                disabled={
+                  !mailboxConnectionsSettled
+                  || mailboxConnections.length === 0
+                }
+              >
+                {mailboxConnections.length === 0 && <option value="">
+                  {mailboxConnectionsSettled ? "No mailbox attached" : "Loading mailboxes…"}
+                </option>}
+                {mailboxConnections.map((mailbox) => <option value={mailbox.email} key={mailbox.email}>
+                  {mailbox.email}
+                </option>)}
+              </select>
+            </label>}
             <label>
               Mailbox
               <select
@@ -1583,7 +1929,7 @@ export function InboxView({
                   clearTriageSuggestions();
                   onBucket(event.target.value as InboxBucket);
                 }}
-                disabled={loading}
+                disabled={loading || !isAdmin || !selectedMailboxEmail}
               >
                 <option value="inbox">Inbox</option>
                 <option value="intake">FCI/Intake</option>
@@ -1602,7 +1948,7 @@ export function InboxView({
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                       placeholder="e.g. from:vendor@example.com"
-                      disabled={loading}
+                      disabled={loading || !canLoadMessages}
                     />
                   </label>
                   <small className="gmail-search-help">
@@ -1855,11 +2201,31 @@ export function InboxView({
                       </button>
                     </div>
                   </article>)
-          : !gmailReady
+            : !accountSettled
+              ? <OperationsEmptyState variant="inbox">
+                  <ShieldCheck size={25} />
+                  <h2>Checking mailbox access…</h2>
+                  <p>The app is confirming whether this Administrator-only inbox is available.</p>
+                </OperationsEmptyState>
+              : !isAdmin
+                ? <OperationsEmptyState variant="inbox">
+                    <ShieldCheck size={25} />
+                    <h2>Administrator mailbox access</h2>
+                    <p>Attached Workspace mailboxes are currently available only to Administrators.</p>
+                  </OperationsEmptyState>
+                : !mailboxConnectionsSettled
+                  ? <OperationsEmptyState variant="inbox">
+                      <Mail size={25} />
+                      <h2>Checking attached mailboxes…</h2>
+                      <p>Mailbox addresses are loading without reading any Gmail messages.</p>
+                    </OperationsEmptyState>
+                  : !gmailReady
             ? <OperationsEmptyState variant="inbox" action={<button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button>}>
                 <Mail size={25} />
-                <h2>Connect Workspace Gmail to see the company inbox</h2>
-                <p>Until Workspace is available, switch the local app to Workspace simulation to test the full inbox workflow with sample data.</p>
+                <h2>{selectedMailboxEmail ? "Reconnect this Workspace mailbox" : "Connect Workspace Gmail to see the company inbox"}</h2>
+                <p>{selectedMailboxEmail
+                  ? `${selectedMailboxEmail} is not ready for Gmail. Other attached mailboxes remain separate.`
+                  : "Attach a mailbox from Google Workspace setup, or use Workspace simulation to test the flow with sample data."}</p>
               </OperationsEmptyState>
             : visibleMessages.length === 0
               ? <OperationsEmptyState variant="inbox">
@@ -1901,7 +2267,7 @@ export function InboxView({
                     </div>
                     <div className="message-actions">
                       <span>{inboxDate(message.date)}</span>
-                      <small>{message.to ? `To: ${message.to}` : workspace?.simulation ? "Simulated Workspace mailbox" : "Company Workspace mailbox"}</small>
+                      <small>{message.to ? `To: ${message.to}` : workspace?.simulation ? "Simulated Workspace mailbox" : selectedMailboxEmail}</small>
                       <button className="primary-button" onClick={() => openFilingReview(message)}>
                         <FolderOpen size={14} /> Review & copy
                       </button>
@@ -1923,11 +2289,13 @@ export function InboxView({
               : "Checking the stored review queue."
           : gmailReady
             ? `Showing ${visibleMessages.length} loaded message${visibleMessages.length === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.`
-            : "Workspace Gmail is not connected yet."}</p>
+            : selectedMailboxEmail
+              ? `${selectedMailboxEmail} is not ready for Gmail.`
+              : "No Workspace Gmail mailbox is attached yet."}</p>
         <dl className="inbox-status-list">
           <div>
             <dt>Provider</dt>
-            <dd>{reviewQueueSelected ? "App database" : workspace?.simulation ? "Local Workspace simulation" : workspace?.connectionAccount ?? "Not connected"}</dd>
+            <dd>{reviewQueueSelected ? selectedMailboxEmail || "App database" : selectedMailboxEmail || "Not connected"}</dd>
           </div>
           <div>
             <dt>{reviewQueueSelected ? "Queue count" : "Message limit"}</dt>
@@ -1982,6 +2350,7 @@ export function InboxView({
     />}
     {replyMessage && <GmailReplyModal
       message={replyMessage}
+      mailboxEmail={selectedMailboxEmail}
       body={replyBody}
       saving={replySaving}
       onBody={setReplyBody}

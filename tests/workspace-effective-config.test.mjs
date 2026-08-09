@@ -100,10 +100,11 @@ globalThis.__FCI_TEST_CLOUDFLARE_ENV__ = {
             assert.deepEqual(statement.values, ["google-workspace"]);
             return null;
           }
-          if (/FROM google_connections WHERE connection_key = \?/.test(sql)) {
-            assert.deepEqual(statement.values, ["google-workspace"]);
+          if (/FROM google_connections WHERE lower\(google_email\) = \?/.test(sql)) {
+            assert.deepEqual(statement.values, ["operations@cherryhillfci.com"]);
             return {
               id: "workspace-connection",
+              connection_key: "google-mailbox:operations-test",
               google_subject: "workspace-subject",
               google_email: "operations@cherryhillfci.com",
               refresh_token_ciphertext: "encrypted-test-token",
@@ -111,6 +112,10 @@ globalThis.__FCI_TEST_CLOUDFLARE_ENV__ = {
               scopes_json: "[]",
               status: "connected",
             };
+          }
+          if (/FROM google_connections WHERE connection_key = \?/.test(sql)) {
+            assert.deepEqual(statement.values, ["google-workspace"]);
+            return null;
           }
           assert.match(sql, /FROM workspace_settings WHERE id = \?/);
           assert.deepEqual(statement.values, ["workspace"]);
@@ -203,6 +208,9 @@ test("base getGoogleRuntimeConfig remains pinned on a complete fixture environme
     simulation: false,
     modeIsValid: true,
     connectionKey: "google-workspace",
+    authConnectionKey: "google-workspace",
+    workspaceConnectionKey: "google-workspace",
+    selectedMailboxEmail: "operations@cherryhillfci.com",
     clientId: "workspace-client.apps.googleusercontent.com",
     clientSecret: "FCI TEST connector secret",
     redirectUri: "https://ops.example.test/api/v1/integrations/google/callback",
@@ -548,6 +556,9 @@ test("Sites composition applies registry and saved settings over environment see
   assert.equal(config.clientDirectorySheetId, "saved-directory-sheet-id");
   assert.equal(config.clientAppointmentsCalendarId, "saved-client-calendar-id");
   assert.equal(config.fieldScheduleCalendarId, "saved-field-calendar-id");
+  assert.equal(config.connectionKey, "google-workspace");
+  assert.equal(config.authConnectionKey, "google-mailbox:operations-test");
+  assert.equal(config.authConnectionEmail, "operations@cherryhillfci.com");
   assert.equal(config.connectReady, true);
   assert.equal(config.oauthReady, true);
 });
@@ -558,6 +569,9 @@ test("Sites setup composition applies the same saved-over-environment precedence
   assert.equal(setup.config.clientDirectorySheetId, "saved-directory-sheet-id");
   assert.equal(setup.config.clientAppointmentsCalendarId, "saved-client-calendar-id");
   assert.equal(setup.config.fieldScheduleCalendarId, "saved-field-calendar-id");
+  assert.equal(setup.config.connectionKey, "google-workspace");
+  assert.equal(setup.config.authConnectionKey, "google-mailbox:operations-test");
+  assert.equal(setup.config.authConnectionEmail, "operations@cherryhillfci.com");
   assert.equal(setup.config.connectReady, true);
   assert.equal(setup.config.oauthReady, true);
   assert.equal(setup.blueprintVersion, 0);
