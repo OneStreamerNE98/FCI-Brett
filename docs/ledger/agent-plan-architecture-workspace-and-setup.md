@@ -2281,6 +2281,7 @@ bounded inputs, non-project files never returned in mocks); e2e simulated search
 viewer open; no new scopes. **Effort:** small-medium. **Cost:** $0.
 
 ### SET-27 · Reference-spreadsheet framework (medium, after SET-16)
+**Status:** In progress — `codex/set27-reference-spreadsheets`
 **Why:** Owner requirement: a way to set up additional spreadsheets as reference
 tables the app can read later (owner-named example: a project details/ledger table) —
 the mechanism now, consumers when features need them.

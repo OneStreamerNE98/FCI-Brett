@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 48 not started · 1 in progress · 2 blocked · 133 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 47 not started · 2 in progress · 2 blocked · 133 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -166,7 +166,7 @@ row holds the full text. Packets without a status line are not started.
 | SET-24 | Employee-login readiness card + read-only policy cards (small, after SET-13; activates fully when login goes live) | Complete — PR #158, July 24, 2026. | agent-plan |
 | SET-25 | First-run data import: clients AND projects (medium-large, after SET-16) — OWNER PRIORITY (July 21) | Complete — PR #213, July 26, 2026. | agent-plan |
 | SET-26 | Project-document search (small-medium, after SET-15; UI in the FloorOpsApp queue) | — | agent-plan |
-| SET-27 | Reference-spreadsheet framework (medium, after SET-16) | — | agent-plan |
+| SET-27 | Reference-spreadsheet framework (medium, after SET-16) | In progress — `codex/set27-reference-spreadsheets` | agent-plan |
 | SET-28 | End-user settings foundation: "My settings" (medium, after SET-13; full value after live login) | Complete — PR #87, July 21, 2026. | agent-plan |
 | SET-29 | Workspace settings stage shell: status banner + four collapsible stages + InfoHint (medium-large; R2 — after the full-review R1 fix packets) | Complete — PR #115, July 22, 2026. | agent-plan |
 | SET-30 | Stage 1 "Prepare the tenant" interior (small-medium, after SET-29) | Complete — PR #122, July 22, 2026. | agent-plan |
