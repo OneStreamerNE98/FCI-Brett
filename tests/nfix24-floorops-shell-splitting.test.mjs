@@ -53,8 +53,16 @@ test("NFIX-24 route loading and failure behavior stays accessible and honest", a
   assert.match(app, /import dynamic from "next\/dynamic"/u);
   assert.match(app, /<AppErrorBoundary key=\{view\}>/u);
   assert.match(app, /loadingTitle=\{`Loading \$\{view\}`\}[\s\S]{0,120}loadingDetail="Preparing this workspace view\."/u);
-  assert.match(app, /const LazyAssistantView = dynamic\(\(\) => loadAssistantView\(\)\.then\(\(module\) => module\.AssistantView\), \{ ssr: false, loading: \(\) => <MajorViewLoading view="AI Assistant" \/> \}\);/u);
+  assert.match(app, /type MajorViewDynamicLoadingProps = Readonly<\{\s*error\?: Error \| null;\s*isLoading\?: boolean;\s*retry\?: \(\) => void;/u);
+  assert.match(app, /function createMajorViewLoading\(view: OperationsView\)[\s\S]{0,300}\{ error, isLoading, retry \}: MajorViewDynamicLoadingProps[\s\S]{0,200}<MajorViewLoading view=\{view\} error=\{error\} isLoading=\{isLoading\} retry=\{retry\} \/>/u);
+  assert.deepEqual(
+    [...app.matchAll(/loading: createMajorViewLoading\("([^"]+)"\)/gu)].map((match) => match[1]),
+    ["AI Assistant", "Clients", "Inbox", "Leads", "Projects", "Schedule"],
+    "all six route chunks must share the dynamic loading/error callback",
+  );
+  assert.match(app, /function MajorViewLoading\(\{ view, error, isLoading = true, retry \}[\s\S]{0,180}if \(error \|\| isLoading === false\) \{[\s\S]{0,300}state="error"[\s\S]{0,300}onRetry=\{retry \?\? \(\(\) => window\.location\.reload\(\)\)\}[\s\S]{0,300}retryLabel="Try again"/u);
   assert.doesNotMatch(app, /\b(?:lazy|Suspense|loadMajorViewWithDeadline)\b/u);
+  assert.doesNotMatch(app, /majorView[\s\S]{0,80}(?:setTimeout|setInterval)/iu);
   assert.match(app, /if \(preload\) void preload\(\)\.catch\(\(\) => undefined\)/u);
   assert.match(notice, /role=\{failed \? "alert" : "status"\}/u);
   assert.match(notice, /aria-live=\{failed \? "assertive" : "polite"\}/u);

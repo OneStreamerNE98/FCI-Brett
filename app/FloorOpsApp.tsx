@@ -138,12 +138,24 @@ const loadLeadsView = () => import("./leads/components/LeadsView");
 const loadProjectsView = () => import("./projects/components/ProjectsView");
 const loadScheduleView = () => import("./schedule/components/ScheduleView");
 
-const LazyAssistantView = dynamic(() => loadAssistantView().then((module) => module.AssistantView), { ssr: false, loading: () => <MajorViewLoading view="AI Assistant" /> });
-const LazyClientsView = dynamic(() => loadClientsView().then((module) => module.ClientsView), { ssr: false, loading: () => <MajorViewLoading view="Clients" /> });
-const LazyInboxView = dynamic(() => loadInboxView().then((module) => module.InboxView), { ssr: false, loading: () => <MajorViewLoading view="Inbox" /> });
-const LazyLeadsView = dynamic(() => loadLeadsView().then((module) => module.LeadsView), { ssr: false, loading: () => <MajorViewLoading view="Leads" /> });
-const LazyProjectsView = dynamic(() => loadProjectsView().then((module) => module.ProjectsView), { ssr: false, loading: () => <MajorViewLoading view="Projects" /> });
-const LazyScheduleView = dynamic(() => loadScheduleView().then((module) => module.ScheduleView), { ssr: false, loading: () => <MajorViewLoading view="Schedule" /> });
+type MajorViewDynamicLoadingProps = Readonly<{
+  error?: Error | null;
+  isLoading?: boolean;
+  retry?: () => void;
+}>;
+
+function createMajorViewLoading(view: OperationsView) {
+  return function MajorViewDynamicLoading({ error, isLoading, retry }: MajorViewDynamicLoadingProps) {
+    return <MajorViewLoading view={view} error={error} isLoading={isLoading} retry={retry} />;
+  };
+}
+
+const LazyAssistantView = dynamic(() => loadAssistantView().then((module) => module.AssistantView), { ssr: false, loading: createMajorViewLoading("AI Assistant") });
+const LazyClientsView = dynamic(() => loadClientsView().then((module) => module.ClientsView), { ssr: false, loading: createMajorViewLoading("Clients") });
+const LazyInboxView = dynamic(() => loadInboxView().then((module) => module.InboxView), { ssr: false, loading: createMajorViewLoading("Inbox") });
+const LazyLeadsView = dynamic(() => loadLeadsView().then((module) => module.LeadsView), { ssr: false, loading: createMajorViewLoading("Leads") });
+const LazyProjectsView = dynamic(() => loadProjectsView().then((module) => module.ProjectsView), { ssr: false, loading: createMajorViewLoading("Projects") });
+const LazyScheduleView = dynamic(() => loadScheduleView().then((module) => module.ScheduleView), { ssr: false, loading: createMajorViewLoading("Schedule") });
 
 function preloadMajorView(view: OperationsView) {
   const preload = view === "AI Assistant" ? loadAssistantView
@@ -1241,7 +1253,16 @@ function LiveDataBanner({ state, error, onRetry }: { state: LiveDataState; error
   />;
 }
 
-function MajorViewLoading({ view }: { view: OperationsView }) {
+function MajorViewLoading({ view, error, isLoading = true, retry }: MajorViewDynamicLoadingProps & { view: OperationsView }) {
+  if (error || isLoading === false) {
+    return <ClientDataNotice
+      state="error"
+      error={`The ${view} workspace view could not be prepared. Try again.`}
+      onRetry={retry ?? (() => window.location.reload())}
+      errorTitle={`${view} could not be loaded`}
+      retryLabel="Try again"
+    />;
+  }
   return <ClientDataNotice
     state="loading"
     error=""

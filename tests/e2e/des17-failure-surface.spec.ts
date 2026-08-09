@@ -10,6 +10,26 @@ test("a lazy major view server-renders and hydrates without a browser-only loade
   expect(pageErrors).toEqual([]);
 });
 
+test("a rejected lazy major-view loader shows an alert and retry instead of hanging", async ({ page }) => {
+  test.skip(
+    process.env.FCI_E2E_EXTERNAL_SERVER === "true",
+    "The source-module rejection fixture requires the isolated local Vite runtime.",
+  );
+  let rejectedInboxModule = false;
+  await page.route("**/app/inbox/components/InboxView.tsx*", async (route) => {
+    rejectedInboxModule = true;
+    await route.abort("failed");
+  });
+
+  await page.goto("/inbox");
+  await expect.poll(() => rejectedInboxModule).toBe(true);
+
+  const failure = page.getByRole("alert").filter({ hasText: "Inbox could not be loaded" });
+  await expect(failure).toContainText("The Inbox workspace view could not be prepared. Try again.");
+  await expect(failure.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Loading Inbox" })).toHaveCount(0);
+});
+
 test("a deliberate descendant render failure shows recovery instead of a blank page", async ({ page }) => {
   test.skip(
     process.env.FCI_E2E_EXTERNAL_SERVER === "true",
