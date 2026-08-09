@@ -21,6 +21,17 @@ export type MailItemStatusPage = Readonly<{
   totalCount: number;
 }>;
 
+export type MailItemReviewActivityPage = Readonly<{
+  items: MailItem[];
+  totalCount: number;
+}>;
+
+export type MailItemReviewActivityLabelCount = Readonly<{
+  slug: string;
+  acceptedCount: number;
+  dismissedCount: number;
+}>;
+
 export const RETRYABLE_EXHAUSTED_ANALYSIS_ERROR_CODES = Object.freeze([
   "analysis_failed",
   "analysis_deadline_exceeded",
@@ -49,6 +60,24 @@ export interface MailItemRepository {
     status: MailItemStatus,
     limit?: number,
   ): Promise<MailItemStatusPage>;
+  /**
+   * Returns human-retired review rows only. Machine outcomes are deliberately
+   * excluded because they carry no human attribution.
+   */
+  listReviewActivity(
+    connectionKey: string,
+    limit?: number,
+  ): Promise<MailItemReviewActivityPage>;
+  /**
+   * Counts accepted rows against their single recorded accepted intent and a
+   * dismissed row once for each distinct saved proposal intent. The caller
+   * supplies the active-plus-retired catalog so unknown historical values do
+   * not become unnamed calibration totals.
+   */
+  listReviewActivityLabelCounts(
+    connectionKey: string,
+    labelSlugs: readonly string[],
+  ): Promise<MailItemReviewActivityLabelCount[]>;
   listRetryableAnalysisRows(
     connectionKey: string,
     currentLabelDefinitionVersion: string,

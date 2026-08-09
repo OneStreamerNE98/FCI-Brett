@@ -631,7 +631,7 @@ test("Mark reviewed dismisses an orphaned relationship atomically and failures s
       // the row can record whether it was accepted or dismissed. Matching the old
       // literal here would silently stop injecting the fault and the test would pass
       // without ever exercising the failure path.
-      if (/^UPDATE mail_items SET status = \?/u.test(sql)) {
+      if (/^UPDATE mail_items\s+SET status = \?/u.test(sql)) {
         throw new Error("Injected queue update failure");
       }
       return prepare(sql);

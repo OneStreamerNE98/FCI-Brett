@@ -391,15 +391,20 @@ function postgresMailItemRow(item) {
     error_code: item.errorCode,
     coverage_complete: item.coverageComplete,
     reviewed_by: item.reviewedBy,
-    reviewed_at: item.reviewedAt,
+    reviewed_at: item.reviewedAt === null ? null : new Date(item.reviewedAt),
     accepted_intent: item.acceptedIntent,
     created_at: new Date(item.createdAt),
     updated_at: new Date(item.updatedAt),
   };
 }
 
-test("PostgreSQL mail items read only within one connection and expose frozen analysis", async () => {
-  const stored = mailItem();
+test("PostgreSQL mail items convert attributed timestamps and expose frozen analysis", async () => {
+  const stored = mailItem({
+    status: "accepted",
+    reviewedBy: "reviewer@example.test",
+    reviewedAt: UPDATED_AT - 500,
+    acceptedIntent: "project-update",
+  });
   const row = postgresMailItemRow(stored);
   const pool = new RecordingPostgresPool(({ sql }) => {
     assert.match(sql, /^SELECT id, connection_key/);
@@ -454,6 +459,61 @@ test("PostgreSQL mail item status pages carry one snapshot count and are connect
   );
 });
 
+test("PostgreSQL review activity pages terminal outcomes and aggregates exact recorded labels", async () => {
+  const activityLabelSlugs = [
+    "lead",
+    "schedule",
+    ...Array.from({ length: 23 }, (_, index) => `historic-${index}`),
+  ];
+  const stored = mailItem({
+    status: "accepted",
+    reviewedBy: "reviewer@example.test",
+    reviewedAt: UPDATED_AT,
+    acceptedIntent: "schedule",
+  });
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    if (/^SELECT page\.\*, COUNT\(\*\) OVER/u.test(sql)) {
+      assert.match(sql, /status IN \('accepted', 'dismissed'\)/u);
+      assert.match(sql, /ORDER BY page\.updated_at DESC, page\.id/u);
+      return result([{ ...postgresMailItemRow(stored), total_count: "501" }], 1);
+    }
+    assert.match(sql, /^WITH attributed_outcomes AS/u);
+    assert.match(sql, /accepted_intent = ANY\(\$2::text\[\]\)/u);
+    assert.match(sql, /jsonb_array_elements_text/u);
+    assert.match(sql, /SELECT DISTINCT item\.id, proposed\.intent/u);
+    return result([
+      { slug: "lead", accepted_count: "2", dismissed_count: "3" },
+      { slug: "schedule", accepted_count: "4", dismissed_count: "5" },
+    ], 2);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+
+  assert.deepEqual(await repository.listReviewActivity("google-workspace", 900), {
+    items: [stored],
+    totalCount: 501,
+  });
+  assert.deepEqual(
+    dataQuery(pool, /status IN \('accepted', 'dismissed'\)/u).values,
+    ["google-workspace", 100],
+  );
+  assert.deepEqual(
+    await repository.listReviewActivityLabelCounts(
+      "google-workspace",
+      activityLabelSlugs,
+    ),
+    [
+      { slug: "lead", acceptedCount: 2, dismissedCount: 3 },
+      { slug: "schedule", acceptedCount: 4, dismissedCount: 5 },
+    ],
+  );
+  assert.deepEqual(
+    dataQuery(pool, /^WITH attributed_outcomes AS/u).values,
+    ["google-workspace", activityLabelSlugs],
+  );
+});
+
 test("PostgreSQL dismissal is one guarded status transition with no relationship lookup", async () => {
   const pool = new RecordingPostgresPool(({ sql }) => {
     assert.match(sql, /^UPDATE mail_items/u);
@@ -483,7 +543,7 @@ test("PostgreSQL dismissal is one guarded status transition with no relationship
   // The retirement status leads the bound values; reviewed_by and reviewed_at follow.
   assert.deepEqual(
     dataQuery(pool, /^UPDATE mail_items/u).values,
-    ["dismissed", "test@example.com", new Date(UPDATED_AT), undefined, new Date(UPDATED_AT), "mail-1", "google-workspace"],
+    ["dismissed", "test@example.com", new Date(UPDATED_AT), null, new Date(UPDATED_AT), "mail-1", "google-workspace"],
   );
 });
 

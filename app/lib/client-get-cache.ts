@@ -271,10 +271,16 @@ export function invalidateWorkspaceOperationsReadCache() {
   invalidateCachedGet("/api/v1/integrations/google/operations");
 }
 
+/** Review mutations change both the pending queue and the human outcome history. */
+export function invalidateInboxAnalysisReadCaches(options: { notify?: boolean } = {}) {
+  invalidateCachedGet("/api/v1/inbox-analysis", options);
+  invalidateCachedGet("/api/v1/inbox-analysis/activity", options);
+}
+
 /** A review-approved Gmail filing changes archive totals and retires its review row. */
 export function invalidateGmailFilingReadCaches(options: { includeOperations?: boolean } = {}) {
   invalidateCachedGet("/api/v1/dashboard");
-  invalidateCachedGet("/api/v1/inbox-analysis");
+  invalidateInboxAnalysisReadCaches();
   if (options.includeOperations !== false) invalidateWorkspaceOperationsReadCache();
 }
 
@@ -284,7 +290,7 @@ export function invalidateGmailFilingReadCaches(options: { includeOperations?: b
  */
 export function invalidateWorkspaceSimulationResetReadCaches(options: { includeOperations?: boolean } = {}) {
   invalidateCachedGet("/api/v1/dashboard");
-  invalidateCachedGet("/api/v1/inbox-analysis");
+  invalidateInboxAnalysisReadCaches();
   invalidateCachedGetPrefix("/api/v1/integrations/google/forms/leads");
   if (options.includeOperations !== false) invalidateWorkspaceOperationsReadCache();
   invalidateCachedGetPrefix("/api/v1/admin/audit");

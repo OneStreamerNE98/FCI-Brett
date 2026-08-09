@@ -23,6 +23,7 @@ import styles from "./AiAssistantSettingsCard.module.css";
 
 const ASSISTANT_CONFIG_URL = "/api/v1/assistant/config";
 const ASSISTANT_LABELS_URL = "/api/v1/inbox-analysis/labels";
+const ASSISTANT_ACTIVITY_URL = "/api/v1/inbox-analysis/activity";
 const AI_FEATURES = [
   { key: "orgQa", label: "Organization-wide answers", state: "In development" },
   { key: "triage", label: "Inbox filing suggestions", state: "In development" },
@@ -59,6 +60,47 @@ type AssistantLabelCatalog = {
   /** Bounds total stored rows, retired tombstones included. */
   maximumRows: number;
 };
+type AssistantActivityLabel = Pick<AssistantLabel, "slug" | "description" | "retired">;
+type AssistantActivityCount = {
+  slug: string;
+  acceptedCount: number;
+  dismissedCount: number;
+};
+type AssistantActivityAnalysis =
+  | {
+    state: "available";
+    intents: string[];
+    confidence: "high" | "medium" | "low";
+    rationale: string;
+  }
+  | { state: "degraded"; message: string };
+type AssistantActivityRow = {
+  id: string;
+  subject: string | null;
+  sender: string | null;
+  receivedAt: number | null;
+  outcome: "accepted" | "dismissed";
+  reviewedBy: string | null;
+  reviewedAt: number | null;
+  acceptedIntent: string | null;
+  acceptedIntentAvailable: boolean;
+  labelDefinitionVersion: string | null;
+  labelSetState: "current" | "earlier" | "not-recorded";
+  attributionState: "recorded" | "not-recorded";
+  analysis: AssistantActivityAnalysis;
+};
+type AssistantActivity = {
+  labels: AssistantActivityLabel[];
+  counts: AssistantActivityCount[];
+  rows: AssistantActivityRow[];
+  totalCount: number;
+  pageLimit: number;
+};
+
+const ACTIVITY_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 function limitAssistantLabelDescription(value: string) {
   return [...value]
@@ -150,8 +192,206 @@ function parseAssistantLabelCatalog(value: unknown): AssistantLabelCatalog {
   };
 }
 
+function nullableActivityText(
+  value: unknown,
+  maximum: number,
+  errorMessage: string,
+) {
+  if (value === null) return null;
+  if (
+    typeof value !== "string"
+    || !value.trim()
+    || value.length > maximum
+    || /[\u0000-\u001f\u007f]/.test(value)
+  ) throw new Error(errorMessage);
+  return value;
+}
+
+function nullableActivityTimestamp(value: unknown, errorMessage: string) {
+  if (value === null) return null;
+  if (
+    typeof value !== "number"
+    || !Number.isSafeInteger(value)
+    || value < 0
+    || value > 8_640_000_000_000_000
+  ) throw new Error(errorMessage);
+  return value;
+}
+
+function parseAssistantActivity(value: unknown): AssistantActivity {
+  if (
+    !isRecord(value)
+    || !Array.isArray(value.labels)
+    || !Array.isArray(value.counts)
+    || !Array.isArray(value.rows)
+    || !Number.isSafeInteger(value.totalCount)
+    || Number(value.totalCount) < 0
+    || !Number.isSafeInteger(value.pageLimit)
+    || Number(value.pageLimit) < 1
+    || Number(value.pageLimit) > 500
+    || value.rows.length > Number(value.pageLimit)
+    || Number(value.totalCount) < value.rows.length
+  ) {
+    throw new Error("The server returned invalid AI assistant activity.");
+  }
+  const labels = value.labels.map((candidate) => {
+    if (
+      !isRecord(candidate)
+      || typeof candidate.slug !== "string"
+      || !/^[A-Za-z0-9_-]{1,60}$/.test(candidate.slug)
+      || typeof candidate.description !== "string"
+      || !candidate.description.trim()
+      || assistantLabelCodePointLength(candidate.description)
+        > MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH
+      || typeof candidate.retired !== "boolean"
+    ) throw new Error("The server returned invalid AI assistant activity labels.");
+    return candidate as AssistantActivityLabel;
+  });
+  const knownSlugs = new Set(labels.map(({ slug }) => slug));
+  if (knownSlugs.size !== labels.length) {
+    throw new Error("The server returned duplicate AI assistant activity labels.");
+  }
+  const counts = value.counts.map((candidate) => {
+    if (
+      !isRecord(candidate)
+      || typeof candidate.slug !== "string"
+      || !knownSlugs.has(candidate.slug)
+      || !Number.isSafeInteger(candidate.acceptedCount)
+      || Number(candidate.acceptedCount) < 0
+      || !Number.isSafeInteger(candidate.dismissedCount)
+      || Number(candidate.dismissedCount) < 0
+    ) throw new Error("The server returned invalid AI assistant activity totals.");
+    return candidate as AssistantActivityCount;
+  });
+  if (
+    counts.length !== labels.length
+    || new Set(counts.map(({ slug }) => slug)).size !== counts.length
+  ) throw new Error("The server returned incomplete AI assistant activity totals.");
+
+  const rows = value.rows.map((candidate) => {
+    if (
+      !isRecord(candidate)
+      || typeof candidate.id !== "string"
+      || !candidate.id.trim()
+      || candidate.id.length > 512
+      || (candidate.outcome !== "accepted" && candidate.outcome !== "dismissed")
+      || (candidate.attributionState !== "recorded"
+        && candidate.attributionState !== "not-recorded")
+      || (candidate.labelSetState !== "current"
+        && candidate.labelSetState !== "earlier"
+        && candidate.labelSetState !== "not-recorded")
+      || typeof candidate.acceptedIntentAvailable !== "boolean"
+      || !isRecord(candidate.analysis)
+    ) throw new Error("The server returned an invalid AI assistant activity row.");
+    const reviewedBy = nullableActivityText(
+      candidate.reviewedBy,
+      320,
+      "The server returned invalid review attribution.",
+    );
+    const reviewedAt = nullableActivityTimestamp(
+      candidate.reviewedAt,
+      "The server returned invalid review attribution.",
+    );
+    if (
+      (candidate.attributionState === "recorded" && (reviewedBy === null || reviewedAt === null))
+      || (candidate.attributionState === "not-recorded" && (reviewedBy !== null || reviewedAt !== null))
+    ) throw new Error("The server returned inconsistent review attribution.");
+    const labelDefinitionVersion = nullableActivityText(
+      candidate.labelDefinitionVersion,
+      128,
+      "The server returned invalid label-set provenance.",
+    );
+    if (
+      (candidate.labelSetState === "not-recorded") !== (labelDefinitionVersion === null)
+    ) throw new Error("The server returned inconsistent label-set provenance.");
+    const acceptedIntent = nullableActivityText(
+      candidate.acceptedIntent,
+      60,
+      "The server returned an invalid accepted category.",
+    );
+    if (
+      candidate.acceptedIntentAvailable
+      !== (acceptedIntent === null || knownSlugs.has(acceptedIntent))
+    ) throw new Error("The server returned inconsistent accepted-category history.");
+
+    let analysis: AssistantActivityAnalysis;
+    if (candidate.analysis.state === "degraded") {
+      if (candidate.analysis.message !== "Some saved classification details are unavailable.") {
+        throw new Error("The server returned invalid degraded activity details.");
+      }
+      analysis = { state: "degraded", message: candidate.analysis.message };
+    } else if (
+      candidate.analysis.state === "available"
+      && Array.isArray(candidate.analysis.intents)
+      && candidate.analysis.intents.length > 0
+      && candidate.analysis.intents.every((intent) =>
+        typeof intent === "string" && knownSlugs.has(intent)
+      )
+      && new Set(candidate.analysis.intents).size === candidate.analysis.intents.length
+      && (candidate.analysis.confidence === "high"
+        || candidate.analysis.confidence === "medium"
+        || candidate.analysis.confidence === "low")
+      && typeof candidate.analysis.rationale === "string"
+      && Boolean(candidate.analysis.rationale.trim())
+      && candidate.analysis.rationale.length <= 200
+    ) {
+      analysis = {
+        state: "available",
+        intents: [...candidate.analysis.intents] as string[],
+        confidence: candidate.analysis.confidence,
+        rationale: candidate.analysis.rationale,
+      };
+    } else {
+      throw new Error("The server returned invalid AI assistant activity details.");
+    }
+    return {
+      id: candidate.id,
+      subject: nullableActivityText(
+        candidate.subject,
+        500,
+        "The server returned an invalid activity subject.",
+      ),
+      sender: nullableActivityText(
+        candidate.sender,
+        500,
+        "The server returned an invalid activity sender.",
+      ),
+      receivedAt: nullableActivityTimestamp(
+        candidate.receivedAt,
+        "The server returned an invalid received time.",
+      ),
+      outcome: candidate.outcome,
+      reviewedBy,
+      reviewedAt,
+      acceptedIntent,
+      acceptedIntentAvailable: candidate.acceptedIntentAvailable,
+      labelDefinitionVersion,
+      labelSetState: candidate.labelSetState,
+      attributionState: candidate.attributionState,
+      analysis,
+    } as AssistantActivityRow;
+  });
+  return {
+    labels,
+    counts,
+    rows,
+    totalCount: Number(value.totalCount),
+    pageLimit: Number(value.pageLimit),
+  };
+}
+
 function activeLabelCount(catalog: AssistantLabelCatalog) {
   return catalog.labels.filter(({ retired }) => !retired).length;
+}
+
+function activityTime(value: number | null) {
+  return value === null ? "Time not recorded" : ACTIVITY_DATE_FORMATTER.format(new Date(value));
+}
+
+function labelSetProvenance(state: AssistantActivityRow["labelSetState"]) {
+  if (state === "current") return "Classified using the current saved label set.";
+  if (state === "earlier") return "Classified using an earlier saved label set.";
+  return "Classification label set not recorded.";
 }
 
 export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; isAdmin: boolean }) {
@@ -166,11 +406,17 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
   const [labelLoadState, setLabelLoadState] = useState<LoadState>("loading");
   const [labelLoadError, setLabelLoadError] = useState("");
   const [labelSaving, setLabelSaving] = useState<string | null>(null);
+  const [activity, setActivity] = useState<AssistantActivity | null>(null);
   const labelLoadRequestRef = useRef(0);
   const labelVisibleLoadsInFlightRef = useRef(0);
   const { state: loadState, error: loadError, run: runConfigLoad } = useClientLoadState(
     "AI assistant configuration could not be loaded.",
   );
+  const {
+    state: activityLoadState,
+    error: activityLoadError,
+    run: runActivityLoad,
+  } = useClientLoadState("AI assistant activity could not be loaded.");
 
   const loadConfig = useCallback((
     force = false,
@@ -236,6 +482,19 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
     }
   }, [isAdmin]);
 
+  const loadActivity = useCallback((force = false, silent = false) => {
+    if (!isAdmin) return Promise.resolve(undefined);
+    return runActivityLoad(
+      () => cachedGetJson<unknown>(ASSISTANT_ACTIVITY_URL, { force })
+        .then(parseAssistantActivity),
+      {
+        onSuccess: setActivity,
+        onFailure: () => setActivity(null),
+      },
+      { silent },
+    );
+  }, [isAdmin, runActivityLoad]);
+
   useEffect(() => {
     void Promise.resolve().then(() => loadConfig());
   }, [loadConfig]);
@@ -258,6 +517,11 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
     () => loadLabels(false, true, labelDraftDirty || labelSaving !== null),
     isAdmin,
   );
+  useCachedGetSubscription(
+    [ASSISTANT_ACTIVITY_URL],
+    () => { void loadActivity(false, true); },
+    isAdmin,
+  );
 
   useEffect(() => {
     if (isAdmin) void Promise.resolve().then(() => loadLabels());
@@ -265,6 +529,10 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
       labelLoadRequestRef.current += 1;
     };
   }, [isAdmin, loadLabels]);
+
+  useEffect(() => {
+    if (isAdmin) void Promise.resolve().then(() => loadActivity());
+  }, [isAdmin, loadActivity]);
 
   async function mutateLabel(
     method: "POST" | "PATCH" | "DELETE",
@@ -288,7 +556,8 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
         );
       }
       invalidateCachedGet(ASSISTANT_LABELS_URL);
-      await loadLabels(true);
+      invalidateCachedGet(ASSISTANT_ACTIVITY_URL, { notify: false });
+      await Promise.all([loadLabels(true), loadActivity(true)]);
       notify(successMessage(isRecord(payload) ? payload : {}), "success");
     } catch (error) {
       notifyError(notify, {
@@ -349,6 +618,9 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
 
   const ready = loadState === "ready" && config && features;
   const editable = Boolean(ready && isAdmin && config.keyState === "Configured");
+  const activityLabelBySlug = new Map(
+    activity?.labels.map((label) => [label.slug, label]) ?? [],
+  );
 
   return <section className={`panel settings-form-panel ${styles.card}`} aria-labelledby="ai-assistant-settings-title">
     <div className="settings-heading">
@@ -529,6 +801,105 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
             </article>)}
           </div>
           <p className={styles.labelPolicy}>Built-in labels are permanent, though their descriptions stay editable. A custom label already present in saved analysis is retired rather than deleted, and retired descriptions remain editable so historical queue rows stay understandable. The {labelCatalog.maximumLabels}-label limit counts active labels only.</p>
+        </>}
+      </section>
+
+      <section className={styles.activity} aria-labelledby="assistant-activity-title">
+        <div className={styles.activityHeading}>
+          <div>
+            <h3 id="assistant-activity-title">Review activity</h3>
+            <p>See what people accepted or dismissed after the assistant suggested a category.</p>
+          </div>
+          {activity && <span>{activity.totalCount} outcomes</span>}
+        </div>
+        {activityLoadState !== "ready" || !activity ? <SettingsDataNotice
+          state={activityLoadState === "ready" ? "error" : activityLoadState}
+          error={activityLoadError || "AI assistant activity could not be loaded."}
+          onRetry={() => void loadActivity(true)}
+          loadingTitle="Loading review activity…"
+          loadingDetail="Saved decisions will appear after the database responds."
+          errorTitle="Review activity could not be loaded"
+        /> : <>
+          <div className={styles.activityCounts} aria-label="Recorded decisions by category">
+            {activity.counts.map((count) => {
+              const label = activityLabelBySlug.get(count.slug);
+              if (!label) return null;
+              return <article
+                key={count.slug}
+                data-label-slug={count.slug}
+              >
+                <strong>{label.description}</strong>
+                <dl>
+                  <div><dt>Accepted</dt><dd>{count.acceptedCount}</dd></div>
+                  <div><dt>Dismissed</dt><dd>{count.dismissedCount}</dd></div>
+                </dl>
+                {label.retired && <span>Retired category</span>}
+              </article>;
+            })}
+          </div>
+          <p className={styles.activityCountPolicy}>
+            Accepted totals use the category chosen. Dismissed totals count each category suggested on a dismissed message. Outcomes without a recorded person or readable category stay in the history but not these totals.
+          </p>
+          {activity.rows.length === 0 ? <div className={styles.activityEmpty}>
+            <strong>No review activity yet</strong>
+            <p>Accepted and dismissed assistant suggestions will appear here after a person makes a decision.</p>
+          </div> : <div className={styles.activityList}>
+            {activity.rows.map((row) => {
+              const acceptedLabel = row.acceptedIntent === null
+                ? null
+                : activityLabelBySlug.get(row.acceptedIntent) ?? null;
+              return <article key={row.id} className={styles.activityRow}>
+                <header>
+                  <div>
+                    <strong>{row.subject ?? "(No subject)"}</strong>
+                    <span>{row.sender ?? "Sender not recorded"}</span>
+                  </div>
+                  <span className={row.outcome === "accepted" ? styles.accepted : styles.dismissed}>
+                    {row.outcome === "accepted" ? "Accepted" : "Dismissed"}
+                  </span>
+                </header>
+                <div className={styles.activityMeta}>
+                  <span>Reviewed by <strong>{row.reviewedBy ?? "not recorded"}</strong></span>
+                  <time dateTime={row.reviewedAt === null ? undefined : new Date(row.reviewedAt).toISOString()}>
+                    {activityTime(row.reviewedAt)}
+                  </time>
+                </div>
+                {row.outcome === "accepted" && <p className={styles.acceptedCategory}>
+                  <strong>Accepted category:</strong>{" "}
+                  {acceptedLabel?.description
+                    ?? (row.acceptedIntent === null
+                      ? "not recorded"
+                      : "Saved category unavailable")}
+                </p>}
+                {row.analysis.state === "available" ? <div className={styles.activityAnalysis}>
+                  <div>
+                    <strong>Suggested categories</strong>
+                    <ul>{row.analysis.intents.map((intent) => {
+                      const label = activityLabelBySlug.get(intent);
+                      return <li key={intent} data-label-slug={intent}>
+                        {label?.description ?? "Saved category unavailable"}
+                      </li>;
+                    })}</ul>
+                  </div>
+                  <p><strong>{row.analysis.confidence} confidence.</strong> {row.analysis.rationale}</p>
+                </div> : <p className={styles.activityDegraded} role="note">
+                  {row.analysis.message} The outcome remains visible so the history is complete.
+                </p>}
+                <p
+                  className={styles.activityProvenance}
+                  data-label-definition-version={row.labelDefinitionVersion ?? undefined}
+                  title={row.labelDefinitionVersion === null
+                    ? undefined
+                    : `Saved label set: ${row.labelDefinitionVersion}`}
+                >
+                  {labelSetProvenance(row.labelSetState)}
+                </p>
+              </article>;
+            })}
+          </div>}
+          <p className={styles.activityShowing}>
+            Showing {activity.rows.length} of {activity.totalCount} outcomes, newest first.
+          </p>
         </>}
       </section>
       </> : <>
