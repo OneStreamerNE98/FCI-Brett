@@ -130,12 +130,23 @@ const managementNavItems: { label: OperationsView; icon: typeof LayoutDashboard 
   { label: "Settings", icon: Settings },
 ];
 
-const loadAssistantView = () => import("./assistant/components/AssistantView");
-const loadClientsView = () => import("./clients/components/ClientsView");
-const loadInboxView = () => import("./inbox/components/InboxView");
-const loadLeadsView = () => import("./leads/components/LeadsView");
-const loadProjectsView = () => import("./projects/components/ProjectsView");
-const loadScheduleView = () => import("./schedule/components/ScheduleView");
+const MAJOR_VIEW_LOAD_TIMEOUT_MS = 15_000;
+
+function loadMajorViewWithDeadline<T>(view: OperationsView, importer: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      reject(new Error(`${view} could not be loaded within 15 seconds. Reload the page to try again.`));
+    }, MAJOR_VIEW_LOAD_TIMEOUT_MS);
+    void importer().then(resolve, reject).finally(() => window.clearTimeout(timeout));
+  });
+}
+
+const loadAssistantView = () => loadMajorViewWithDeadline("AI Assistant", () => import("./assistant/components/AssistantView"));
+const loadClientsView = () => loadMajorViewWithDeadline("Clients", () => import("./clients/components/ClientsView"));
+const loadInboxView = () => loadMajorViewWithDeadline("Inbox", () => import("./inbox/components/InboxView"));
+const loadLeadsView = () => loadMajorViewWithDeadline("Leads", () => import("./leads/components/LeadsView"));
+const loadProjectsView = () => loadMajorViewWithDeadline("Projects", () => import("./projects/components/ProjectsView"));
+const loadScheduleView = () => loadMajorViewWithDeadline("Schedule", () => import("./schedule/components/ScheduleView"));
 
 const LazyAssistantView = lazy(() => loadAssistantView().then((module) => ({ default: module.AssistantView })));
 const LazyClientsView = lazy(() => loadClientsView().then((module) => ({ default: module.ClientsView })));
@@ -145,12 +156,14 @@ const LazyProjectsView = lazy(() => loadProjectsView().then((module) => ({ defau
 const LazyScheduleView = lazy(() => loadScheduleView().then((module) => ({ default: module.ScheduleView })));
 
 function preloadMajorView(view: OperationsView) {
-  if (view === "AI Assistant") void loadAssistantView();
-  else if (view === "Clients") void loadClientsView();
-  else if (view === "Inbox") void loadInboxView();
-  else if (view === "Leads") void loadLeadsView();
-  else if (view === "Projects") void loadProjectsView();
-  else if (view === "Schedule") void loadScheduleView();
+  const preload = view === "AI Assistant" ? loadAssistantView
+    : view === "Clients" ? loadClientsView
+      : view === "Inbox" ? loadInboxView
+        : view === "Leads" ? loadLeadsView
+          : view === "Projects" ? loadProjectsView
+            : view === "Schedule" ? loadScheduleView
+              : null;
+  if (preload) void preload().catch(() => undefined);
 }
 
 function projectLifecycleFilter(value: string): ProjectLifecycleFilter | null {

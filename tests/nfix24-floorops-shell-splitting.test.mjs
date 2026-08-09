@@ -52,6 +52,10 @@ test("NFIX-24 route loading and failure behavior stays accessible and honest", a
 
   assert.match(app, /<AppErrorBoundary key=\{view\}>[\s\S]{0,800}<Suspense fallback=\{<MajorViewLoading view=\{view\} \/>\}>/u);
   assert.match(app, /loadingTitle=\{`Loading \$\{view\}`\}[\s\S]{0,120}loadingDetail="Preparing this workspace view\."/u);
+  assert.match(app, /const MAJOR_VIEW_LOAD_TIMEOUT_MS = 15_000/u);
+  assert.match(app, /loadMajorViewWithDeadline<T>\(view: OperationsView, importer: \(\) => Promise<T>\)/u);
+  assert.match(app, /could not be loaded within 15 seconds\. Reload the page to try again\./u);
+  assert.match(app, /if \(preload\) void preload\(\)\.catch\(\(\) => undefined\)/u);
   assert.match(notice, /role=\{failed \? "alert" : "status"\}/u);
   assert.match(notice, /aria-live=\{failed \? "assertive" : "polite"\}/u);
   assert.match(boundary, /return <AppFailureSurface onReload=\{\(\) => window\.location\.reload\(\)\} \/>/u);
