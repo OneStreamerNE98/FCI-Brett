@@ -1141,6 +1141,72 @@ test("project-meeting POST accepts phone-call and echoes the meeting type", asyn
   assert.equal([...database.meetings.values()][0].meeting_type, "phone-call");
 });
 
+test("NFIX-12 project-meeting GET lists meetings, rejects invalid inputs, and surfaces authorization errors", async () => {
+  database.reset();
+  // Seed a meeting so the list route has something to return.
+  database.meetings.set("meeting-1", {
+    id: "meeting-1",
+    project_id: PROJECT_ID,
+    title: "FCI TEST — DO NOT USE design review",
+    meeting_at: "2026-07-23T13:00:00.000Z",
+    meeting_type: "in-person",
+    source_provider: null,
+    source_url: null,
+    attendees_json: JSON.stringify(["Test Customer"]),
+    notes: "Discussed test-only milestones.",
+    transcript: null,
+    summary: null,
+    decisions: null,
+    action_items_json: JSON.stringify(["Confirm test-only dates"]),
+    created_by: "admincrm@cherryhillfci.com",
+    created_at: CREATED_AT,
+    updated_at: CREATED_AT,
+  });
+
+  // Success: office user with recordsRead capability lists meetings.
+  const good = await meetingsRoute.GET(
+    taskRequest(`/api/v1/projects/${PROJECT_ID}/meetings`, "GET"),
+    { params: Promise.resolve({ projectId: PROJECT_ID }) },
+  );
+  assert.equal(good.status, 200);
+  const goodPayload = await good.json();
+  assert.ok(Array.isArray(goodPayload.meetings), "response must have a meetings array");
+  assert.equal(goodPayload.meetings.length, 1);
+  assert.equal(goodPayload.meetings[0].id, "meeting-1");
+  assert.equal(goodPayload.meetings[0].title, "FCI TEST — DO NOT USE design review");
+  assert.equal(goodPayload.meetings[0].meetingType, "in-person");
+  assert.equal(good.headers.get("Cache-Control"), "no-store");
+
+  // Invalid projectId format → 400
+  const badFormat = await meetingsRoute.GET(
+    taskRequest("/api/v1/projects/!!!bad!!!format/meetings", "GET"),
+    { params: Promise.resolve({ projectId: "!!!bad!!!format" }) },
+  );
+  assert.equal(badFormat.status, 400);
+  assert.deepEqual(await badFormat.json(), { error: "Invalid project." });
+
+  // Valid but non-existent projectId → 404
+  const notFound = await meetingsRoute.GET(
+    taskRequest(`/api/v1/projects/${MISSING_PROJECT_ID}/meetings`, "GET"),
+    { params: Promise.resolve({ projectId: MISSING_PROJECT_ID }) },
+  );
+  assert.equal(notFound.status, 404);
+  assert.deepEqual(await notFound.json(), { error: "Project not found." });
+
+  // Unauthenticated request → rejected
+  const unauthReq = taskRequest(
+    `/api/v1/projects/${PROJECT_ID}/meetings`,
+    "GET",
+    undefined,
+    "", // no office email
+  );
+  const unauth = await meetingsRoute.GET(
+    unauthReq,
+    { params: Promise.resolve({ projectId: PROJECT_ID }) },
+  );
+  assert.equal(unauth.status, 401);
+});
+
 function pgResult(rows = [], rowCount = null) {
   return { rows, rowCount };
 }

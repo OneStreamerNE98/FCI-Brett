@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — do not edit by hand. Regenerate with `node tools/generate-board.mjs`;
      tests/board-docs.test.mjs fails CI if this file differs from the generator output. -->
 
-196 packets across 4 ledgers: 49 not started · 2 blocked · 133 complete · 5 resolved · 7 superseded.
+196 packets across 4 ledgers: 48 not started · 1 in progress · 2 blocked · 133 complete · 5 resolved · 7 superseded.
 The Status column is the first sentence of the packet's ledger status line; the ledger
 row holds the full text. Packets without a status line are not started.
 
@@ -126,7 +126,7 @@ row holds the full text. Packets without a status line are not started.
 | NFIX-09 | Every merge to main cancels the previous merge's verification (small; CI only) | Complete — PR #331, August 7, 2026. | agent-plan |
 | NFIX-10 | 256 type errors nobody runs (medium; quality gate) | — | agent-plan |
 | NFIX-11 | Error boundaries: one crash currently unmounts the whole app (medium; quality gate) | Superseded — absorbed into DES-17 | agent-plan |
-| NFIX-12 | Execute the remaining direct-route coverage gaps (small-medium) | — | agent-plan |
+| NFIX-12 | Execute the remaining direct-route coverage gaps (small-medium) | In progress — `deepseek/nfix12-route-coverage-gaps` | agent-plan |
 | NFIX-13 | Paginate the clients and projects list endpoints (medium) | — | agent-plan |
 | NFIX-14 | AI/provider failure observability: the bare catch and the 503 that ate its error (small-medium) | — | agent-plan |
 | NFIX-15 | Upload boundary and stored-byte round-trip coverage (small) | — | agent-plan |

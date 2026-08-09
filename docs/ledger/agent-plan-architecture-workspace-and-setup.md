@@ -3819,6 +3819,7 @@ and sibling features stay mounted while the failed panel shows its recovery UI;
 **Effort:** medium. **Cost:** $0.
 
 ### NFIX-12 · Execute the remaining direct-route coverage gaps (small-medium)
+**Status:** In progress — `deepseek/nfix12-route-coverage-gaps`
 
 **Why:** filed August 6, 2026 from the review's corrected T1 census. The original NFIX-12
 premise was rejected during PR #329 review: `useEffectEvent` is a stable API in the
