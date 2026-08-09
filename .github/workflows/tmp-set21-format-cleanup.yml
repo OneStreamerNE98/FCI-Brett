@@ -1,0 +1,62 @@
+name: Temporary SET-21 formatting cleanup
+
+on:
+  push:
+    branches: [codex/set21-blueprint-only-cleanup-v2]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/set21-blueprint-only-cleanup-v2
+          fetch-depth: 0
+      - name: Normalize formatting
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/lib/google-drive.ts')
+          text = path.read_text()
+          start = text.index('  private async ensureProvisionedBlueprintFolder(input: {')
+          marker = '/**\n * Ensures one blueprint folder beneath an exact managed parent.'
+          end = text.index(marker, start)
+          block = text[start:end].rstrip('\n').splitlines()
+          block = [block[0], *['  ' + line for line in block[1:]]]
+          fixed = '\n'.join(block) + '\n\n'
+          comment_end = text.index('  async ensureBlueprintFolder(input: {', end)
+          comment = '''  /**
+           * Ensures one blueprint folder beneath an exact managed parent. A same-name
+           * manual folder is adopted only when unambiguous, then stamped with the stable
+           * blueprint key so later setup runs are rename-safe and idempotent.
+           */
+'''
+          text = text[:start] + fixed + comment + text[comment_end:]
+          path.write_text(text)
+
+          test_path = Path('tests/workspace-drive-client.test.mjs')
+          tests = test_path.read_text()
+          duplicate = '''// A key that is still defined likewise owns its folder; a different key claiming that
+// folder's name must stay a 409 rather than silently stealing it.
+// saved blueprint. A key that is still defined owns its folder, so a different key claiming that
+// folder's name must stay a 409 rather than silently stealing it.
+'''
+          clean = '''// A key that is still defined likewise owns its folder; a different key claiming that
+// folder's name must stay a 409 rather than silently stealing it.
+'''
+          assert duplicate in tests
+          test_path.write_text(tests.replace(duplicate, clean, 1))
+
+          Path('.github/workflows/tmp-set21-format-cleanup.yml').unlink()
+          PY
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/lib/google-drive.ts tests/workspace-drive-client.test.mjs .github/workflows/tmp-set21-format-cleanup.yml
+          git commit -m "style(set21): normalize blueprint-only patch"
+          git push origin HEAD:codex/set21-blueprint-only-cleanup-v2
