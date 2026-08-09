@@ -131,6 +131,7 @@ test("DES-17 empty-state action slot covers every actionable dead end", async ()
   const justifiedActionless = [
     { pattern: /Loading|Checking/u, reason: "transient request state" },
     { pattern: /Administrator review queue/u, reason: "permission boundary names who can act" },
+    { pattern: /Administrator mailbox access/u, reason: "permission boundary names who can act" },
     { pattern: /Choose a project/u, reason: "adjacent project selector is the control" },
     { pattern: /No task candidates were returned/u, reason: "terminal review result" },
     { pattern: /No verified sources were returned/u, reason: "terminal evidence result" },
@@ -171,7 +172,7 @@ test("DES-17 empty-state action slot covers every actionable dead end", async ()
       }
     });
   }
-  assert.equal(census, 34, "the current empty-state census must be reviewed when it changes");
+  assert.equal(census, 37, "the current empty-state census must be reviewed when it changes");
   assert.deepEqual(unexplained, [], `actionless empty states lack a recorded reason:\n${unexplained.join("\n")}`);
   assert.ok(justifiedActionless.every(({ reason }) => reason.length > 0));
 });

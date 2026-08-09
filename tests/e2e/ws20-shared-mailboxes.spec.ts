@@ -361,6 +361,8 @@ test("mailbox switching isolates messages, queue counts, filing identity, and di
 
   await page.goto("/settings?section=google-workspace#workspace-stage-4");
   await expect(page.getByRole("heading", { level: 2, name: "Google Workspace", exact: true })).toBeVisible();
+  const stageTwo = page.locator('[data-workspace-stage="2"]');
+  const stageTwoToggle = stageTwo.locator(".workspace-stage-toggle");
   const stageFour = page.locator('[data-workspace-stage="4"]');
   const stageFourToggle = stageFour.locator(".workspace-stage-toggle");
   if (await stageFourToggle.getAttribute("aria-expanded") !== "true") await stageFourToggle.click();
@@ -382,13 +384,14 @@ test("mailbox switching isolates messages, queue counts, filing identity, and di
   settingsReadMode = "hold-info";
   await viewInbox.click();
   await expect.poll(() => releaseSettingsInfoRead !== null).toBe(true);
-  await page.getByRole("button", { name: "Disconnect info@fci.example", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Disconnect info@fci.example", exact: true })).toHaveCount(0);
+  if (await stageTwoToggle.getAttribute("aria-expanded") !== "true") await stageTwoToggle.click();
+  await stageTwo.getByRole("button", { name: "Disconnect info@fci.example", exact: true }).click();
+  await expect(stageTwo.getByRole("button", { name: "Disconnect info@fci.example", exact: true })).toHaveCount(0);
   releaseSettingsInfoRead?.();
   await expect(settingsMailboxPicker).toHaveValue("ops@fci.example");
   await expect(settingsMailboxPicker).toBeEnabled();
   await expect(viewInbox).toBeEnabled();
-  await expect(page.getByText("ops@fci.example", { exact: true }).first()).toBeVisible();
+  await expect(stageTwo.getByLabel("Attached Google mailboxes").getByText("ops@fci.example", { exact: true })).toBeVisible();
   expect(disconnected).toEqual(["info@fci.example"]);
 });
 

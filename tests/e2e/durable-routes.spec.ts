@@ -140,12 +140,12 @@ test("project, Settings, and Inbox selections are bookmarkable and history-aware
 
   await page.goto("/inbox?bucket=needs-review");
   await waitForHydratedApp(page);
-  const mailbox = page.locator(".live-inbox-toolbar select");
-  await expect(mailbox).toHaveValue("needs-review");
-  await mailbox.selectOption("filed");
+  const bucket = page.getByRole("combobox", { name: "Mailbox", exact: true });
+  await expect(bucket).toHaveValue("needs-review");
+  await bucket.selectOption("filed");
   await expect(page).toHaveURL("http://localhost:4173/inbox?bucket=filed");
   await page.reload();
-  await expect(page.locator(".live-inbox-toolbar select")).toHaveValue("filed");
+  await expect(page.getByRole("combobox", { name: "Mailbox", exact: true })).toHaveValue("filed");
   expectHealthyBrowser(issues);
 });
 
