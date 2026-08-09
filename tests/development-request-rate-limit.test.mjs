@@ -164,7 +164,7 @@ test("development fixed windows reset at the next 60-second boundary", () => {
   assert.equal(limiter.check("uploads", "office@example.test"), null);
 });
 
-test("development limits isolate office users across the closed route scopes", () => {
+test("development limits keep office users and scopes independent within one Worker isolate", () => {
   const limiter = createDevelopmentRequestRateLimiter({ now: () => 1_000 });
   for (let request = 1; request <= DEVELOPMENT_RATE_LIMIT_MAX_REQUESTS; request += 1) {
     assert.equal(limiter.check("assistant", "first@example.test"), null);
@@ -175,6 +175,22 @@ test("development limits isolate office users across the closed route scopes", (
   for (const scope of DEVELOPMENT_RATE_LIMIT_SCOPES.filter((scope) => scope !== "assistant")) {
     assert.equal(limiter.check(scope, "first@example.test"), null, `${scope} must have an isolated window`);
   }
+});
+
+test("development limits are deliberately best-effort per Worker isolate", () => {
+  const isolateA = createDevelopmentRequestRateLimiter({ now: () => 1_000 });
+  const isolateB = createDevelopmentRequestRateLimiter({ now: () => 1_000 });
+
+  for (let request = 1; request <= DEVELOPMENT_RATE_LIMIT_MAX_REQUESTS; request += 1) {
+    assert.equal(isolateA.check("assistant", "office@example.test"), null);
+  }
+
+  assert.equal(isolateA.check("assistant", "office@example.test")?.status, 429);
+  assert.equal(
+    isolateB.check("assistant", "office@example.test"),
+    null,
+    "a second Worker isolate has an independent best-effort allowance",
+  );
 });
 
 test("the inbox analysis sweep cannot consume the interactive assistant window", () => {
@@ -248,4 +264,16 @@ test("every limited mutation route checks its closed scope after office authoriz
       `${route.method} ${route.path} must limit before body, schema, or provider work`,
     );
   }
+});
+
+test("source and documentation state the best-effort per-isolate development contract", async () => {
+  const [source, document] = await Promise.all([
+    readFile(join(root, "app/lib/development-request-rate-limit.ts"), "utf8"),
+    readFile(join(root, "docs/specs/request-rate-limiting.md"), "utf8"),
+  ]);
+
+  assert.match(source, /best-effort, per-isolate fixed-window limiter/u);
+  assert.match(source, /Worker isolates do not share this state/u);
+  assert.match(document, /best-effort, per-isolate abuse\s+and cost guard/u);
+  assert.match(document, /not a globally exact per-user quota/u);
 });

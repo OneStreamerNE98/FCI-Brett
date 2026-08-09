@@ -43,7 +43,9 @@ function deniedResponse(retryAfterSeconds: number) {
 }
 
 /**
- * Creates a per-process fixed-window limiter for the controlled development surface.
+ * Creates a best-effort, per-isolate fixed-window limiter for the controlled
+ * development surface. Cloudflare Worker isolates do not share this state, so this
+ * deliberately does not claim to enforce a globally exact per-user quota.
  * A null result deliberately leaves the route's existing response completely untouched.
  */
 export function createDevelopmentRequestRateLimiter(
