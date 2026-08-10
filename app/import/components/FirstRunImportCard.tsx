@@ -30,6 +30,7 @@ import {
 import {
   cachedGetJson,
   invalidateCachedGet,
+  invalidateCachedGetPrefix,
   isTerminalCachedGetError,
 } from "../../lib/client-get-cache";
 import { useCachedGetSubscription } from "../../lib/client-get-hooks";
@@ -899,7 +900,7 @@ export function FirstRunImportCard({
         throw new Error(importError(body, `The selected ${entityLabel(requestEntity)} could not be imported.`));
       }
       if (parsed.created > 0) {
-        invalidateCachedGet(requestEntity === "clients" ? "/api/v1/clients" : "/api/v1/projects");
+        invalidateCachedGetPrefix(requestEntity === "clients" ? "/api/v1/clients" : "/api/v1/projects");
         invalidateCachedGet("/api/v1/dashboard");
         await onImportConfirmed();
       }
