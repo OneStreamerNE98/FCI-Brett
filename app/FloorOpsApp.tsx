@@ -235,8 +235,8 @@ const DIRECTORY_GET_URLS = [
   "/api/v1/filing-rules",
   "/api/v1/integrations/google/sheets/status",
   "/api/v1/leads",
-  "/api/v1/clients",
-  "/api/v1/projects",
+  "/api/v1/clients?limit=100",
+  "/api/v1/projects?limit=100",
   "/api/v1/dashboard",
 ] as const;
 
@@ -909,8 +909,8 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       throw new Error(data.error ?? "Client changes could not be saved.");
     }
     const saved = data.client;
-    invalidateCachedGet("/api/v1/clients");
-    invalidateCachedGet("/api/v1/projects");
+    invalidateCachedGetPrefix("/api/v1/clients");
+    invalidateCachedGetPrefix("/api/v1/projects");
     invalidateCachedGet("/api/v1/dashboard");
     invalidateCachedGet("/api/v1/assistant/today");
     const update = (item: Client): Client => item.id === client.id
@@ -968,7 +968,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       throw new Error("The saved contact no longer belongs to this client.");
     }
     const saved = data.contact;
-    invalidateCachedGet("/api/v1/clients");
+    invalidateCachedGetPrefix("/api/v1/clients");
     const update = (item: Client): Client => item.id === client.id
       ? {
           ...item,
@@ -1024,7 +1024,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       throw new Error(data.error ?? "Project changes could not be saved.");
     }
     const saved = data.project;
-    invalidateCachedGet("/api/v1/projects");
+    invalidateCachedGetPrefix("/api/v1/projects");
     invalidateCachedGet("/api/v1/dashboard");
     invalidateCachedGet("/api/v1/assistant/today");
     const client = clients.find((item) => item.id === saved.clientId);
@@ -1091,7 +1091,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const data = await response.json() as { driveFolderId?: string; driveUrl?: string; created?: boolean; environment?: string; error?: string };
       if (!response.ok || !data.driveFolderId || !data.driveUrl) throw new Error(data.error ?? "The project Drive workspace could not be created.");
       const updated = { ...project, driveFolderId: data.driveFolderId, driveUrl: data.driveUrl };
-      invalidateCachedGet("/api/v1/projects");
+      invalidateCachedGetPrefix("/api/v1/projects");
       invalidateCachedGet(`/api/v1/projects/${encodeURIComponent(project.id)}/drive/files`);
       setProjectItems((current) => current.map((item) => item.id === project.id ? updated : item));
       setSelectedProject((current) => current?.id === project.id ? updated : current);
@@ -1367,7 +1367,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const data = await response.json().catch(() => ({})) as { projectManagerId?: string; error?: string };
       if (!response.ok || !data.projectManagerId) throw new Error(data.error ?? "The project manager could not be assigned.");
       const managerId = data.projectManagerId.toLowerCase();
-      invalidateCachedGet("/api/v1/projects");
+      invalidateCachedGetPrefix("/api/v1/projects");
       invalidateCachedGet("/api/v1/dashboard");
       const updateManager = (item: Project) => item.id === project.id
         ? { ...item, managerId, lead: projectManagerLabel(managerId, userEmail, userName) }
@@ -1390,7 +1390,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     if (!response.ok || !Number.isSafeInteger(data.installationStartedAt) || !Number.isSafeInteger(data.installationCompletedAt)) {
       throw new Error(data.error ?? "Installation dates could not be recorded.");
     }
-    invalidateCachedGet("/api/v1/projects");
+    invalidateCachedGetPrefix("/api/v1/projects");
     invalidateCachedGet("/api/v1/dashboard");
     invalidateCachedGet("/api/v1/assistant/today");
     const updateProject = (item: Project): Project => item.id === project.id
@@ -1411,7 +1411,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     if (!response.ok || typeof data.hadCallback !== "boolean") {
       throw new Error(data.error ?? "The follow-up result could not be recorded.");
     }
-    invalidateCachedGet("/api/v1/projects");
+    invalidateCachedGetPrefix("/api/v1/projects");
     invalidateCachedGet("/api/v1/dashboard");
     invalidateCachedGet("/api/v1/assistant/today");
     const updateProject = (item: Project): Project => item.id === project.id
